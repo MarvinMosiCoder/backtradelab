@@ -1,23 +1,25 @@
 <?php
+
 use App\Helpers\CommonHelpers;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Auth\LoginController;
-use App\Http\Controllers\Auth\ResetPasswordController;
+use App\Http\Controllers\Admin\AdminApiController;
+use App\Http\Controllers\Admin\AdminUsersController;
+use App\Http\Controllers\Admin\AdmRequestController;
+use App\Http\Controllers\Admin\AnnouncementsController;
 use App\Http\Controllers\Admin\MenusController;
 use App\Http\Controllers\Admin\ModulsController;
-use App\Http\Controllers\Admin\AdminUsersController;
-use App\Http\Controllers\Admin\PrivilegesController;
-use App\Http\Controllers\Admin\AnnouncementsController;
-use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\NotificationsController;
-use App\Http\Controllers\Admin\AdmRequestController;
+use App\Http\Controllers\Admin\PrivilegesController;
+use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\Users\ChangePasswordController;
-use App\Http\Controllers\Users\ProfilePageController;
 use App\Http\Controllers\Users\ForceChangePasswordController;
-use App\Http\Controllers\Admin\AdminApiController;
-use Inertia\Inertia; 
+use App\Http\Controllers\Users\ProfilePageController;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+
 /*
 |--------------------------------------------------------------------------
 | Web Routes
@@ -32,21 +34,21 @@ use Inertia\Inertia;
 Route::get('/', [LoginController::class, 'index']);
 Route::get('login', [LoginController::class, 'index'])->name('login');
 Route::get('/reset_password', [ResetPasswordController::class, 'getIndex'])->name('reset_password');
-Route::post('/send_resetpass_email',[ResetPasswordController::class, 'sendResetPasswordInstructions']);
+Route::post('/send_resetpass_email', [ResetPasswordController::class, 'sendResetPasswordInstructions']);
 Route::get('/reset_password_email/{email}', [ResetPasswordController::class, 'getResetIndex'])->name('reset_password_email');
-Route::post('/send_resetpass_email/reset',[ResetPasswordController::class, 'resetPassword']);
+Route::post('/send_resetpass_email/reset', [ResetPasswordController::class, 'resetPassword']);
 Route::post('login-save', [LoginController::class, 'authenticate'])->name('login-save');
 Route::get('/appname', [SettingsController::class, 'getAppname'])->name('app-name');
 Route::get('/applogo', [SettingsController::class, 'getApplogo'])->name('app-logo');
 Route::get('/login-details', [SettingsController::class, 'getLoginDetails'])->name('app-login-details');
 
-Route::group(['middleware' => ['auth','web']], function () {
+Route::group(['middleware' => ['auth', 'web']], function () {
     Route::post('/check-password', [ForceChangePasswordController::class, 'checkPassword'])->name('check-current-password');
     Route::get('change-password', [ForceChangePasswordController::class, 'showChangeForcePasswordForm'])->name('show-change-force-password');
     Route::post('/save-change-password', [ForceChangePasswordController::class, 'postUpdatePassword'])->name('update_password');
     Route::post('/check-waive', [ForceChangePasswordController::class, 'checkWaive'])->name('check-waive-count');
-    Route::post('/waive-change-password',[ForceChangePasswordController::class, 'waiveChangePassword'])->name('waive-change-password');
-    
+    Route::post('/waive-change-password', [ForceChangePasswordController::class, 'waiveChangePassword'])->name('waive-change-password');
+
     //ANNOUNCEMENT
     Route::get('unread-announcement', [AnnouncementsController::class, 'getUnreadAnnouncements'])->name('show-announcement');
     Route::post('read-announcement', [AnnouncementsController::class, 'markAnnouncementAsRead'])->name('read-announcement');
@@ -59,6 +61,9 @@ Route::group(['middleware' => ['auth','web']], function () {
 
 Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('market', function () {
+        return Inertia::render('Market/Market');
+    })->name('market');
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/sidebar', [MenusController::class, 'sidebarMenu'])->name('sidebar');
     //USERS
@@ -74,18 +79,18 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/update-theme', [ProfilePageController::class, 'updateTheme'])->name('update-theme');
     //CHANGE PASSWORD
     Route::get('/change_password', [ChangePasswordController::class, 'getIndex'])->name('change_password');
-    Route::post('/postChangePassword', [AdminUsersController::class, 'postUpdatePassword'])-> name('postChangePassword');
+    Route::post('/postChangePassword', [AdminUsersController::class, 'postUpdatePassword'])->name('postChangePassword');
     //PRIVILEGES
     Route::get('privileges/create-privileges', [PrivilegesController::class, 'createPrivilegesView'])->name('create-privileges');
     Route::get('privileges/edit-privileges/{id}', [PrivilegesController::class, 'getEdit'])->name('edit-privileges');
     Route::post('/privilege/postAddSave', [PrivilegesController::class, 'postAddSave'])->name('postAddSave');
     Route::post('/privilege/postEditSave', [PrivilegesController::class, 'postEditSave'])->name('postEditSave');
- 
+
     //MODULES
     Route::get('create-modules', [ModulsController::class, 'getAddModuls'])->name('create-modules');
     Route::post('/module_generator/postAddSave', [ModulsController::class, 'postAddSave'])->name('postAddSave');
     Route::get('/tables', [ModulsController::class, 'getTableNames']);
-    
+
     //MENUS
     Route::prefix('menu_management')->group(function () {
         Route::post('/create_menu', [MenusController::class, 'createMenu']);
@@ -95,8 +100,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/set-status-menus', [MenusController::class, 'postStatusSave'])->name('deleteMenus');
     });
 
-      // API GENERATOR
-      Route::prefix('api_generator')->group(function () {
+    // API GENERATOR
+    Route::prefix('api_generator')->group(function () {
         //API Requests
         Route::post('/generate_key', [AdminApiController::class, 'createKey']);
         //API Key Generation
@@ -114,11 +119,11 @@ Route::middleware(['auth'])->group(function () {
         //BULK ACTIONS
         Route::post('/bulk_action', [AdminApiController::class, 'bulkActions']);
     });
-  
+
     //Settings
     Route::post('/settings/postSave', [SettingsController::class, 'postSave'])->name('settings-post-save');
     Route::post('/settings/postDelete', [SettingsController::class, 'postDelete'])->name('settings-post-delete');
-    
+
     //NOTIFICATION
     Route::get('/notifications', [NotificationsController::class, 'getLatestNotif'])->name('latest-notif');
     Route::post('/notifications/read', [NotificationsController::class, 'markAsRead'])->name('notification-read');
@@ -133,17 +138,17 @@ Route::middleware(['auth'])->group(function () {
 });
 
 Route::group([
-    'middleware' => ['auth','check.user'],
+    'middleware' => ['auth', 'check.user'],
     'prefix' => config('adm_url.ADMIN_PATH'),
     'namespace' => 'App\Http\Controllers',
 ], function () {
-   
+
     // Todo: change table
     $modules = [];
     try {
         $modules = DB::table('adm_modules')->whereIn('controller', CommonHelpers::getOthersControllerFiles())->get();
     } catch (\Exception $e) {
-        Log::error("Load adm moduls is failed. Caused = " . $e->getMessage());
+        Log::error('Load adm moduls is failed. Caused = '.$e->getMessage());
     }
 
     foreach ($modules as $v) {
@@ -151,7 +156,7 @@ Route::group([
             try {
                 CommonHelpers::routeOtherController($v->path, $v->controller, 'app\Http\Controllers');
             } catch (\Exception $e) {
-                Log::error("Path = ".$v->path."\nController = ".$v->controller."\nError = ".$e->getMessage());
+                Log::error('Path = '.$v->path."\nController = ".$v->controller."\nError = ".$e->getMessage());
             }
         }
     }
@@ -159,11 +164,11 @@ Route::group([
 
 //ADMIN ROUTE
 Route::group([
-    'middleware' => ['auth','check.user'],
+    'middleware' => ['auth', 'check.user'],
     'prefix' => config('ad_url.ADMIN_PATH'),
     'namespace' => 'App\Http\Controllers\Admin',
 ], function () {
-   
+
     // Todo: change table
     if (request()->is(config('ad_url.ADMIN_PATH'))) {
         $menus = DB::table('adm_menuses')->where('is_dashboard', 1)->first();
@@ -179,7 +184,7 @@ Route::group([
     try {
         $modules = DB::table('adm_modules')->whereIn('controller', CommonHelpers::getMainControllerFiles())->get();
     } catch (\Exception $e) {
-        Log::error("Load ad moduls is failed. Caused = " . $e->getMessage());
+        Log::error('Load ad moduls is failed. Caused = '.$e->getMessage());
     }
 
     foreach ($modules as $v) {
@@ -187,7 +192,7 @@ Route::group([
             try {
                 CommonHelpers::routeController($v->path, $v->controller, 'app\Http\Controllers\Admin');
             } catch (\Exception $e) {
-                Log::error("Path = ".$v->path."\nController = ".$v->controller."\nError = ".$e->getMessage());
+                Log::error('Path = '.$v->path."\nController = ".$v->controller."\nError = ".$e->getMessage());
             }
         }
     }

@@ -23,6 +23,7 @@
         "@vitejs/plugin-react": "^4.3.1",
         "apexcharts": "^3.50.0",
         "dompurify": "^3.2.0",
+        "lightweight-charts": "^4.1.0",
         "lottie-react": "^2.4.1",
         "lucide-react": "^0.508.0",
         "moment": "^2.30.1",
