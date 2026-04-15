@@ -1,0 +1,112 @@
+/* Full-screen modal background */
+#content-area .nprogress-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    /* background-color: #ffffff;  */
+    z-index: 1030;
+    border-radius: 5px;
+}
+
+/* Custom loader container */
+#content-area .nprogress-custom-container {
+    position: absolute;
+    top: 40%;
+    left: 40%;
+    transform: translate(-50%, -50%);
+    z-index: 1031;
+    text-align: center;
+}
+
+/* Adjust left position for mobile view */
+@media (max-width: 768px) {
+    #content-area .nprogress-custom-container {
+        left: 45%; /* Shift left position to 50px for mobile */
+        transform: translate(0, -50%); /* Adjust to avoid the 50% translation on the x-axis */
+    }
+}
+
+/* Circular loader */
+#content-area .nprogress-circle-loader-wrapper {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+}
+
+
+/* Replace circle with 3 dots */
+#content-area .nprogress-circle-loader {
+    display: flex;
+    gap: 8px;
+    width: auto;
+    height: auto;
+}
+
+/* Create 3 dots using pseudo elements */
+#content-area .nprogress-circle-loader::before,
+#content-area .nprogress-circle-loader::after,
+#content-area .nprogress-circle-loader {
+    content: "";
+}
+
+/* First dot (main element) */
+#content-area .nprogress-circle-loader {
+    position: relative;
+    width: 10px;
+    height: 10px;
+    background-color: #134B70;
+    border-radius: 50%;
+    animation: dotBounce 0.6s 0.2s infinite alternate;
+}
+
+/* Second dot */
+#content-area .nprogress-circle-loader::before {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background-color: #5fabbe;
+    border-radius: 50%;
+    left: -18px;
+    animation: dotBounce 0.6s infinite alternate;
+}
+
+/* Third dot */
+#content-area .nprogress-circle-loader::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background-color: #5fabbe;
+    border-radius: 50%;
+    left: 18px;
+    animation: dotBounce 0.6s 0.3s infinite alternate;
+}
+
+@keyframes dotBounce {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(-8px);
+    }
+}
+
+/* Keyframes for spinning animation */
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Optional: Hide the default bar */
+#nprogress .bar {
+    display: none !important;
+}
+
+

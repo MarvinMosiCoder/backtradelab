@@ -1,0 +1,22 @@
+ .preview-container ul, .preview-container ol {
+    margin: 0;          /* Reset any unwanted margins */
+    padding-left: 20px; /* Ensure bullets are indented */
+  }
+  
+  .preview-container li {
+    list-style-position: outside; /* Ensures bullets are outside the text */
+  }
+
+  /* Target the Quill editor area */
+  .ql-editor {
+    background-color: black;
+    color: white; /* Set text color to white for contrast */
+  }
+
+  /* Optional: style blockquotes differently if desired */
+  .ql-editor blockquote {
+    background-color: #333;
+    color: #ccc;
+    padding: 10px;
+    border-left: 4px solid #555;
+  }
