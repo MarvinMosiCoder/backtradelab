@@ -1,30 +1,48 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
 
-const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
+const ReplayBacktester = () => {
     const chartContainerRef = useRef();
     const chartRef = useRef();
     const candleSeriesRef = useRef();
     const volumeSeriesRef = useRef();
-    const markerSeriesRef = useRef();
     
+    const [symbol, setSymbol] = useState('BTCUSDT');
+    const [timeframe, setTimeframe] = useState('1h');
     const [candleData, setCandleData] = useState([]);
     const [volumeData, setVolumeData] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
     
-    const [isReplayMode, setIsReplayMode] = useState(false);
+    const [replayMode, setReplayMode] = useState(false);
     const [replayIndex, setReplayIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [playbackSpeed, setPlaybackSpeed] = useState(1000);
     const [selectedPrice, setSelectedPrice] = useState(null);
-    const [position, setPosition] = useState(null);
-    const [trades, setTrades] = useState([]);
-    const [balance, setBalance] = useState(10000);
-    const [initialBalance] = useState(10000);
+    const [currentLivePrice, setCurrentLivePrice] = useState(null);
     
     const replayIntervalRef = useRef(null);
-    const crosshairLineRef = useRef(null);
+
+    const timeframes = [
+        { value: '1m', label: '1 Minute' },
+        { value: '5m', label: '5 Minutes' },
+        { value: '15m', label: '15 Minutes' },
+        { value: '1h', label: '1 Hour' },
+        { value: '4h', label: '4 Hours' },
+        { value: '1d', label: '1 Day' },
+    ];
+
+    const popularSymbols = [
+        'BTCUSDT',
+        'ETHUSDT',
+        'BNBUSDT',
+        'SOLUSDT',
+        'XRPUSDT',
+        'ADAUSDT',
+        'DOGEUSDT',
+        'MATICUSDT',
+        'LINKUSDT',
+        'AVAXUSDT',
+    ];
 
     useEffect(() => {
         if (!chartContainerRef.current) return;
@@ -33,10 +51,7 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
             width: chartContainerRef.current.clientWidth,
             height: 600,
             layout: {
-                background: {
-                    type: 'solid',
-                    color: '#1a1a2e',
-                },
+                background: { type: 'solid', color: '#1a1a2e' },
                 textColor: '#d1d4dc',
             },
             grid: {
@@ -45,22 +60,25 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
             },
             crosshair: {
                 mode: 1,
-                vertLine: {
-                    visible: true,
-                    labelVisible: true,
-                },
-                horzLine: {
-                    visible: true,
-                    labelVisible: true,
-                },
+                vertLine: { visible: true, labelVisible: true },
+                horzLine: { visible: true, labelVisible: true },
             },
             timeScale: {
                 borderColor: '#2B2B43',
                 timeVisible: true,
                 secondsVisible: false,
+                fixLeftEdge: false,
+                fixRightEdge: false,
+                lockVisibleTimeRangeOnResize: false,
+                rightBarStaysOnScroll: false,
             },
             rightPriceScale: {
                 borderColor: '#2B2B43',
+                autoScale: true,
+                scaleMargins: {
+                    top: 0.1,
+                    bottom: 0.2,
+                },
             },
         });
 
@@ -74,14 +92,9 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
 
         const volumeSeries = chart.addHistogramSeries({
             color: '#26a69a',
-            priceFormat: {
-                type: 'volume',
-            },
+            priceFormat: { type: 'volume' },
             priceScaleId: '',
-            scaleMargins: {
-                top: 0.8,
-                bottom: 0,
-            },
+            scaleMargins: { top: 0.8, bottom: 0 },
         });
 
         candleSeriesRef.current = candleSeries;
@@ -89,11 +102,22 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
         chartRef.current = chart;
 
         chart.subscribeCrosshairMove((param) => {
-            if (param.time && param.point) {
-                const data = candleData.find(d => d.time === param.time);
-                if (data) {
-                    setSelectedPrice(data.close);
-                }
+            if (param.time) {
+                const data = replayMode ? candleData.slice(0, replayIndex + 1) : candleData;
+                const found = data.find(d => d.time === param.time);
+                if (found) setSelectedPrice(found.close);
+            }
+        });
+
+        chart.subscribeClick((param) => {
+            if (!replayMode || !param.time) return;
+            
+            const clickedIndex = candleData.findIndex(d => d.time === param.time);
+            if (clickedIndex !== -1 && clickedIndex < replayIndex) {
+                setReplayIndex(clickedIndex);
+                setIsPlaying(false);
+                const currentCandle = candleData[clickedIndex];
+                setSelectedPrice(currentCandle.close);
             }
         });
 
@@ -109,12 +133,11 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
             window.removeEventListener('resize', handleResize);
             chart.remove();
         };
-    }, []);
+    }, [candleData, replayMode, replayIndex]);
 
     useEffect(() => {
         const fetchKlineData = async () => {
             setLoading(true);
-            setError(null);
             try {
                 const endTime = Date.now();
                 const startTime = endTime - (1000 * 60 * 60 * 24 * 90);
@@ -123,9 +146,7 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
                     `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${timeframe}&startTime=${startTime}&endTime=${endTime}&limit=1000`
                 );
 
-                if (!response.ok) {
-                    throw new Error('Failed to fetch data');
-                }
+                if (!response.ok) throw new Error('Failed to fetch data');
 
                 const data = await response.json();
 
@@ -146,22 +167,22 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
 
                 setCandleData(candleData);
                 setVolumeData(volumeData);
-                setReplayIndex(Math.floor(candleData.length * 0.5));
+                
+                const startIndex = Math.floor(candleData.length * 0.3);
+                setReplayIndex(startIndex);
+                
+                const lastPrice = candleData[candleData.length - 1]?.close;
+                setCurrentLivePrice(lastPrice);
+                setSelectedPrice(lastPrice);
 
                 if (candleSeriesRef.current && volumeSeriesRef.current) {
                     candleSeriesRef.current.setData(candleData);
                     volumeSeriesRef.current.setData(volumeData);
                     
-                    const visibleRange = chartRef.current.timeScale().getVisibleLogicalRange();
-                    if (visibleRange) {
-                        chartRef.current.timeScale().setVisibleRange({
-                            from: visibleRange.from,
-                            to: Math.floor(candleData.length * 0.5),
-                        });
-                    }
+                    chartRef.current.timeScale().fitContent();
                 }
             } catch (err) {
-                setError(err.message);
+                console.error(err);
             } finally {
                 setLoading(false);
             }
@@ -171,31 +192,27 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
     }, [symbol, timeframe]);
 
     useEffect(() => {
-        if (isReplayMode && replayIndex < candleData.length) {
+        if (!chartRef.current || !candleSeriesRef.current || !volumeSeriesRef.current) return;
+        
+        if (replayMode && replayIndex >= 0 && replayIndex < candleData.length) {
             const visibleCandles = candleData.slice(0, replayIndex + 1);
             const visibleVolume = volumeData.slice(0, replayIndex + 1);
             
-            if (candleSeriesRef.current) {
-                candleSeriesRef.current.setData(visibleCandles);
-            }
-            if (volumeSeriesRef.current) {
-                volumeSeriesRef.current.setData(visibleVolume);
-            }
+            candleSeriesRef.current.setData(visibleCandles);
+            volumeSeriesRef.current.setData(visibleVolume);
 
             const currentCandle = candleData[replayIndex];
-            if (currentCandle && crosshairLineRef.current) {
-                chartRef.current.setTimeScale({
-                    visibleRange: {
-                        from: Math.max(0, replayIndex - 50),
-                        to: replayIndex + 10,
-                    },
-                });
+            if (currentCandle) {
+                setSelectedPrice(currentCandle.close);
             }
+        } else if (!replayMode && candleData.length > 0) {
+            candleSeriesRef.current.setData(candleData);
+            volumeSeriesRef.current.setData(volumeData);
         }
-    }, [replayIndex, isReplayMode]);
+    }, [replayIndex, replayMode]);
 
     useEffect(() => {
-        if (isPlaying && isReplayMode && replayIndex < candleData.length - 1) {
+        if (isPlaying && replayMode && replayIndex < candleData.length - 1) {
             replayIntervalRef.current = setInterval(() => {
                 setReplayIndex(prev => {
                     if (prev >= candleData.length - 1) {
@@ -216,12 +233,19 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
                 clearInterval(replayIntervalRef.current);
             }
         };
-    }, [isPlaying, isReplayMode, replayIndex, candleData.length, playbackSpeed]);
+    }, [isPlaying, replayMode, replayIndex, candleData.length, playbackSpeed]);
 
     const toggleReplayMode = () => {
-        setIsReplayMode(!isReplayMode);
-        if (!isReplayMode) {
-            setReplayIndex(Math.floor(candleData.length * 0.3));
+        const newMode = !replayMode;
+        setReplayMode(newMode);
+        setIsPlaying(false);
+        
+        if (newMode) {
+            const startIndex = Math.floor(candleData.length * 0.3);
+            setReplayIndex(startIndex);
+        } else {
+            setReplayIndex(candleData.length - 1);
+            setSelectedPrice(currentLivePrice);
         }
     };
 
@@ -232,111 +256,97 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
     const stepForward = () => {
         if (replayIndex < candleData.length - 1) {
             setReplayIndex(prev => prev + 1);
+            setIsPlaying(false);
         }
     };
 
     const stepBackward = () => {
         if (replayIndex > 0) {
             setReplayIndex(prev => prev - 1);
+            setIsPlaying(false);
         }
     };
 
-    const handleSpeedChange = (speed) => {
-        setPlaybackSpeed(speed);
-    };
-
-    const openPosition = (type) => {
-        if (!isReplayMode || replayIndex >= candleData.length) return;
-        
-        const currentCandle = candleData[replayIndex];
-        const entryPrice = currentCandle.close;
-        const quantity = balance / entryPrice;
-        
-        setPosition({
-            type,
-            entryPrice,
-            quantity,
-            entryIndex: replayIndex,
-            entryTime: currentCandle.time,
-        });
-
-        if (candleSeriesRef.current) {
-            const markers = [];
-            markers.push({
-                time: currentCandle.time,
-                position: type === 'long' ? 'belowBar' : 'aboveBar',
-                color: type === 'long' ? '#26a69a' : '#ef5350',
-                shape: type === 'long' ? 'arrowUp' : 'arrowDown',
-                text: type === 'long' ? 'LONG' : 'SHORT',
-            });
-            candleSeriesRef.current.setMarkers(markers);
-        }
-    };
-
-    const closePosition = () => {
-        if (!position || !isReplayMode || replayIndex >= candleData.length) return;
-        
-        const currentCandle = candleData[replayIndex];
-        const exitPrice = currentCandle.close;
-        
-        let profit = 0;
-        if (position.type === 'long') {
-            profit = (exitPrice - position.entryPrice) * position.quantity;
-        } else {
-            profit = (position.entryPrice - exitPrice) * position.quantity;
-        }
-        
-        const newBalance = balance + profit;
-        setBalance(newBalance);
-        
-        const trade = {
-            type: position.type,
-            entryPrice: position.entryPrice,
-            exitPrice,
-            profit,
-            entryTime: position.entryTime,
-            exitTime: currentCandle.time,
-            entryIndex: position.entryIndex,
-            exitIndex: replayIndex,
-        };
-        
-        setTrades([...trades, trade]);
-        setPosition(null);
-
-        if (candleSeriesRef.current) {
-            const markers = candleSeriesRef.current.markers() || [];
-            markers.push({
-                time: currentCandle.time,
-                position: position.type === 'long' ? 'belowBar' : 'aboveBar',
-                color: profit >= 0 ? '#26a69a' : '#ef5350',
-                shape: 'circle',
-                text: profit >= 0 ? `+$${profit.toFixed(2)}` : `-$${Math.abs(profit).toFixed(2)}`,
-            });
-            candleSeriesRef.current.setMarkers(markers);
-        }
-    };
-
-    const resetBacktest = () => {
+    const resetReplay = () => {
         setIsPlaying(false);
-        setReplayIndex(Math.floor(candleData.length * 0.3));
-        setPosition(null);
-        setTrades([]);
-        setBalance(initialBalance);
-        if (candleSeriesRef.current) {
-            candleSeriesRef.current.setMarkers([]);
+        setReplayMode(false);
+        setReplayIndex(candleData.length - 1);
+        setSelectedPrice(currentLivePrice);
+        
+        if (candleSeriesRef.current && volumeSeriesRef.current) {
+            candleSeriesRef.current.setData(candleData);
+            volumeSeriesRef.current.setData(volumeData);
         }
+        chartRef.current.timeScale().fitContent();
     };
 
-    const totalProfit = trades.reduce((acc, trade) => acc + trade.profit, 0);
-    const winRate = trades.length > 0 ? (trades.filter(t => t.profit > 0).length / trades.length) * 100 : 0;
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-96 bg-gray-900 rounded-lg">
+                <div className="text-white">Loading...</div>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-4">
-            <div className="relative">
-                <div ref={chartContainerRef} className="w-full" />
+            <div className="bg-gray-800 rounded-lg p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Symbol
+                        </label>
+                        <select
+                            value={symbol}
+                            onChange={(e) => setSymbol(e.target.value)}
+                            className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                        >
+                            {popularSymbols.map((sym) => (
+                                <option key={sym} value={sym}>{sym}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
+                            Timeframe
+                        </label>
+                        <select
+                            value={timeframe}
+                            onChange={(e) => setTimeframe(e.target.value)}
+                            className="w-full bg-gray-700 text-white border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                        >
+                            {timeframes.map((tf) => (
+                                <option key={tf.value} value={tf.value}>{tf.label}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="flex items-end">
+                        <div className="text-white">
+                            <div className="text-sm text-gray-400">
+                                {replayMode ? 'Replay Price' : 'Current Price'}
+                            </div>
+                            <div className={`text-2xl font-bold ${
+                                selectedPrice >= (currentLivePrice || 0) ? 'text-green-500' : 'text-red-500'
+                            }`}>
+                                ${selectedPrice?.toFixed(2) || '---'}
+                            </div>
+                            {!replayMode && currentLivePrice && (
+                                <div className="text-xs text-gray-500">
+                                    Live: ${currentLivePrice.toFixed(2)}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="relative bg-gray-900 rounded-lg overflow-hidden" style={{ minHeight: '600px' }}>
+                <div ref={chartContainerRef} className="w-full" style={{ minHeight: '600px' }} />
                 
-                {isReplayMode && (
-                    <div className="absolute top-4 left-4 bg-gray-800 bg-opacity-90 rounded-lg p-4 space-y-3">
+                {replayMode && (
+                    <div className="absolute top-4 left-4 bg-gray-800 bg-opacity-95 rounded-lg p-4 space-y-3 shadow-xl z-10">
                         <div className="flex items-center space-x-2">
                             <button
                                 onClick={stepBackward}
@@ -363,10 +373,18 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
                             </button>
                         </div>
 
-                        <div className="flex items-center space-x-2">
-                            <span className="text-white text-sm">Speed:</span>
+                        <div className="flex items-center space-x-1 flex-wrap gap-1">
+                            <span className="text-white text-xs">Speed:</span>
                             <button
-                                onClick={() => handleSpeedChange(2000)}
+                                onClick={() => setPlaybackSpeed(3000)}
+                                className={`px-2 py-1 rounded text-xs ${
+                                    playbackSpeed === 3000 ? 'bg-blue-600' : 'bg-gray-700'
+                                } text-white`}
+                            >
+                                0.25x
+                            </button>
+                            <button
+                                onClick={() => setPlaybackSpeed(2000)}
                                 className={`px-2 py-1 rounded text-xs ${
                                     playbackSpeed === 2000 ? 'bg-blue-600' : 'bg-gray-700'
                                 } text-white`}
@@ -374,7 +392,7 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
                                 0.5x
                             </button>
                             <button
-                                onClick={() => handleSpeedChange(1000)}
+                                onClick={() => setPlaybackSpeed(1000)}
                                 className={`px-2 py-1 rounded text-xs ${
                                     playbackSpeed === 1000 ? 'bg-blue-600' : 'bg-gray-700'
                                 } text-white`}
@@ -382,7 +400,7 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
                                 1x
                             </button>
                             <button
-                                onClick={() => handleSpeedChange(500)}
+                                onClick={() => setPlaybackSpeed(500)}
                                 className={`px-2 py-1 rounded text-xs ${
                                     playbackSpeed === 500 ? 'bg-blue-600' : 'bg-gray-700'
                                 } text-white`}
@@ -390,155 +408,74 @@ const ReplayBacktester = ({ symbol = 'BTCUSDT', timeframe = '1h' }) => {
                                 2x
                             </button>
                             <button
-                                onClick={() => handleSpeedChange(250)}
+                                onClick={() => setPlaybackSpeed(250)}
                                 className={`px-2 py-1 rounded text-xs ${
                                     playbackSpeed === 250 ? 'bg-blue-600' : 'bg-gray-700'
                                 } text-white`}
                             >
                                 4x
                             </button>
+                            <button
+                                onClick={() => setPlaybackSpeed(100)}
+                                className={`px-2 py-1 rounded text-xs ${
+                                    playbackSpeed === 100 ? 'bg-blue-600' : 'bg-gray-700'
+                                } text-white`}
+                            >
+                                10x
+                            </button>
                         </div>
 
-                        <div className="text-white text-sm">
+                        <div className="text-white text-xs">
                             <div>Candle: {replayIndex + 1} / {candleData.length}</div>
                             <div>Progress: {Math.round(((replayIndex + 1) / candleData.length) * 100)}%</div>
                         </div>
 
-                        <div className="border-t border-gray-600 pt-3 space-y-2">
-                            {!position ? (
-                                <div className="flex space-x-2">
-                                    <button
-                                        onClick={() => openPosition('long')}
-                                        disabled={!isReplayMode}
-                                        className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white py-2 px-3 rounded-lg text-sm font-bold"
-                                    >
-                                        LONG
-                                    </button>
-                                    <button
-                                        onClick={() => openPosition('short')}
-                                        disabled={!isReplayMode}
-                                        className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white py-2 px-3 rounded-lg text-sm font-bold"
-                                    >
-                                        SHORT
-                                    </button>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={closePosition}
-                                    className="w-full bg-yellow-600 hover:bg-yellow-700 text-white py-2 px-3 rounded-lg text-sm font-bold"
-                                >
-                                    CLOSE ({position.type.toUpperCase()})
-                                </button>
-                            )}
-                        </div>
-
                         <button
-                            onClick={resetBacktest}
-                            className="w-full bg-gray-600 hover:bg-gray-500 text-white py-2 px-3 rounded-lg text-sm"
+                            onClick={resetReplay}
+                            className="w-full bg-red-600 hover:bg-red-500 text-white py-2 px-3 rounded-lg text-sm font-bold"
                         >
-                            Reset
+                            Exit Replay
                         </button>
                     </div>
                 )}
 
-                {loading && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75">
-                        <div className="text-white">Loading...</div>
-                    </div>
-                )}
-                {error && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75">
-                        <div className="text-red-500">Error: {error}</div>
-                    </div>
-                )}
-            </div>
-
-            <div className="flex items-center justify-between bg-gray-800 rounded-lg p-4">
-                <div className="flex items-center space-x-4">
-                    <button
-                        onClick={toggleReplayMode}
-                        className={`px-6 py-3 rounded-lg font-bold text-white ${
-                            isReplayMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 hover:bg-gray-600'
-                        }`}
-                    >
-                        <i className="fa fa-history mr-2"></i>
-                        {isReplayMode ? 'Replay Mode: ON' : 'Replay Mode: OFF'}
-                    </button>
-
-                    <div className="text-white">
-                        <span className="text-gray-400">Balance: </span>
-                        <span className={`font-bold ${balance >= initialBalance ? 'text-green-500' : 'text-red-500'}`}>
-                            ${balance.toFixed(2)}
-                        </span>
-                    </div>
-
-                    <div className="text-white">
-                        <span className="text-gray-400">P/L: </span>
-                        <span className={`font-bold ${totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            {totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(2)}
-                        </span>
-                    </div>
-
-                    <div className="text-white">
-                        <span className="text-gray-400">Trades: </span>
-                        <span className="font-bold">{trades.length}</span>
-                    </div>
-
-                    <div className="text-white">
-                        <span className="text-gray-400">Win Rate: </span>
-                        <span className="font-bold">{winRate.toFixed(1)}%</span>
+                <div className="absolute top-4 right-4 bg-gray-800 bg-opacity-95 rounded-lg p-3 shadow-xl z-10">
+                    <div className="text-white text-center">
+                        {replayMode ? (
+                            <>
+                                <div className="text-gray-400 text-xs mb-1">Replay From</div>
+                                <div className="font-bold text-lg">
+                                    ${candleData[replayIndex]?.close.toFixed(2) || '---'}
+                                </div>
+                                <div className="text-xs text-blue-400 mt-1">
+                                    Click chart to move
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <div className="text-gray-400 text-xs">Live Price</div>
+                                <div className="font-bold text-lg text-green-500">
+                                    ${candleData[candleData.length - 1]?.close.toFixed(2) || '---'}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
-
-                {position && (
-                    <div className="text-white">
-                        <span className="text-gray-400">Open Position: </span>
-                        <span className={`font-bold ${position.type === 'long' ? 'text-green-500' : 'text-red-500'}`}>
-                            {position.type.toUpperCase()} @ ${position.entryPrice.toFixed(2)}
-                        </span>
-                    </div>
-                )}
             </div>
 
-            {trades.length > 0 && (
-                <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-xl font-bold text-white mb-4">Trade History</h3>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="border-b border-gray-700">
-                                    <th className="py-3 px-4 text-gray-400">#</th>
-                                    <th className="py-3 px-4 text-gray-400">Type</th>
-                                    <th className="py-3 px-4 text-gray-400">Entry</th>
-                                    <th className="py-3 px-4 text-gray-400">Exit</th>
-                                    <th className="py-3 px-4 text-gray-400">P/L</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {trades.map((trade, index) => (
-                                    <tr key={index} className="border-b border-gray-700 hover:bg-gray-700">
-                                        <td className="py-3 px-4 text-white">{index + 1}</td>
-                                        <td className="py-3 px-4">
-                                            <span className={`px-2 py-1 rounded text-xs ${
-                                                trade.type === 'long' ? 'bg-green-600' : 'bg-red-600'
-                                            } text-white`}>
-                                                {trade.type.toUpperCase()}
-                                            </span>
-                                        </td>
-                                        <td className="py-3 px-4 text-white">${trade.entryPrice.toFixed(2)}</td>
-                                        <td className="py-3 px-4 text-white">${trade.exitPrice.toFixed(2)}</td>
-                                        <td className={`py-3 px-4 font-bold ${
-                                            trade.profit >= 0 ? 'text-green-500' : 'text-red-500'
-                                        }`}>
-                                            {trade.profit >= 0 ? '+' : ''}${trade.profit.toFixed(2)}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            )}
+            <div className="bg-gray-800 rounded-lg p-4">
+                <button
+                    onClick={toggleReplayMode}
+                    className={`w-full py-4 rounded-lg font-bold text-lg transition-all ${
+                        replayMode
+                            ? 'bg-red-600 hover:bg-red-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                >
+                    <i className={`fa mr-2 ${replayMode ? 'fa-stop' : 'fa-history'}`}></i>
+                    {replayMode ? 'Exit Replay Mode' : '📼 Replay - Click Chart to Select Starting Point'}
+                </button>
+            </div>
         </div>
     );
 };

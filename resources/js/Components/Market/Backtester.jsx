@@ -34,6 +34,10 @@ const Backtester = () => {
         'SOLUSDT',
         'XRPUSDT',
         'ADAUSDT',
+        'DOGEUSDT',
+        'MATICUSDT',
+        'LINKUSDT',
+        'AVAXUSDT',
     ];
 
     const fetchKlineData = async () => {
