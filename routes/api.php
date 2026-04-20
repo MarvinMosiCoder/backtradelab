@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\MenusController;
 use App\Http\Controllers\Admin\AdminUsersController;
+use App\Http\Controllers\MarketDataController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -17,7 +18,7 @@ use App\Http\Controllers\Admin\AdminUsersController;
 Route::apiResource('getSidebar', AdminUsersController::class);
 
 Route::apiResource('postAddSave', AdminUsersController::class);
-
+Route::get('/klines', [MarketDataController::class, 'klines']);
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
