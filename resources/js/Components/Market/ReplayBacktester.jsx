@@ -237,27 +237,11 @@ export default function ReplayBacktester() {
           throw new Error(result.message || 'Proxy request failed');
         }
 
-        const json = result.data;
+        const candles = Array.isArray(result.candles) ? result.candles : [];
 
-        if (json.retCode !== 0) {
-          throw new Error(json.retMsg || 'Bybit API error');
-        }
-
-        const rows = Array.isArray(json?.result?.list) ? [...json.result.list] : [];
-        if (!rows.length) {
+        if (!candles.length) {
           throw new Error('No candle data returned');
         }
-
-        rows.reverse();
-
-        const candles = rows.map((item) => ({
-          time: Number(item[0]) / 1000,
-          open: Number(item[1]),
-          high: Number(item[2]),
-          low: Number(item[3]),
-          close: Number(item[4]),
-          volume: Number(item[5]),
-        }));
 
         const startIndex = Math.max(0, Math.floor(candles.length * 0.3));
         const lastClose = candles[candles.length - 1]?.close ?? null;
