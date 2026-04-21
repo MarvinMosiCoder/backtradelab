@@ -12,7 +12,15 @@ class MarketDataController extends Controller
         $symbol = strtoupper($request->query('symbol', 'BTCUSDT'));
         $interval = $request->query('interval', '60');
         $category = $request->query('category', 'spot');
-        $limit = max(1, min((int) $request->query('limit', 500), 1000));
+
+        // per-request chunk size for Bybit
+        $chunkLimit = max(1, min((int) $request->query('limit', 1000), 1000));
+
+        // total candles you want to return to frontend
+        $maxCandles = max(1, min((int) $request->query('max_candles', 5000), 20000));
+
+        $start = $request->query('start'); // ms timestamp
+        $end = $request->query('end');     // ms timestamp
 
         $allowedCategories = ['spot', 'linear', 'inverse'];
         $allowedIntervals = ['1', '3', '5', '15', '30', '60', '120', '240', '360', '720', 'D', 'W', 'M'];
@@ -32,68 +40,119 @@ class MarketDataController extends Controller
         }
 
         try {
-            $response = Http::withOptions([
-                'verify' => false, // local only
-            ])
-                ->withHeaders([
-                    'User-Agent' => 'Mozilla/5.0',
-                    'Accept' => '*/*',
-                ])
-                ->timeout(15)
-                ->get('https://api.bybit.com/v5/market/kline', [
+            $allRows = [];
+            $seen = [];
+
+            // if no end passed, use "now"
+            $currentEnd = $end ? (int) $end : (int) floor(microtime(true) * 1000);
+
+            // hard loop guard
+            $maxRequests = 30;
+            $requests = 0;
+
+            while (count($allRows) < $maxCandles && $requests < $maxRequests) {
+                $query = [
                     'category' => $category,
-                    'symbol' => $symbol,
+                    'symbol'   => $symbol,
                     'interval' => $interval,
-                    'limit' => $limit,
-                ]);
+                    'limit'    => $chunkLimit,
+                    'end'      => $currentEnd,
+                ];
 
-            if (!$response->successful()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Failed to fetch market data',
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ], $response->status());
+                if ($start) {
+                    $query['start'] = (int) $start;
+                }
+
+                $response = Http::withOptions([
+                    'verify' => false, // local only
+                ])
+                    ->withHeaders([
+                        'User-Agent' => 'Mozilla/5.0',
+                        'Accept' => '*/*',
+                    ])
+                    ->timeout(20)
+                    ->get('https://api.bybit.com/v5/market/kline', $query);
+
+                if (!$response->successful()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to fetch market data',
+                        'status' => $response->status(),
+                        'body' => $response->body(),
+                    ], $response->status());
+                }
+
+                $json = $response->json();
+
+                if (!is_array($json) || ($json['retCode'] ?? null) !== 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $json['retMsg'] ?? 'Bybit API error',
+                        'data' => $json,
+                    ], 400);
+                }
+
+                $rows = $json['result']['list'] ?? [];
+
+                if (!is_array($rows) || empty($rows)) {
+                    break;
+                }
+
+                // Bybit returns newest first
+                foreach ($rows as $row) {
+                    $ts = (int) ($row[0] ?? 0);
+                    if ($ts <= 0) {
+                        continue;
+                    }
+
+                    if (isset($seen[$ts])) {
+                        continue;
+                    }
+
+                    $seen[$ts] = true;
+                    $allRows[] = $row;
+                }
+
+                // move further back in time using oldest candle from this batch
+                $oldestTs = (int) end($rows)[0];
+                $nextEnd = $oldestTs - 1;
+
+                if ($start && $nextEnd < (int) $start) {
+                    break;
+                }
+
+                if ($nextEnd >= $currentEnd) {
+                    break;
+                }
+
+                $currentEnd = $nextEnd;
+                $requests++;
             }
 
-            $json = $response->json();
+            // sort oldest -> newest
+            usort($allRows, function ($a, $b) {
+                return (int)$a[0] <=> (int)$b[0];
+            });
 
-            if (!is_array($json)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid response from Bybit',
-                ], 500);
+            // trim to latest maxCandles if needed
+            if (count($allRows) > $maxCandles) {
+                $allRows = array_slice($allRows, -$maxCandles);
             }
-
-            if (($json['retCode'] ?? null) !== 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $json['retMsg'] ?? 'Bybit API error',
-                    'data' => $json,
-                ], 400);
-            }
-
-            $rows = $json['result']['list'] ?? [];
-
-            if (!is_array($rows)) {
-                $rows = [];
-            }
-
-            $rows = array_reverse($rows);
 
             $candles = array_map(function ($item) {
                 return [
-                    'time' => ((int) $item[0]) / 1000,
-                    'open' => (float) $item[1],
-                    'high' => (float) $item[2],
-                    'low' => (float) $item[3],
-                    'close' => (float) $item[4],
+                    'time'   => ((int) $item[0]) / 1000,
+                    'open'   => (float) $item[1],
+                    'high'   => (float) $item[2],
+                    'low'    => (float) $item[3],
+                    'close'  => (float) $item[4],
                     'volume' => (float) $item[5],
                 ];
-            }, $rows);
+            }, $allRows);
 
             return response()->json([
                 'success' => true,
+                'count' => count($candles),
                 'candles' => $candles,
             ]);
         } catch (\Throwable $e) {

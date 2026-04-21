@@ -1,6 +1,6 @@
 import React from 'react';
 import { Head } from '@inertiajs/react';
-import ReplayBacktester from '../../Components/Market/ReplayBacktester';
+import TradingViewChart from '../../Components/Market/TradingViewChart';
 import ContentPanel from '../../Components/Table/ContentPanel';
 
 const Market = () => {
@@ -21,7 +21,7 @@ const Market = () => {
 
                 <ContentPanel marginBottom={2}>
                     <div className="p-4">
-                        <ReplayBacktester />
+                        <TradingViewChart />
                     </div>
                 </ContentPanel>
             </div>
