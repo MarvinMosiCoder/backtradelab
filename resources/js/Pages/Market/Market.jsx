@@ -20,7 +20,7 @@ const Market = () => {
                 </ContentPanel>
 
                 <ContentPanel marginBottom={2}>
-                    <div className="p-4">
+                    <div className="p-4" style={{ height: '200vh' }}>
                         <TradingViewChart />
                     </div>
                 </ContentPanel>

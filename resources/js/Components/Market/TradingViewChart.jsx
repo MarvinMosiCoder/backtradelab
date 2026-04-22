@@ -52,7 +52,7 @@ const POPULAR_SYMBOLS = [
   'AVAXUSDT',
 ];
 
-const CHART_HEIGHT = 520;
+const CHART_HEIGHT = 800;
 const DRAWING_COLOR = '#60a5fa';
 const DRAWING_FILL = 'rgba(96, 165, 250, 0.16)';
 
@@ -208,13 +208,13 @@ export default function TradingViewReplayChart({
   const replayTimerRef = useRef(null);
   const isProgrammaticRangeChangeRef = useRef(false);
   const selectedPriceLineRef = useRef(null);
-  const isDraggingReplayPriceRef = useRef(false);
   const isSpacePressedRef = useRef(false);
   const toolRef = useRef(null);
   const tempDrawingRef = useRef(null);
   const drawingsRef = useRef([]);
   const selectedDrawingIdRef = useRef(null);
   const dragDrawingRef = useRef(null);
+  const isReplayPricePickActiveRef = useRef(false);
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [timeframe, setTimeframe] = useState(initialTimeframe);
@@ -231,6 +231,7 @@ export default function TradingViewReplayChart({
 
   const [selectedReplayPrice, setSelectedReplayPrice] = useState(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
 
   const [tool, setTool] = useState(null); // 'line' | 'rect' | 'text' | null
   const [drawings, setDrawings] = useState([]);
@@ -278,6 +279,10 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     selectedDrawingIdRef.current = selectedDrawingId;
   }, [selectedDrawingId]);
+
+  useEffect(() => {
+    isReplayPricePickActiveRef.current = isReplayPricePickActive;
+  }, [isReplayPricePickActive]);
 
   useEffect(() => {
     if (!wrapperRef.current) return;
@@ -429,7 +434,7 @@ export default function TradingViewReplayChart({
 
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth || 800,
-      height: CHART_HEIGHT,
+      height: containerRef.current.clientHeight || 0,
       layout: {
         background: { color: '#081631' },
         textColor: '#d1d4dc',
@@ -491,11 +496,14 @@ export default function TradingViewReplayChart({
 
     const handleChartClick = (param) => {
       if (!replayMode) return;
+      if (!isReplayPricePickActiveRef.current) return;
       if (isSpacePressedRef.current) return;
       if (toolRef.current) return;
       if (dragDrawingRef.current) return;
       if (!param?.point) return;
+
       setReplayPointFromCoordinates(param.point.x, param.point.y, true);
+      setIsReplayPricePickActive(false);
     };
 
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
@@ -509,6 +517,7 @@ export default function TradingViewReplayChart({
       if (!containerRef.current || !chartRef.current) return;
       chartRef.current.applyOptions({
         width: containerRef.current.clientWidth,
+        height: containerRef.current.clientHeight || CHART_HEIGHT,
       });
     });
 
@@ -584,10 +593,10 @@ export default function TradingViewReplayChart({
     if (!chart) return;
 
     chart.applyOptions({
-      handleScroll: isSpacePressed || !replayMode,
-      handleScale: isSpacePressed || !replayMode,
+      handleScroll: isSpacePressed || !replayMode || !tool,
+      handleScale: isSpacePressed || !replayMode || !tool,
     });
-  }, [isSpacePressed, replayMode]);
+  }, [isSpacePressed, replayMode, tool]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -671,6 +680,7 @@ export default function TradingViewReplayChart({
         setTempDrawing(null);
         setTool(null);
         setTextInput(null);
+        setIsReplayPricePickActive(false);
       }
     };
 
@@ -678,7 +688,6 @@ export default function TradingViewReplayChart({
       if (event.code === 'Space') {
         event.preventDefault();
         setIsSpacePressed(false);
-        isDraggingReplayPriceRef.current = false;
         dragDrawingRef.current = null;
       }
     };
@@ -707,7 +716,6 @@ export default function TradingViewReplayChart({
     const handleMouseDown = (event) => {
       if (!replayMode) return;
       if (isSpacePressedRef.current) {
-        isDraggingReplayPriceRef.current = false;
         dragDrawingRef.current = null;
         return;
       }
@@ -779,8 +787,7 @@ export default function TradingViewReplayChart({
 
       setSelectedDrawingId(null);
       dragDrawingRef.current = null;
-      isDraggingReplayPriceRef.current = true;
-      setReplayPointFromCoordinates(x, y, true);
+      // no replay-price auto-drag here; native chart behavior stays active
     };
 
     const handleMouseMove = (event) => {
@@ -812,17 +819,10 @@ export default function TradingViewReplayChart({
         const next = drawingsRef.current.map((d) => (d.id === drawingId ? moved : d));
         setDrawings(next);
         drawingsRef.current = next;
-        return;
-      }
-
-      if (isDraggingReplayPriceRef.current) {
-        setReplayPointFromCoordinates(x, y, true);
       }
     };
 
     const handleMouseUp = () => {
-      isDraggingReplayPriceRef.current = false;
-
       if (dragDrawingRef.current) {
         saveDrawings(drawingsRef.current);
         dragDrawingRef.current = null;
@@ -838,7 +838,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [appendDrawing, getChartCoordinates, hitTestDrawing, replayMode, saveDrawings, setReplayPointFromCoordinates]);
+  }, [appendDrawing, getChartCoordinates, hitTestDrawing, replayMode, saveDrawings]);
 
   useEffect(() => {
     async function fetchKlines() {
@@ -852,6 +852,7 @@ export default function TradingViewReplayChart({
       setTempDrawing(null);
       setTool(null);
       setTextInput(null);
+      setIsReplayPricePickActive(false);
 
       try {
         const interval = INTERVAL_MAP[timeframe];
@@ -918,6 +919,7 @@ export default function TradingViewReplayChart({
       setFollowReplay(true);
       setReplayIndex(startIndex);
       setSelectedReplayPrice(allCandles[startIndex]?.close ?? null);
+      setIsReplayPricePickActive(false);
       return;
     }
 
@@ -928,6 +930,7 @@ export default function TradingViewReplayChart({
     setTool(null);
     setTempDrawing(null);
     setTextInput(null);
+    setIsReplayPricePickActive(false);
   };
 
   const stepBackward = () => {
@@ -965,6 +968,7 @@ export default function TradingViewReplayChart({
     setTool(null);
     setTempDrawing(null);
     setTextInput(null);
+    setIsReplayPricePickActive(false);
   };
 
   const handleFollowReplay = () => {
@@ -1102,6 +1106,17 @@ export default function TradingViewReplayChart({
               {followReplay ? 'Following' : 'Follow Replay'}
             </button>
 
+            <button
+              onClick={() => setIsReplayPricePickActive((prev) => !prev)}
+              className={`rounded-lg px-3 py-2 text-white ${
+                isReplayPricePickActive
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-gray-700 hover:bg-gray-600'
+              }`}
+            >
+              {isReplayPricePickActive ? 'Click Chart to Set Price' : 'Set Replay Price'}
+            </button>
+
             <div className="ml-4 flex flex-wrap items-center gap-1">
               <span className="text-xs text-white">Speed:</span>
               {[
@@ -1111,6 +1126,7 @@ export default function TradingViewReplayChart({
                 { label: '2x', value: 500 },
                 { label: '4x', value: 250 },
                 { label: '10x', value: 100 },
+                { label: '20x', value: 50 },
               ].map((speed) => (
                 <button
                   key={speed.value}
@@ -1135,6 +1151,7 @@ export default function TradingViewReplayChart({
                 setTool((prev) => prev === 'line' ? null : 'line');
                 setTempDrawing(null);
                 setTextInput(null);
+                setIsReplayPricePickActive(false);
               }}
               className={`rounded-lg px-3 py-2 text-white ${tool === 'line' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
             >
@@ -1146,6 +1163,7 @@ export default function TradingViewReplayChart({
                 setTool((prev) => prev === 'rect' ? null : 'rect');
                 setTempDrawing(null);
                 setTextInput(null);
+                setIsReplayPricePickActive(false);
               }}
               className={`rounded-lg px-3 py-2 text-white ${tool === 'rect' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
             >
@@ -1157,6 +1175,7 @@ export default function TradingViewReplayChart({
                 setTool((prev) => prev === 'text' ? null : 'text');
                 setTempDrawing(null);
                 setTextInput(null);
+                setIsReplayPricePickActive(false);
               }}
               className={`rounded-lg px-3 py-2 text-white ${tool === 'text' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
             >
@@ -1189,7 +1208,7 @@ export default function TradingViewReplayChart({
           </div>
 
           <div className="text-xs text-gray-400">
-            Hold Space to pan. Release Space to interact. With no tool selected, click or drag to move replay. Drawings can be selected and dragged.
+            Default chart mouse behavior is preserved. Use “Set Replay Price” to arm the next chart click for price selection. Drawings can be selected and dragged. Hold Space to pan if you want, but normal chart drag/pan remains available when no drawing tool is active.
           </div>
         </div>
       )}
@@ -1212,7 +1231,15 @@ export default function TradingViewReplayChart({
         style={{
           height: `${CHART_HEIGHT}px`,
           cursor: replayMode
-            ? (isSpacePressed ? 'grab' : tool ? 'crosshair' : 'default')
+            ? (
+                isSpacePressed
+                  ? 'grab'
+                  : tool
+                    ? 'crosshair'
+                    : isReplayPricePickActive
+                      ? 'crosshair'
+                      : 'default'
+              )
             : 'default',
         }}
       >
