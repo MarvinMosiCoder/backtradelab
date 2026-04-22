@@ -52,7 +52,7 @@ const POPULAR_SYMBOLS = [
   'AVAXUSDT',
 ];
 
-const CHART_HEIGHT = 800;
+const CHART_HEIGHT = 780;
 const DRAWING_COLOR = '#60a5fa';
 const DRAWING_FILL = 'rgba(96, 165, 250, 0.16)';
 
