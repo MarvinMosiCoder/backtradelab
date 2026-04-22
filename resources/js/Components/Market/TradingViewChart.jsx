@@ -1216,10 +1216,10 @@ export default function TradingViewReplayChart({
             : 'default',
         }}
       >
-        <div ref={containerRef} className="absolute inset-0" />
+        <div ref={containerRef} className="absolute inset-0 z-0" />
 
         <svg
-          className="pointer-events-none absolute inset-0"
+          className="pointer-events-none absolute inset-0 z-10"
           width={overlaySize.width}
           height={overlaySize.height}
           style={{ width: '100%', height: '100%' }}
