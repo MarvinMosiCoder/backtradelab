@@ -1,6 +1,7 @@
 import React from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL } from './constants';
-import { normalizeRect } from './utils';
+import { colorToRgba, normalizeVisibleRect } from './utils';
 
 function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
   const selectedDrawing = renderedDrawings.find((d) => d.id === selectedDrawingId);
@@ -38,7 +39,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
       >
         {renderedDrawings.map((d) => {
           const isSelected = d.id === selectedDrawingId;
-          const stroke = isSelected ? '#fbbf24' : DRAWING_COLOR;
+          const drawingColor = d.color ?? DRAWING_COLOR;
+          const stroke = isSelected ? '#fbbf24' : drawingColor;
           const strokeWidth = d.id.startsWith('temp-')
             ? 2
             : Math.max(d.strokeWidth ?? 2, isSelected ? 3 : 1);
@@ -59,15 +61,19 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
           }
 
           if (d.type === 'rect') {
-            const rect = normalizeRect(d.screen.p1, d.screen.p2);
+            const rect = normalizeVisibleRect(d.screen.p1, d.screen.p2);
             return (
               <rect
                 key={d.id}
                 x={rect.left}
                 y={rect.top}
-                width={Math.max(rect.width, 1)}
-                height={Math.max(rect.height, 1)}
-                fill={d.id.startsWith('temp-') ? 'rgba(96, 165, 250, 0.08)' : DRAWING_FILL}
+                width={rect.width}
+                height={rect.height}
+                fill={
+                  d.id.startsWith('temp-')
+                    ? colorToRgba(drawingColor, 0.08)
+                    : colorToRgba(drawingColor, 0.16) || DRAWING_FILL
+                }
                 stroke={stroke}
                 strokeWidth={strokeWidth}
                 strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
@@ -111,7 +117,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
               <div
                 className="rounded border px-2 py-1 text-xs text-white shadow-lg"
                 style={{
-                  borderColor: isSelected ? '#fbbf24' : DRAWING_COLOR,
+                  borderColor: isSelected ? '#fbbf24' : d.color ?? DRAWING_COLOR,
+                  color: d.color ?? '#ffffff',
                   background: 'rgba(15, 23, 42, 0.9)',
                 }}
               >
@@ -175,6 +182,7 @@ function TextInputPopover({
 export default function ChartStage({
   wrapperRef,
   containerRef,
+  isFullscreen,
   replayMode,
   isSpacePressed,
   isReplayPricePickActive,
@@ -187,13 +195,16 @@ export default function ChartStage({
   onTextDraftChange,
   onSaveText,
   onCancelText,
+  onToggleFullscreen,
 }) {
   return (
     <div
       ref={wrapperRef}
-      className="relative overflow-hidden rounded-lg bg-[#081631]"
+      className={`relative min-h-0 overflow-hidden rounded-lg bg-[#081631] ${
+        isFullscreen ? 'flex-1' : ''
+      }`}
       style={{
-        height: `${CHART_HEIGHT}px`,
+        height: isFullscreen ? '100%' : `${CHART_HEIGHT}px`,
         cursor: replayMode
           ? (
               isSpacePressed
@@ -208,6 +219,16 @@ export default function ChartStage({
       }}
     >
       <div ref={containerRef} className="absolute inset-0 z-0" />
+
+      <button
+        type="button"
+        onClick={onToggleFullscreen}
+        className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded border border-slate-600 bg-slate-900/90 text-white shadow-lg hover:bg-slate-800"
+        title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+      >
+        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+      </button>
 
       <DrawingOverlay
         renderedDrawings={renderedDrawings}

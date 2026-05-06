@@ -54,7 +54,16 @@ export const PLAYBACK_SPEEDS = [
 ];
 
 export const DRAWING_WIDTHS = [1, 2, 3, 4, 6, 8];
+export const DRAWING_COLORS = [
+  '#60a5fa',
+  '#fbbf24',
+  '#34d399',
+  '#fb7185',
+  '#a78bfa',
+  '#f97316',
+  '#f8fafc',
+];
 
-export const CHART_HEIGHT = 780;
+export const CHART_HEIGHT = 720;
 export const DRAWING_COLOR = '#60a5fa';
 export const DRAWING_FILL = 'rgba(96, 165, 250, 0.16)';

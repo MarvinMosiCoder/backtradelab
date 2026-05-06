@@ -9,13 +9,16 @@ import {
 import ChartHeader from './TradingViewChart/ChartHeader';
 import ChartStage from './TradingViewChart/ChartStage';
 import ReplayPanel from './TradingViewChart/ReplayPanel';
-import { CHART_HEIGHT, INTERVAL_MAP } from './TradingViewChart/constants';
+import { CHART_HEIGHT, DRAWING_COLOR, INTERVAL_MAP, TIMEFRAMES } from './TradingViewChart/constants';
 import {
+  buildLegacyStorageKey,
   buildStorageKey,
   distanceToSegment,
+  estimateLogicalFromTime,
+  estimateTimeFromLogical,
   findNearestCandleIndex,
   normalizeApiCandles,
-  normalizeRect,
+  normalizeVisibleRect,
   offsetDrawing,
 } from './TradingViewChart/utils';
 
@@ -24,6 +27,7 @@ export default function TradingViewReplayChart({
   initialTimeframe = '15m',
 }) {
   const wrapperRef = useRef(null);
+  const fullscreenRef = useRef(null);
   const containerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
@@ -34,6 +38,7 @@ export default function TradingViewReplayChart({
   const selectedPriceLineRef = useRef(null);
   const isSpacePressedRef = useRef(false);
   const toolRef = useRef(null);
+  const drawingColorRef = useRef(DRAWING_COLOR);
   const tempDrawingRef = useRef(null);
   const drawingsRef = useRef([]);
   const selectedDrawingIdRef = useRef(null);
@@ -58,8 +63,10 @@ export default function TradingViewReplayChart({
   const [selectedReplayPrice, setSelectedReplayPrice] = useState(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [tool, setTool] = useState(null); // 'line' | 'rect' | 'text' | null
+  const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
   const [drawings, setDrawings] = useState([]);
   const [tempDrawing, setTempDrawing] = useState(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState(null);
@@ -109,6 +116,10 @@ export default function TradingViewReplayChart({
   }, [tool]);
 
   useEffect(() => {
+    drawingColorRef.current = drawingColor;
+  }, [drawingColor]);
+
+  useEffect(() => {
     tempDrawingRef.current = tempDrawing;
   }, [tempDrawing]);
 
@@ -123,6 +134,19 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     isReplayPricePickActiveRef.current = isReplayPricePickActive;
   }, [isReplayPricePickActive]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === fullscreenRef.current);
+      scheduleOverlayRender();
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, [scheduleOverlayRender]);
 
   useEffect(() => {
     if (!wrapperRef.current) return;
@@ -148,9 +172,9 @@ export default function TradingViewReplayChart({
     setDrawings(nextDrawings);
     drawingsRef.current = nextDrawings;
     try {
-      localStorage.setItem(buildStorageKey(symbol, timeframe), JSON.stringify(nextDrawings));
+      localStorage.setItem(buildStorageKey(symbol), JSON.stringify(nextDrawings));
     } catch {}
-  }, [symbol, timeframe]);
+  }, [symbol]);
 
   const appendDrawing = useCallback((drawing) => {
     const next = [...drawingsRef.current, drawing];
@@ -158,36 +182,89 @@ export default function TradingViewReplayChart({
     setSelectedDrawingId(drawing.id);
   }, [saveDrawings]);
 
+  const loadStoredDrawings = useCallback(() => {
+    const drawingMap = new Map();
+
+    const addStoredDrawings = (raw) => {
+      if (!raw) return;
+
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+
+      parsed.forEach((drawing) => {
+        if (!drawing?.id) return;
+        if (!drawingMap.has(drawing.id)) {
+          drawingMap.set(drawing.id, drawing);
+        }
+      });
+    };
+
+    const sharedKey = buildStorageKey(symbol);
+    addStoredDrawings(localStorage.getItem(sharedKey));
+
+    TIMEFRAMES.forEach(({ value }) => {
+      addStoredDrawings(localStorage.getItem(buildLegacyStorageKey(symbol, value)));
+    });
+
+    const storedDrawings = Array.from(drawingMap.values());
+
+    if (storedDrawings.length) {
+      localStorage.setItem(sharedKey, JSON.stringify(storedDrawings));
+    }
+
+    return storedDrawings;
+  }, [symbol]);
+
   const getChartCoordinates = useCallback((x, y) => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series || !allCandles.length) return null;
 
+    const logical = chart.timeScale().coordinateToLogical(x);
     const rawTime = chart.timeScale().coordinateToTime(x);
     const rawPrice = series.coordinateToPrice(y);
 
-    if (rawTime == null || rawPrice == null) return null;
+    if (logical == null || rawPrice == null) return null;
 
-    const nearestIndex = findNearestCandleIndex(allCandles, rawTime);
-    if (nearestIndex < 0) return null;
+    const estimatedTime = estimateTimeFromLogical(allCandles, Number(logical));
+    const nearestIndex =
+      rawTime == null
+        ? Math.min(Math.max(Math.round(logical), 0), allCandles.length - 1)
+        : findNearestCandleIndex(allCandles, rawTime);
+
+    if (nearestIndex < 0 || !allCandles[nearestIndex]) return null;
 
     return {
-      time: allCandles[nearestIndex].time,
+      time: Number.isFinite(estimatedTime) ? estimatedTime : allCandles[nearestIndex].time,
+      logical: Number(logical),
       price: Number(rawPrice),
     };
   }, [allCandles]);
 
-  const toScreen = useCallback((time, price) => {
+  const toScreen = useCallback((pointOrTime, price) => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return null;
 
-    const x = chart.timeScale().timeToCoordinate(time);
-    const y = series.priceToCoordinate(price);
+    const point =
+      typeof pointOrTime === 'object' && pointOrTime !== null
+        ? pointOrTime
+        : { time: pointOrTime, price };
+
+    const logicalFromTime = estimateLogicalFromTime(visibleCandles, point.time);
+    const x =
+      Number.isFinite(logicalFromTime)
+        ? chart.timeScale().logicalToCoordinate(logicalFromTime)
+        : (
+            Number.isFinite(point.logical)
+              ? chart.timeScale().logicalToCoordinate(point.logical)
+              : chart.timeScale().timeToCoordinate(point.time)
+          );
+    const y = series.priceToCoordinate(point.price);
 
     if (x == null || y == null) return null;
     return { x, y };
-  }, []);
+  }, [visibleCandles]);
 
   const setReplayPointFromCoordinates = useCallback((x, y, moveCandle = true) => {
     const chart = chartRef.current;
@@ -215,21 +292,21 @@ export default function TradingViewReplayChart({
 
     return all.map((drawing) => {
       if (drawing.type === 'line') {
-        const p1 = toScreen(drawing.start.time, drawing.start.price);
-        const p2 = toScreen(drawing.end.time, drawing.end.price);
+        const p1 = toScreen(drawing.start);
+        const p2 = toScreen(drawing.end);
         if (!p1 || !p2) return null;
         return { ...drawing, screen: { p1, p2 } };
       }
 
       if (drawing.type === 'rect') {
-        const p1 = toScreen(drawing.start.time, drawing.start.price);
-        const p2 = toScreen(drawing.end.time, drawing.end.price);
+        const p1 = toScreen(drawing.start);
+        const p2 = toScreen(drawing.end);
         if (!p1 || !p2) return null;
         return { ...drawing, screen: { p1, p2 } };
       }
 
       if (drawing.type === 'text') {
-        const p = toScreen(drawing.point.time, drawing.point.price);
+        const p = toScreen(drawing.point);
         if (!p) return null;
         return { ...drawing, screen: { p } };
       }
@@ -251,7 +328,7 @@ export default function TradingViewReplayChart({
 
       if (d.type === 'rect') {
         const { p1, p2 } = d.screen;
-        const rect = normalizeRect(p1, p2);
+        const rect = normalizeVisibleRect(p1, p2);
         const inside =
           x >= rect.left &&
           x <= rect.left + rect.width &&
@@ -624,6 +701,20 @@ export default function TradingViewReplayChart({
       };
     };
 
+    const setChartMouseInteractions = (enabled) => {
+      const chart = chartRef.current;
+      if (!chart) return;
+
+      chart.applyOptions({
+        handleScroll: enabled,
+        handleScale: enabled,
+      });
+    };
+
+    const restoreChartMouseInteractions = () => {
+      setChartMouseInteractions(isSpacePressedRef.current || !replayMode || !toolRef.current);
+    };
+
     const handleMouseDown = (event) => {
       if (!replayMode) return;
       if (isSpacePressedRef.current) {
@@ -639,6 +730,8 @@ export default function TradingViewReplayChart({
         if (!drawing) return;
 
         event.preventDefault();
+        event.stopPropagation();
+        setChartMouseInteractions(false);
         resizeDrawingRef.current = {
           ...resizeHit,
           originalDrawing: drawing,
@@ -652,6 +745,9 @@ export default function TradingViewReplayChart({
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
+        event.preventDefault();
+        event.stopPropagation();
+
         const currentTemp = tempDrawingRef.current;
 
         if (!currentTemp) {
@@ -660,6 +756,7 @@ export default function TradingViewReplayChart({
             type: toolRef.current,
             start: coords,
             end: coords,
+            color: drawingColorRef.current,
           });
         } else {
           const completed = {
@@ -668,6 +765,7 @@ export default function TradingViewReplayChart({
             start: currentTemp.start,
             end: coords,
             strokeWidth: currentTemp.strokeWidth ?? 2,
+            color: currentTemp.color ?? drawingColorRef.current,
           };
           appendDrawing(completed);
           setTempDrawing(null);
@@ -680,6 +778,9 @@ export default function TradingViewReplayChart({
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
+        event.preventDefault();
+        event.stopPropagation();
+
         setTextInput({
           x,
           y,
@@ -691,6 +792,9 @@ export default function TradingViewReplayChart({
 
       const hitId = hitTestDrawing(x, y);
       if (hitId) {
+        event.preventDefault();
+        event.stopPropagation();
+        setChartMouseInteractions(false);
         setSelectedDrawingId(hitId);
         resizeDrawingRef.current = null;
 
@@ -730,6 +834,9 @@ export default function TradingViewReplayChart({
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
+        event.preventDefault();
+        event.stopPropagation();
+
         setTempDrawing((prev) => {
           if (!prev) return prev;
           return { ...prev, end: coords };
@@ -740,6 +847,9 @@ export default function TradingViewReplayChart({
       if (resizeDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
+
+        event.preventDefault();
+        event.stopPropagation();
 
         const { drawingId, handle, originalDrawing } = resizeDrawingRef.current;
         const resized = { ...originalDrawing };
@@ -780,11 +890,18 @@ export default function TradingViewReplayChart({
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
+        event.preventDefault();
+        event.stopPropagation();
+
         const { drawingId, startMouse, originalDrawing } = dragDrawingRef.current;
         const deltaTime = coords.time - startMouse.time;
+        const deltaLogical =
+          Number.isFinite(coords.logical) && Number.isFinite(startMouse.logical)
+            ? coords.logical - startMouse.logical
+            : undefined;
         const deltaPrice = coords.price - startMouse.price;
 
-        const moved = offsetDrawing(originalDrawing, deltaTime, deltaPrice);
+        const moved = offsetDrawing(originalDrawing, deltaTime, deltaPrice, deltaLogical);
         const next = drawingsRef.current.map((d) => (d.id === drawingId ? moved : d));
         setDrawings(next);
         drawingsRef.current = next;
@@ -795,20 +912,22 @@ export default function TradingViewReplayChart({
       if (resizeDrawingRef.current) {
         saveDrawings(drawingsRef.current);
         resizeDrawingRef.current = null;
+        restoreChartMouseInteractions();
       }
 
       if (dragDrawingRef.current) {
         saveDrawings(drawingsRef.current);
         dragDrawingRef.current = null;
+        restoreChartMouseInteractions();
       }
     };
 
-    el.addEventListener('mousedown', handleMouseDown);
+    el.addEventListener('mousedown', handleMouseDown, true);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
 
     return () => {
-      el.removeEventListener('mousedown', handleMouseDown);
+      el.removeEventListener('mousedown', handleMouseDown, true);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
@@ -816,15 +935,18 @@ export default function TradingViewReplayChart({
 
   useEffect(() => {
     async function fetchKlines() {
+      const wasInReplay = replayMode;
+      const replayProgress =
+        wasInReplay && allCandles.length > 1
+          ? replayIndex / (allCandles.length - 1)
+          : 0.3;
+
       setLoading(true);
       setError('');
       setIsPlaying(false);
-      setReplayMode(false);
       setFollowReplay(true);
-      setSelectedReplayPrice(null);
       setSelectedDrawingId(null);
       setTempDrawing(null);
-      setTool(null);
       setTextInput(null);
       setIsReplayPricePickActive(false);
 
@@ -860,13 +982,23 @@ export default function TradingViewReplayChart({
         }
 
         setAllCandles(normalized);
-        setReplayIndex(Math.max(0, Math.floor(normalized.length * 0.3)));
+        const nextReplayIndex = Math.min(
+          normalized.length - 1,
+          Math.max(0, Math.round((normalized.length - 1) * replayProgress))
+        );
+
+        setReplayIndex(nextReplayIndex);
+        setReplayMode(wasInReplay);
+        setSelectedReplayPrice(
+          wasInReplay
+            ? normalized[nextReplayIndex]?.close ?? null
+            : null
+        );
 
         try {
-          const raw = localStorage.getItem(buildStorageKey(symbol, timeframe));
-          const saved = raw ? JSON.parse(raw) : [];
-          setDrawings(Array.isArray(saved) ? saved : []);
-          drawingsRef.current = Array.isArray(saved) ? saved : [];
+          const saved = loadStoredDrawings();
+          setDrawings(saved);
+          drawingsRef.current = saved;
         } catch {
           setDrawings([]);
           drawingsRef.current = [];
@@ -874,6 +1006,8 @@ export default function TradingViewReplayChart({
       } catch (err) {
         setError(err.message || 'Failed to load chart');
         setAllCandles([]);
+        setReplayMode(false);
+        setSelectedReplayPrice(null);
         setDrawings([]);
         drawingsRef.current = [];
       } finally {
@@ -882,7 +1016,7 @@ export default function TradingViewReplayChart({
     }
 
     fetchKlines();
-  }, [symbol, timeframe]);
+  }, [symbol, timeframe, loadStoredDrawings]);
 
   const toggleReplayMode = () => {
     setIsPlaying(false);
@@ -935,10 +1069,11 @@ export default function TradingViewReplayChart({
 
   const resetReplay = () => {
     setIsPlaying(false);
-    setReplayMode(false);
     setFollowReplay(true);
-    setReplayIndex(Math.max(0, allCandles.length - 1));
-    setSelectedReplayPrice(null);
+    const latestIndex = Math.max(0, allCandles.length - 1);
+    setReplayMode(true);
+    setReplayIndex(latestIndex);
+    setSelectedReplayPrice(allCandles[latestIndex]?.close ?? null);
     setTool(null);
     setTempDrawing(null);
     setTextInput(null);
@@ -969,6 +1104,7 @@ export default function TradingViewReplayChart({
       type: 'text',
       point: textInput.point,
       text: textDraft.trim(),
+      color: drawingColor,
     });
 
     setTextInput(null);
@@ -1014,13 +1150,57 @@ export default function TradingViewReplayChart({
     saveDrawings(next);
   };
 
+  const handleDrawingColorChange = (color) => {
+    setDrawingColor(color);
+
+    if (tempDrawingRef.current) {
+      setTempDrawing((prev) => (prev ? { ...prev, color } : prev));
+    }
+
+    if (!selectedDrawingIdRef.current) return;
+
+    const next = drawingsRef.current.map((drawing) => (
+      drawing.id === selectedDrawingIdRef.current
+        ? { ...drawing, color }
+        : drawing
+    ));
+
+    saveDrawings(next);
+  };
+
   const handleCancelText = () => {
     setTextInput(null);
     setTool(null);
   };
 
+  const handleToggleFullscreen = async () => {
+    const fullscreenElement = fullscreenRef.current;
+    if (!fullscreenElement) return;
+
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if (fullscreenElement.requestFullscreen) {
+        await fullscreenElement.requestFullscreen();
+      } else {
+        setIsFullscreen((current) => !current);
+        scheduleOverlayRender();
+      }
+    } catch {
+      setIsFullscreen((current) => !current);
+      scheduleOverlayRender();
+    }
+  };
+
   return (
-    <div className="space-y-4">
+    <div
+      ref={fullscreenRef}
+      className={
+        isFullscreen
+          ? 'flex h-screen flex-col gap-3 overflow-hidden bg-slate-950 p-4'
+          : 'space-y-4'
+      }
+    >
       <ChartHeader
         symbol={symbol}
         timeframe={timeframe}
@@ -1041,6 +1221,7 @@ export default function TradingViewReplayChart({
           replayIndex={replayIndex}
           candleCount={allCandles.length}
           tool={tool}
+          drawingColor={drawingColor}
           drawings={drawings}
           selectedDrawingId={selectedDrawingId}
           selectedDrawing={selectedDrawing}
@@ -1052,6 +1233,7 @@ export default function TradingViewReplayChart({
           onToggleReplayPricePick={() => setIsReplayPricePickActive((prev) => !prev)}
           onPlaybackSpeedChange={setPlaybackSpeed}
           onToolChange={handleToolChange}
+          onDrawingColorChange={handleDrawingColorChange}
           onDrawingWidthChange={handleDrawingWidthChange}
           onClearDrawings={handleClearDrawings}
           onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
@@ -1073,6 +1255,7 @@ export default function TradingViewReplayChart({
       <ChartStage
         wrapperRef={wrapperRef}
         containerRef={containerRef}
+        isFullscreen={isFullscreen}
         replayMode={replayMode}
         isSpacePressed={isSpacePressed}
         isReplayPricePickActive={isReplayPricePickActive}
@@ -1085,6 +1268,7 @@ export default function TradingViewReplayChart({
         onTextDraftChange={setTextDraft}
         onSaveText={handleSaveText}
         onCancelText={handleCancelText}
+        onToggleFullscreen={handleToggleFullscreen}
       />
     </div>
   );

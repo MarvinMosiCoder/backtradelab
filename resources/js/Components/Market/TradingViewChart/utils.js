@@ -90,6 +90,33 @@ export function normalizeRect(a, b) {
   };
 }
 
+export function normalizeVisibleRect(a, b, minSize = 8) {
+  const rect = normalizeRect(a, b);
+  const width = Math.max(rect.width, minSize);
+  const height = Math.max(rect.height, minSize);
+
+  return {
+    left: rect.left - Math.max((width - rect.width) / 2, 0),
+    top: rect.top - Math.max((height - rect.height) / 2, 0),
+    width,
+    height,
+  };
+}
+
+export function colorToRgba(color, alpha) {
+  if (typeof color !== 'string') return `rgba(96, 165, 250, ${alpha})`;
+
+  const hex = color.trim();
+  if (/^#[0-9a-f]{6}$/i.test(hex)) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  return color;
+}
+
 export function distanceToSegment(point, a, b) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -105,32 +132,99 @@ export function distanceToSegment(point, a, b) {
   return Math.hypot(point.x - projX, point.y - projY);
 }
 
-export function buildStorageKey(symbol, timeframe) {
+export function buildStorageKey(symbol) {
+  return `replay-drawings:${symbol}`;
+}
+
+export function buildLegacyStorageKey(symbol, timeframe) {
   return `replay-drawings:${symbol}:${timeframe}`;
 }
 
-export function offsetDrawing(drawing, deltaTime, deltaPrice) {
+export function estimateCandleInterval(candles) {
+  if (!Array.isArray(candles) || candles.length < 2) return 60;
+
+  const intervals = [];
+  for (let i = 1; i < candles.length; i += 1) {
+    const interval = candles[i].time - candles[i - 1].time;
+    if (Number.isFinite(interval) && interval > 0) {
+      intervals.push(interval);
+    }
+  }
+
+  if (!intervals.length) return 60;
+
+  intervals.sort((a, b) => a - b);
+  return intervals[Math.floor(intervals.length / 2)];
+}
+
+export function estimateTimeFromLogical(candles, logical) {
+  if (!Array.isArray(candles) || !candles.length || !Number.isFinite(logical)) return null;
+
+  const lowerIndex = Math.floor(logical);
+  const upperIndex = Math.ceil(logical);
+
+  if (candles[lowerIndex] && candles[upperIndex]) {
+    const progress = logical - lowerIndex;
+    return candles[lowerIndex].time + ((candles[upperIndex].time - candles[lowerIndex].time) * progress);
+  }
+
+  const interval = estimateCandleInterval(candles);
+
+  if (logical < 0) {
+    return candles[0].time + (logical * interval);
+  }
+
+  return candles[candles.length - 1].time + ((logical - (candles.length - 1)) * interval);
+}
+
+export function estimateLogicalFromTime(candles, time) {
+  const numericTime = Number(time);
+  if (!Array.isArray(candles) || !candles.length || !Number.isFinite(numericTime)) return null;
+
+  if (candles.length === 1) return 0;
+
+  if (numericTime <= candles[0].time) {
+    return (numericTime - candles[0].time) / estimateCandleInterval(candles);
+  }
+
+  for (let i = 1; i < candles.length; i += 1) {
+    if (numericTime <= candles[i].time) {
+      const span = candles[i].time - candles[i - 1].time;
+      if (!Number.isFinite(span) || span <= 0) return i;
+      return (i - 1) + ((numericTime - candles[i - 1].time) / span);
+    }
+  }
+
+  return (candles.length - 1) + ((numericTime - candles[candles.length - 1].time) / estimateCandleInterval(candles));
+}
+
+function offsetPoint(point, deltaTime, deltaPrice, deltaLogical) {
+  const nextPoint = {
+    ...point,
+    time: point.time + deltaTime,
+    price: point.price + deltaPrice,
+  };
+
+  if (Number.isFinite(point.logical) && Number.isFinite(deltaLogical)) {
+    nextPoint.logical = point.logical + deltaLogical;
+  }
+
+  return nextPoint;
+}
+
+export function offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical) {
   if (drawing.type === 'line' || drawing.type === 'rect') {
     return {
       ...drawing,
-      start: {
-        time: drawing.start.time + deltaTime,
-        price: drawing.start.price + deltaPrice,
-      },
-      end: {
-        time: drawing.end.time + deltaTime,
-        price: drawing.end.price + deltaPrice,
-      },
+      start: offsetPoint(drawing.start, deltaTime, deltaPrice, deltaLogical),
+      end: offsetPoint(drawing.end, deltaTime, deltaPrice, deltaLogical),
     };
   }
 
   if (drawing.type === 'text') {
     return {
       ...drawing,
-      point: {
-        time: drawing.point.time + deltaTime,
-        price: drawing.point.price + deltaPrice,
-      },
+      point: offsetPoint(drawing.point, deltaTime, deltaPrice, deltaLogical),
     };
   }
 
