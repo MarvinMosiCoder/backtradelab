@@ -292,7 +292,6 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
       {renderedDrawings
         .filter((d) => d.type === 'text')
         .map((d) => {
-          const isSelected = d.id === selectedDrawingId;
           return (
             <div
               key={d.id}
@@ -303,15 +302,15 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
                 transform: 'translateY(-50%)',
               }}
             >
-              <div
-                className="rounded px-2 py-1 text-xs text-white shadow-lg"
+              <span
+                className="text-xs font-semibold"
                 style={{
                   color: d.color ?? '#ffffff',
-                  background: 'rgba(15, 23, 42, 0.9)',
+                  textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)',
                 }}
               >
                 {d.text}
-              </div>
+              </span>
             </div>
           );
         })}

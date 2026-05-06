@@ -363,7 +363,7 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 | Short Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label |
 | Forecast | Dashed SVG `<line>` with arrowhead and projection label |
 | Box | SVG `<rect>` with color-based transparent fill |
-| Text | Absolutely positioned React `<div>` |
+| Text | Plain absolutely positioned React text without a background box |
 | Resize handles | Small SVG `<rect>` handles |
 | Fullscreen | Browser fullscreen API on the chart wrapper |
 
