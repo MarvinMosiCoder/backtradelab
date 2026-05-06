@@ -23,6 +23,9 @@ import {
   estimateLogicalFromTime,
   estimateTimeFromLogical,
   findNearestCandleIndex,
+  isLineLikeDrawing,
+  isPositionDrawing,
+  isTwoPointDrawing,
   normalizeApiCandles,
   normalizeVisibleRect,
   offsetDrawing,
@@ -77,7 +80,7 @@ export default function TradingViewReplayChart({
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const [tool, setTool] = useState(null); // 'line' | 'rect' | 'text' | null
+  const [tool, setTool] = useState(null); // 'line' | 'rect' | 'long-position' | 'short-position' | 'forecast' | 'text' | null
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
   const [drawings, setDrawings] = useState([]);
   const [tempDrawing, setTempDrawing] = useState(null);
@@ -266,8 +269,8 @@ export default function TradingViewReplayChart({
 
   const getDrawingTimes = useCallback((items) => {
     return items.flatMap((drawing) => {
-      if (drawing.type === 'line' || drawing.type === 'rect') {
-        return [drawing.start?.time, drawing.end?.time];
+      if (isTwoPointDrawing(drawing)) {
+        return [drawing.start?.time, drawing.end?.time, drawing.stop?.time];
       }
 
       if (drawing.type === 'text') {
@@ -384,11 +387,24 @@ export default function TradingViewReplayChart({
     }
   }, [allCandles]);
 
+  const getDefaultPositionStop = useCallback((type, entry, target) => {
+    const priceMove = Math.abs(target.price - entry.price);
+    const stopPrice =
+      type === 'long-position'
+        ? entry.price - priceMove
+        : entry.price + priceMove;
+
+    return {
+      ...target,
+      price: stopPrice,
+    };
+  }, []);
+
   const renderedDrawings = useMemo(() => {
     const all = [...drawings, ...(tempDrawing ? [tempDrawing] : [])];
 
     return all.map((drawing) => {
-      if (drawing.type === 'line') {
+      if (isLineLikeDrawing(drawing)) {
         const p1 = toScreen(drawing.start);
         const p2 = toScreen(drawing.end);
         if (!p1 || !p2) return null;
@@ -402,6 +418,15 @@ export default function TradingViewReplayChart({
         return { ...drawing, screen: { p1, p2 } };
       }
 
+      if (isPositionDrawing(drawing)) {
+        const p1 = toScreen(drawing.start);
+        const p2 = toScreen(drawing.end);
+        const stop = drawing.stop ?? getDefaultPositionStop(drawing.type, drawing.start, drawing.end);
+        const pStop = toScreen(stop);
+        if (!p1 || !p2 || !pStop) return null;
+        return { ...drawing, stop, screen: { p1, p2, pStop } };
+      }
+
       if (drawing.type === 'text') {
         const p = toScreen(drawing.point);
         if (!p) return null;
@@ -410,7 +435,7 @@ export default function TradingViewReplayChart({
 
       return null;
     }).filter(Boolean);
-  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion]);
+  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop]);
 
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
@@ -418,7 +443,7 @@ export default function TradingViewReplayChart({
     for (let i = renderedDrawings.length - 1; i >= 0; i -= 1) {
       const d = renderedDrawings[i];
 
-      if (d.type === 'line') {
+      if (isLineLikeDrawing(d)) {
         const { p1, p2 } = d.screen;
         if (distanceToSegment(point, p1, p2) <= 8) return d.id;
       }
@@ -431,6 +456,21 @@ export default function TradingViewReplayChart({
           x <= rect.left + rect.width &&
           y >= rect.top &&
           y <= rect.top + rect.height;
+
+        if (inside) return d.id;
+      }
+
+      if (isPositionDrawing(d)) {
+        const { p1, p2, pStop } = d.screen;
+        const top = Math.min(p1.y, p2.y, pStop.y);
+        const bottom = Math.max(p1.y, p2.y, pStop.y);
+        const left = Math.min(p1.x, p2.x, pStop.x);
+        const right = Math.max(p1.x, p2.x, pStop.x);
+        const inside =
+          x >= left &&
+          x <= right &&
+          y >= top &&
+          y <= bottom;
 
         if (inside) return d.id;
       }
@@ -452,10 +492,18 @@ export default function TradingViewReplayChart({
 
     const handles = [];
 
-    if (selected.type === 'line') {
+    if (isLineLikeDrawing(selected)) {
       handles.push(
         { handle: 'start', point: selected.screen.p1 },
         { handle: 'end', point: selected.screen.p2 }
+      );
+    }
+
+    if (isPositionDrawing(selected)) {
+      handles.push(
+        { handle: 'start', point: selected.screen.p1 },
+        { handle: 'end', point: selected.screen.p2 },
+        { handle: 'stop', point: selected.screen.pStop }
       );
     }
 
@@ -849,7 +897,7 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (toolRef.current === 'line' || toolRef.current === 'rect') {
+      if (['line', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current)) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -875,6 +923,11 @@ export default function TradingViewReplayChart({
             strokeWidth: currentTemp.strokeWidth ?? 2,
             color: currentTemp.color ?? drawingColorRef.current,
           };
+
+          if (isPositionDrawing(completed)) {
+            completed.stop = getDefaultPositionStop(completed.type, completed.start, completed.end);
+          }
+
           appendDrawing(completed);
           setTempDrawing(null);
           setTool(null);
@@ -910,7 +963,7 @@ export default function TradingViewReplayChart({
         const drawing = drawingsRef.current.find((d) => d.id === hitId);
         if (coords && drawing) {
           let anchor;
-          if (drawing.type === 'line' || drawing.type === 'rect') {
+          if (isTwoPointDrawing(drawing)) {
             anchor = drawing.start;
           } else if (drawing.type === 'text') {
             anchor = drawing.point;
@@ -938,7 +991,7 @@ export default function TradingViewReplayChart({
 
       const { x, y } = getRelativePoint(event);
 
-      if ((toolRef.current === 'line' || toolRef.current === 'rect') && tempDrawingRef.current) {
+      if (['line', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current) && tempDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -962,7 +1015,11 @@ export default function TradingViewReplayChart({
         const { drawingId, handle, originalDrawing } = resizeDrawingRef.current;
         const resized = { ...originalDrawing };
 
-        if (resized.type === 'line') {
+        if (isLineLikeDrawing(resized)) {
+          resized[handle] = coords;
+        }
+
+        if (isPositionDrawing(resized)) {
           resized[handle] = coords;
         }
 
@@ -1039,7 +1096,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [appendDrawing, getChartCoordinates, hitTestDrawing, hitTestResizeHandle, replayMode, saveDrawings]);
+  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, hitTestDrawing, hitTestResizeHandle, replayMode, saveDrawings]);
 
   useEffect(() => {
     async function fetchKlines() {
@@ -1279,7 +1336,7 @@ export default function TradingViewReplayChart({
 
     const next = drawingsRef.current.map((drawing) => {
       if (drawing.id !== selectedDrawingId) return drawing;
-      if (drawing.type !== 'line' && drawing.type !== 'rect') return drawing;
+      if (!isLineLikeDrawing(drawing) && !isPositionDrawing(drawing) && drawing.type !== 'rect') return drawing;
 
       return {
         ...drawing,

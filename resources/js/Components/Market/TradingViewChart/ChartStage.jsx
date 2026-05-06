@@ -1,15 +1,93 @@
 import React from 'react';
 import { Maximize2, Minimize2 } from 'lucide-react';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL } from './constants';
-import { colorToRgba, normalizeVisibleRect } from './utils';
+import { colorToRgba, isLineLikeDrawing, isPositionDrawing, normalizeVisibleRect } from './utils';
+
+function formatSignedNumber(value, digits = 2) {
+  const sign = value > 0 ? '+' : '';
+  return `${sign}${Number(value).toFixed(digits)}`;
+}
+
+function formatDuration(seconds) {
+  const totalSeconds = Math.max(Math.round(Math.abs(seconds)), 0);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m`;
+  return `${totalSeconds}s`;
+}
+
+function getToolLabel(drawing) {
+  const priceDelta = drawing.end.price - drawing.start.price;
+  const percentDelta = drawing.start.price
+    ? (priceDelta / drawing.start.price) * 100
+    : 0;
+  const duration = formatDuration(drawing.end.time - drawing.start.time);
+  const prefix = drawing.type === 'forecast' ? 'Forecast ' : 'Delta ';
+
+  return `${prefix}${formatSignedNumber(priceDelta)} (${formatSignedNumber(percentDelta)}%) | ${duration}`;
+}
+
+function getPositionGeometry(drawing) {
+  const { p1, p2, pStop } = drawing.screen;
+  const isLong = drawing.type === 'long-position';
+  const targetY = p2.y;
+  const stopY = pStop.y;
+  const left = Math.min(p1.x, p2.x, pStop.x);
+  const right = Math.max(p1.x, p2.x, pStop.x);
+  const width = Math.max(right - left, 2);
+  const entryPrice = drawing.start.price;
+  const targetPrice = drawing.end.price;
+  const stopPrice = drawing.stop.price;
+  const reward = Math.abs(targetPrice - entryPrice);
+  const risk = Math.abs(entryPrice - stopPrice);
+  const rewardPercent = entryPrice ? (reward / entryPrice) * 100 : 0;
+  const riskPercent = entryPrice ? (risk / entryPrice) * 100 : 0;
+
+  return {
+    isLong,
+    left,
+    width,
+    targetY,
+    stopY,
+    entryY: p1.y,
+    profitRect: normalizeVisibleRect({ x: left, y: p1.y }, { x: right, y: targetY }),
+    lossRect: normalizeVisibleRect({ x: left, y: p1.y }, { x: right, y: stopY }),
+    targetPoint: { x: p2.x, y: targetY },
+    stopPoint: { x: pStop.x, y: stopY },
+    label: `${isLong ? 'Long' : 'Short'} R/R ${(reward / Math.max(risk, 0.0000001)).toFixed(2)} | Target ${formatSignedNumber(rewardPercent)}% | Stop -${riskPercent.toFixed(2)}% | ${formatDuration(drawing.end.time - drawing.start.time)}`,
+  };
+}
+
+function getArrowHeadPoints(start, end, size = 10) {
+  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  const left = {
+    x: end.x - size * Math.cos(angle - Math.PI / 6),
+    y: end.y - size * Math.sin(angle - Math.PI / 6),
+  };
+  const right = {
+    x: end.x - size * Math.cos(angle + Math.PI / 6),
+    y: end.y - size * Math.sin(angle + Math.PI / 6),
+  };
+
+  return `${end.x},${end.y} ${left.x},${left.y} ${right.x},${right.y}`;
+}
 
 function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
   const selectedDrawing = renderedDrawings.find((d) => d.id === selectedDrawingId);
 
   const resizeHandles = [];
 
-  if (selectedDrawing?.type === 'line') {
+  if (isLineLikeDrawing(selectedDrawing)) {
     resizeHandles.push(selectedDrawing.screen.p1, selectedDrawing.screen.p2);
+  }
+
+  if (isPositionDrawing(selectedDrawing)) {
+    const geometry = getPositionGeometry(selectedDrawing);
+    resizeHandles.push(selectedDrawing.screen.p1, geometry.targetPoint, geometry.stopPoint);
   }
 
   if (selectedDrawing?.type === 'rect') {
@@ -45,18 +123,129 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
             ? 2
             : Math.max(d.strokeWidth ?? 2, isSelected ? 3 : 1);
 
-          if (d.type === 'line') {
+          if (isLineLikeDrawing(d)) {
+            const isUtilityTool = d.type === 'measure' || d.type === 'forecast';
+            const midpoint = {
+              x: (d.screen.p1.x + d.screen.p2.x) / 2,
+              y: (d.screen.p1.y + d.screen.p2.y) / 2,
+            };
+
             return (
-              <line
-                key={d.id}
-                x1={d.screen.p1.x}
-                y1={d.screen.p1.y}
-                x2={d.screen.p2.x}
-                y2={d.screen.p2.y}
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
-              />
+              <g key={d.id}>
+                <line
+                  x1={d.screen.p1.x}
+                  y1={d.screen.p1.y}
+                  x2={d.screen.p2.x}
+                  y2={d.screen.p2.y}
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={
+                    d.id.startsWith('temp-')
+                      ? '5,5'
+                      : d.type === 'forecast'
+                        ? '8,5'
+                        : d.type === 'measure'
+                          ? '4,4'
+                          : undefined
+                  }
+                />
+                {d.type === 'forecast' && (
+                  <polygon
+                    points={getArrowHeadPoints(d.screen.p1, d.screen.p2)}
+                    fill={stroke}
+                  />
+                )}
+                {d.type === 'measure' && (
+                  <>
+                    <circle cx={d.screen.p1.x} cy={d.screen.p1.y} r={4} fill={stroke} />
+                    <circle cx={d.screen.p2.x} cy={d.screen.p2.y} r={4} fill={stroke} />
+                  </>
+                )}
+                {isUtilityTool && !d.id.startsWith('temp-') && (
+                  <text
+                    x={midpoint.x + 8}
+                    y={midpoint.y - 10}
+                    fill="#ffffff"
+                    fontSize="12"
+                    fontWeight="600"
+                    paintOrder="stroke"
+                    stroke="rgba(15, 23, 42, 0.95)"
+                    strokeWidth="4"
+                    strokeLinejoin="round"
+                  >
+                    {getToolLabel(d)}
+                  </text>
+                )}
+              </g>
+            );
+          }
+
+          if (isPositionDrawing(d)) {
+            const geometry = getPositionGeometry(d);
+            const outline = isSelected ? '#fbbf24' : 'rgba(226, 232, 240, 0.75)';
+
+            return (
+              <g key={d.id}>
+                <rect
+                  x={geometry.profitRect.left}
+                  y={geometry.profitRect.top}
+                  width={geometry.profitRect.width}
+                  height={geometry.profitRect.height}
+                  fill="rgba(34, 197, 94, 0.22)"
+                  stroke="rgba(34, 197, 94, 0.85)"
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
+                />
+                <rect
+                  x={geometry.lossRect.left}
+                  y={geometry.lossRect.top}
+                  width={geometry.lossRect.width}
+                  height={geometry.lossRect.height}
+                  fill="rgba(239, 68, 68, 0.22)"
+                  stroke="rgba(239, 68, 68, 0.85)"
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
+                />
+                <line
+                  x1={geometry.left}
+                  y1={geometry.entryY}
+                  x2={geometry.left + geometry.width}
+                  y2={geometry.entryY}
+                  stroke={outline}
+                  strokeWidth={Math.max(strokeWidth, 2)}
+                />
+                <line
+                  x1={geometry.left}
+                  y1={geometry.targetY}
+                  x2={geometry.left + geometry.width}
+                  y2={geometry.targetY}
+                  stroke="rgba(34, 197, 94, 0.95)"
+                  strokeWidth={Math.max(strokeWidth, 2)}
+                />
+                <line
+                  x1={geometry.left}
+                  y1={geometry.stopY}
+                  x2={geometry.left + geometry.width}
+                  y2={geometry.stopY}
+                  stroke="rgba(239, 68, 68, 0.95)"
+                  strokeWidth={Math.max(strokeWidth, 2)}
+                />
+                {!d.id.startsWith('temp-') && (
+                  <text
+                    x={geometry.left + 8}
+                    y={geometry.isLong ? geometry.targetY + 18 : geometry.targetY - 10}
+                    fill="#ffffff"
+                    fontSize="12"
+                    fontWeight="600"
+                    paintOrder="stroke"
+                    stroke="rgba(15, 23, 42, 0.95)"
+                    strokeWidth="4"
+                    strokeLinejoin="round"
+                  >
+                    {geometry.label}
+                  </text>
+                )}
+              </g>
             );
           }
 

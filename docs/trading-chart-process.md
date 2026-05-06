@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Market Analysis chart is a TradingView-style crypto chart built with React and `lightweight-charts`. It renders candlesticks and volume, supports replay mode, and includes local drawing tools for lines, boxes, and text notes.
+The Market Analysis chart is a TradingView-style crypto chart built with React and `lightweight-charts`. It renders candlesticks and volume, supports replay mode, and includes local drawing tools for lines, boxes, long/short positions, forecasting, and text notes.
 
 Chart symbols are stored in the database through `market_symbols`. Candle data comes from the Laravel API endpoint `/api/klines`, which fetches Bybit kline data and returns normalized candles to the frontend.
 
@@ -274,10 +274,15 @@ Drawing tools are only shown in replay mode.
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
 | Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, color }` |
+| Long Position | Click entry, click target/time | `{ type: 'long-position', start, end, strokeWidth, color }` |
+| Short Position | Click entry, click target/time | `{ type: 'short-position', start, end, strokeWidth, color }` |
+| Forecast | Click start, click end | `{ type: 'forecast', start, end, strokeWidth, color }` |
 | Box | Click first corner, click opposite corner | `{ type: 'rect', start, end, strokeWidth, color }` |
 | Text | Click point, enter label | `{ type: 'text', point, text, color }` |
 
-After a line or box is completed, the active tool is reset to default so the next click does not keep drawing the same tool.
+After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool.
+
+Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint.
 
 Drawings are stored per symbol:
 
@@ -311,7 +316,7 @@ export const DRAWING_COLORS = [
 ];
 ```
 
-The active color applies to newly created line, box, and text drawings. If a drawing is selected, picking a swatch updates that drawing immediately and saves the change. Box fill uses the same color with transparency.
+The active color applies to newly created line, forecast, box, and text drawings. If a drawing is selected, picking a swatch updates that drawing immediately and saves the change. Box fill uses the same color with transparency, while long/short position tools use fixed green profit and red loss zones.
 
 ---
 
@@ -354,6 +359,9 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 | Drawing Type | Rendered As |
 |--------------|-------------|
 | Line | SVG `<line>` |
+| Long Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label |
+| Short Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label |
+| Forecast | Dashed SVG `<line>` with arrowhead and projection label |
 | Box | SVG `<rect>` with color-based transparent fill |
 | Text | Absolutely positioned React `<div>` |
 | Resize handles | Small SVG `<rect>` handles |
@@ -385,7 +393,8 @@ Lightweight Charts can pan/zoom internally without React state changes. To keep 
 
 | Drawing | Hit Test |
 |---------|----------|
-| Line | Distance to line segment |
+| Line, Forecast | Distance to line segment |
+| Long Position, Short Position | Pointer inside the position zone |
 | Box | Pointer inside rectangle bounds |
 | Text | Pointer near the text label anchor |
 
@@ -409,7 +418,8 @@ When a drawing or resize handle is dragged, the wrapper intercepts the mouse eve
 
 | Drawing | Handles |
 |---------|---------|
-| Line | Start endpoint, end endpoint |
+| Line, Forecast | Start endpoint, end endpoint |
+| Long Position, Short Position | Entry point, target/time point, stop/time point |
 | Box | Four corners and four side midpoints |
 
 Box resize behavior:
@@ -424,7 +434,7 @@ Resizing updates stored `time` and/or `price`, so resized drawings remain attach
 
 ### Stroke Width
 
-Selected line and box drawings show width controls in `ReplayPanel.jsx`.
+Selected line, long/short position, forecast, and box drawings show width controls in `ReplayPanel.jsx`.
 
 Available stroke widths:
 
@@ -436,7 +446,7 @@ The selected `strokeWidth` is saved on the drawing object and persisted in `loca
 
 ### Color
 
-All drawing types support color. The selected color is stored on the drawing object as `color` and persisted in `localStorage`.
+Line, forecast, box, and text drawings support color. The selected color is stored on the drawing object as `color` and persisted in `localStorage`. Long/short position drawings keep fixed green and red zones for profit/loss readability.
 
 ---
 
@@ -458,7 +468,7 @@ Keyboard shortcuts are ignored while typing in inputs or editable elements.
 | Mode | Activation | Behavior |
 |------|------------|----------|
 | Default | No drawing tool, no replay price pick | Native chart pan/zoom, select/move/resize drawings |
-| Drawing | Line, Box, or Text selected | Place a new drawing |
+| Drawing | Line, Long, Short, Forecast, Box, or Text selected | Place a new drawing |
 | Replay Price Pick | `Set Replay Price` armed | Next chart click picks replay candle and price |
 | Space Pan | Hold `Space` | Native chart panning remains available |
 
@@ -528,7 +538,7 @@ The chart now includes:
 4. Add-symbol UI in the chart header.
 5. Replay mode with follow, stepping, speed controls, current-price reset, and price picking.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
-7. Drawing tools for line, box, and text.
+7. Drawing tools for line, long/short position, forecast, box, and text.
 8. Drawing colors, stroke widths, selection, moving, and resizing.
 9. Drawing persistence per symbol in `localStorage`, including migration from old per-timeframe keys.
 10. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.

@@ -212,13 +212,31 @@ function offsetPoint(point, deltaTime, deltaPrice, deltaLogical) {
   return nextPoint;
 }
 
+export function isTwoPointDrawing(drawing) {
+  return ['line', 'rect', 'measure', 'forecast', 'long-position', 'short-position'].includes(drawing?.type);
+}
+
+export function isLineLikeDrawing(drawing) {
+  return ['line', 'measure', 'forecast'].includes(drawing?.type);
+}
+
+export function isPositionDrawing(drawing) {
+  return ['long-position', 'short-position'].includes(drawing?.type);
+}
+
 export function offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical) {
-  if (drawing.type === 'line' || drawing.type === 'rect') {
-    return {
+  if (isTwoPointDrawing(drawing)) {
+    const nextDrawing = {
       ...drawing,
       start: offsetPoint(drawing.start, deltaTime, deltaPrice, deltaLogical),
       end: offsetPoint(drawing.end, deltaTime, deltaPrice, deltaLogical),
     };
+
+    if (drawing.stop) {
+      nextDrawing.stop = offsetPoint(drawing.stop, deltaTime, deltaPrice, deltaLogical);
+    }
+
+    return nextDrawing;
   }
 
   if (drawing.type === 'text') {

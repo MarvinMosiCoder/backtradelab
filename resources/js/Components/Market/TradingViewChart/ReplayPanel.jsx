@@ -114,6 +114,27 @@ export default function ReplayPanel({
         </button>
 
         <button
+          onClick={() => handleToolChange('long-position')}
+          className={toolButtonClass(tool === 'long-position')}
+        >
+          Long
+        </button>
+
+        <button
+          onClick={() => handleToolChange('short-position')}
+          className={toolButtonClass(tool === 'short-position')}
+        >
+          Short
+        </button>
+
+        <button
+          onClick={() => handleToolChange('forecast')}
+          className={toolButtonClass(tool === 'forecast')}
+        >
+          Forecast
+        </button>
+
+        <button
           onClick={() => handleToolChange('rect')}
           className={toolButtonClass(tool === 'rect')}
         >
@@ -166,7 +187,7 @@ export default function ReplayPanel({
         </div>
       </div>
 
-      {selectedDrawing && (selectedDrawing.type === 'line' || selectedDrawing.type === 'rect') && (
+      {selectedDrawing && ['line', 'rect', 'long-position', 'short-position', 'forecast'].includes(selectedDrawing.type) && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-xs text-gray-300">Width:</span>
           {DRAWING_WIDTHS.map((width) => (
