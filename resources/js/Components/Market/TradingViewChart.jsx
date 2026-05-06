@@ -9,7 +9,13 @@ import {
 import ChartHeader from './TradingViewChart/ChartHeader';
 import ChartStage from './TradingViewChart/ChartStage';
 import ReplayPanel from './TradingViewChart/ReplayPanel';
-import { CHART_HEIGHT, DRAWING_COLOR, INTERVAL_MAP, TIMEFRAMES } from './TradingViewChart/constants';
+import {
+  CHART_HEIGHT,
+  DRAWING_COLOR,
+  INTERVAL_MAP,
+  TIMEFRAME_SECONDS,
+  TIMEFRAMES,
+} from './TradingViewChart/constants';
 import {
   buildLegacyStorageKey,
   buildStorageKey,
@@ -36,6 +42,8 @@ export default function TradingViewReplayChart({
   const replayTimerRef = useRef(null);
   const isProgrammaticRangeChangeRef = useRef(false);
   const selectedPriceLineRef = useRef(null);
+  const selectedReplayPriceRef = useRef(null);
+  const replayModeRef = useRef(false);
   const isSpacePressedRef = useRef(false);
   const toolRef = useRef(null);
   const drawingColorRef = useRef(DRAWING_COLOR);
@@ -116,6 +124,10 @@ export default function TradingViewReplayChart({
   }, [isSpacePressed]);
 
   useEffect(() => {
+    replayModeRef.current = replayMode;
+  }, [replayMode]);
+
+  useEffect(() => {
     toolRef.current = tool;
   }, [tool]);
 
@@ -138,6 +150,10 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     isReplayPricePickActiveRef.current = isReplayPricePickActive;
   }, [isReplayPricePickActive]);
+
+  useEffect(() => {
+    selectedReplayPriceRef.current = selectedReplayPrice;
+  }, [selectedReplayPrice]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -247,6 +263,54 @@ export default function TradingViewReplayChart({
 
     return storedDrawings;
   }, [symbol]);
+
+  const getDrawingTimes = useCallback((items) => {
+    return items.flatMap((drawing) => {
+      if (drawing.type === 'line' || drawing.type === 'rect') {
+        return [drawing.start?.time, drawing.end?.time];
+      }
+
+      if (drawing.type === 'text') {
+        return [drawing.point?.time];
+      }
+
+      return [];
+    }).filter((time) => Number.isFinite(Number(time))).map(Number);
+  }, []);
+
+  const selectedPriceAutoscaleInfoProvider = useCallback((original) => {
+    const autoscaleInfo = original();
+    const selectedPrice = selectedReplayPriceRef.current;
+
+    if (!autoscaleInfo || !replayModeRef.current || !Number.isFinite(selectedPrice)) {
+      return autoscaleInfo;
+    }
+
+    const priceRange = autoscaleInfo.priceRange ?? {
+      minValue: selectedPrice,
+      maxValue: selectedPrice,
+    };
+    let minValue = Math.min(priceRange.minValue, selectedPrice);
+    let maxValue = Math.max(priceRange.maxValue, selectedPrice);
+
+    if (minValue === maxValue) {
+      const padding = Math.max(Math.abs(selectedPrice) * 0.01, 1);
+      minValue -= padding;
+      maxValue += padding;
+    }
+
+    return {
+      ...autoscaleInfo,
+      priceRange: {
+        minValue,
+        maxValue,
+      },
+      margins: autoscaleInfo.margins ?? {
+        above: 12,
+        below: 12,
+      },
+    };
+  }, []);
 
   const getChartCoordinates = useCallback((x, y) => {
     const chart = chartRef.current;
@@ -465,6 +529,7 @@ export default function TradingViewReplayChart({
       borderVisible: true,
       priceLineVisible: true,
       lastValueVisible: true,
+      autoscaleInfoProvider: selectedPriceAutoscaleInfoProvider,
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -557,7 +622,7 @@ export default function TradingViewReplayChart({
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [replayMode, scheduleOverlayRender, setReplayPointFromCoordinates]);
+  }, [replayMode, scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -620,6 +685,10 @@ export default function TradingViewReplayChart({
     const candleSeries = candleSeriesRef.current;
     if (!candleSeries) return;
 
+    candleSeries.applyOptions({
+      autoscaleInfoProvider: selectedPriceAutoscaleInfoProvider,
+    });
+
     if (selectedPriceLineRef.current) {
       candleSeries.removePriceLine(selectedPriceLineRef.current);
       selectedPriceLineRef.current = null;
@@ -642,7 +711,13 @@ export default function TradingViewReplayChart({
         selectedPriceLineRef.current = null;
       }
     };
-  }, [replayMode, selectedReplayPrice]);
+  }, [
+    replayMode,
+    selectedPriceAutoscaleInfoProvider,
+    selectedReplayPrice,
+    timeframe,
+    visibleCandles.length,
+  ]);
 
   useEffect(() => {
     if (!replayMode || !isPlaying || replayIndex >= allCandles.length - 1) {
@@ -969,6 +1044,14 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     async function fetchKlines() {
       const wasInReplay = replayMode;
+      const previousSelectedReplayPrice = selectedReplayPriceRef.current;
+      const previousReplayTime = wasInReplay ? allCandles[replayIndex]?.time : null;
+      const drawingTimes = wasInReplay ? getDrawingTimes(drawingsRef.current) : [];
+      const anchorTimes = [
+        previousReplayTime,
+        ...drawingTimes,
+      ].filter((time) => Number.isFinite(Number(time))).map(Number);
+      const anchorEnd = anchorTimes.length ? Math.max(...anchorTimes) : null;
       const replayProgress =
         wasInReplay && allCandles.length > 1
           ? replayIndex / (allCandles.length - 1)
@@ -992,7 +1075,24 @@ export default function TradingViewReplayChart({
           interval,
           category: 'spot',
           limit: '1000',
+          max_candles: wasInReplay ? '10000' : '5000',
         });
+
+        if (wasInReplay && anchorEnd != null) {
+          const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+          const requestedCandles = 10000;
+          const forwardCandles = Math.max(
+            250,
+            Math.round(requestedCandles * Math.max(0.1, 1 - replayProgress))
+          );
+          const nowMs = Date.now();
+          const anchoredEndMs = Math.min(
+            nowMs,
+            Math.round((anchorEnd + (intervalSeconds * forwardCandles)) * 1000)
+          );
+
+          params.set('end', String(anchoredEndMs));
+        }
 
         const response = await fetch(`/api/klines?${params.toString()}`, {
           headers: { Accept: 'application/json' },
@@ -1015,16 +1115,23 @@ export default function TradingViewReplayChart({
         }
 
         setAllCandles(normalized);
-        const nextReplayIndex = Math.min(
+        let nextReplayIndex = Math.min(
           normalized.length - 1,
           Math.max(0, Math.round((normalized.length - 1) * replayProgress))
         );
+
+        if (wasInReplay && previousReplayTime != null) {
+          const nearestReplayIndex = findNearestCandleIndex(normalized, previousReplayTime);
+          if (nearestReplayIndex >= 0) {
+            nextReplayIndex = nearestReplayIndex;
+          }
+        }
 
         setReplayIndex(nextReplayIndex);
         setReplayMode(wasInReplay);
         setSelectedReplayPrice(
           wasInReplay
-            ? normalized[nextReplayIndex]?.close ?? null
+            ? previousSelectedReplayPrice ?? normalized[nextReplayIndex]?.close ?? null
             : null
         );
 
@@ -1049,7 +1156,7 @@ export default function TradingViewReplayChart({
     }
 
     fetchKlines();
-  }, [symbol, timeframe, loadStoredDrawings]);
+  }, [symbol, timeframe, getDrawingTimes, loadStoredDrawings]);
 
   const toggleReplayMode = () => {
     setIsPlaying(false);

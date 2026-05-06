@@ -115,9 +115,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
               }}
             >
               <div
-                className="rounded border px-2 py-1 text-xs text-white shadow-lg"
+                className="rounded px-2 py-1 text-xs text-white shadow-lg"
                 style={{
-                  borderColor: isSelected ? '#fbbf24' : d.color ?? DRAWING_COLOR,
                   color: d.color ?? '#ffffff',
                   background: 'rgba(15, 23, 42, 0.9)',
                 }}

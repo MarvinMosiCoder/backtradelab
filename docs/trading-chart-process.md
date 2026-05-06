@@ -4,7 +4,7 @@
 
 The Market Analysis chart is a TradingView-style crypto chart built with React and `lightweight-charts`. It renders candlesticks and volume, supports replay mode, and includes local drawing tools for lines, boxes, and text notes.
 
-The chart data comes from the Laravel API endpoint `/api/klines`, which fetches Bybit kline data and returns normalized candles to the frontend.
+Chart symbols are stored in the database through `market_symbols`. Candle data comes from the Laravel API endpoint `/api/klines`, which fetches Bybit kline data and returns normalized candles to the frontend.
 
 ---
 
@@ -27,12 +27,21 @@ User Browser
 
 Laravel Backend
   routes/api.php
+    GET /api/market-symbols
+    POST /api/market-symbols
     GET /api/klines
 
   app/Http/Controllers/MarketDataController.php
+    lists/saves market symbols
     validates params
     fetches Bybit klines
     normalizes candles
+
+  app/Models/MarketSymbol.php
+    Eloquent model for saved symbols
+
+  database/migrations/...create_market_symbols_table.php
+    creates market_symbols table
 
 External API
   Bybit API v5 market kline endpoint
@@ -46,19 +55,64 @@ External API
 |------|---------|
 | `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart |
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
-| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol, timeframe, replay toggle, and price display |
-| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | Replay controls, drawing tool buttons, selected drawing width controls, clear/delete buttons |
-| `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, SVG drawing overlay, resize handles, text input popover |
-| `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, symbol list, playback speeds, chart size, drawing colors, drawing widths |
-| `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage key, drawing movement helpers |
-| `routes/api.php` | Defines `/api/klines` |
-| `app/Http/Controllers/MarketDataController.php` | Fetches and normalizes Bybit candle data |
+| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, add-symbol form, timeframe, replay toggle, and price display |
+| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | Replay controls, drawing tool buttons, selected drawing color/width controls, clear/delete buttons |
+| `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover |
+| `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
+| `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
+| `routes/api.php` | Defines `/api/market-symbols` and `/api/klines` |
+| `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols and fetches/normalizes Bybit candle data |
+| `app/Models/MarketSymbol.php` | Eloquent model for symbols saved in the database |
+| `database/migrations/2026_05_06_000001_create_market_symbols_table.php` | Creates the `market_symbols` table |
 
 ---
 
 ## Data Flow
 
-### 1. Frontend Request
+### 1. Symbol List
+
+`TradingViewChart.jsx` loads saved symbols on mount:
+
+```javascript
+const response = await fetch('/api/market-symbols', {
+  headers: { Accept: 'application/json' },
+});
+```
+
+The response shape is:
+
+```json
+{
+  "success": true,
+  "symbols": [
+    {
+      "id": 1,
+      "symbol": "BTCUSDT",
+      "category": "spot"
+    }
+  ]
+}
+```
+
+Users can add symbols from `ChartHeader.jsx`. The frontend sends:
+
+```javascript
+await fetch('/api/market-symbols', {
+  method: 'POST',
+  headers: {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    symbol: normalizedSymbol,
+    category: 'spot',
+  }),
+});
+```
+
+The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols`.
+
+### 2. Frontend Candle Request
 
 `TradingViewChart.jsx` fetches candles whenever `symbol` or `timeframe` changes.
 
@@ -68,12 +122,15 @@ const params = new URLSearchParams({
   interval,
   category: 'spot',
   limit: '1000',
+  max_candles: wasInReplay ? '10000' : '5000',
 });
 
 const response = await fetch(`/api/klines?${params.toString()}`, {
   headers: { Accept: 'application/json' },
 });
 ```
+
+When replay mode is active, timeframe changes anchor the candle request around the current replay candle and saved drawing timestamps. The frontend passes an `end` timestamp to `/api/klines` so lower timeframes load candles around the active replay area instead of only loading the latest market data. This prevents the chart and tools from disappearing when switching from a higher timeframe to a lower one whose latest candle window would otherwise not include the old replay/drawing time.
 
 The UI timeframe is mapped to the Bybit interval in `constants.js`.
 
@@ -93,9 +150,17 @@ The UI timeframe is mapped to the Bybit interval in `constants.js`.
 | `1w` | `W` |
 | `1M` | `M` |
 
-### 2. Backend Processing
+### 3. Backend Processing
 
-`MarketDataController.php` validates the requested symbol/category/interval, fetches candles from Bybit, deduplicates by timestamp, sorts oldest to newest, and returns normalized candle objects:
+`MarketDataController.php` has three chart-related actions:
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `symbols()` | `GET /api/market-symbols` | Return active symbols from `market_symbols` |
+| `storeSymbol()` | `POST /api/market-symbols` | Validate, uppercase, and save a symbol |
+| `klines()` | `GET /api/klines` | Fetch normalized Bybit candles |
+
+`klines()` validates the requested category/interval, fetches candles from Bybit, deduplicates by timestamp, sorts oldest to newest, and returns normalized candle objects:
 
 ```json
 {
@@ -108,7 +173,7 @@ The UI timeframe is mapped to the Bybit interval in `constants.js`.
 }
 ```
 
-### 3. Frontend Normalization
+### 4. Frontend Normalization
 
 The frontend also normalizes the response with `normalizeApiCandles()` so it can tolerate either object-style or array-style candle payloads.
 
@@ -175,7 +240,7 @@ When replay mode is enabled:
 | Back | Moves one candle backward |
 | Play/Pause | Starts or stops interval playback |
 | Forward | Moves one candle forward |
-| Reset | Exits replay mode and restores full data |
+| Reset | Stays in replay mode and jumps to the latest/current candle price |
 | Follow Replay | Scrolls chart to the replay edge |
 | Set Replay Price | Arms the next chart click to pick replay candle/price |
 | Speed buttons | Changes playback interval |
@@ -194,6 +259,12 @@ Playback speeds are defined in `constants.js`.
 
 Replay price selection creates a dashed price line with `candleSeries.createPriceLine()`.
 
+Changing timeframe while replay is active keeps replay mode enabled, pauses playback, preserves the selected drawing tool, preserves the selected replay price, and moves the replay index to the nearest matching timestamp in the newly loaded candle set.
+
+The selected replay price is also included in the candlestick series `autoscaleInfoProvider`. This keeps the dashed selected-price line visible after changing timeframe, even if the new candle range would normally autoscale away from that price.
+
+The selected-price line effect depends on `timeframe` and `visibleCandles.length`, not only the selected price value. This matters because `candleSeries.setData()` can refresh the series during timeframe changes even when the selected replay price value is unchanged, so the line is recreated after the new data is applied.
+
 ---
 
 ## Drawing Tools
@@ -202,19 +273,45 @@ Drawing tools are only shown in replay mode.
 
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
-| Line | Click start, click end | `{ type: 'line', start, end, strokeWidth }` |
-| Box | Click first corner, click opposite corner | `{ type: 'rect', start, end, strokeWidth }` |
-| Text | Click point, enter label | `{ type: 'text', point, text }` |
+| Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, color }` |
+| Box | Click first corner, click opposite corner | `{ type: 'rect', start, end, strokeWidth, color }` |
+| Text | Click point, enter label | `{ type: 'text', point, text, color }` |
 
 After a line or box is completed, the active tool is reset to default so the next click does not keep drawing the same tool.
 
-Drawings are stored per symbol and timeframe:
+Drawings are stored per symbol:
+
+```javascript
+`replay-drawings:${symbol}`
+```
+
+Storage uses `localStorage`, so drawings persist in the browser but are not saved to the backend.
+
+Older timeframe-specific drawing keys are still read and migrated/merged when symbols load:
 
 ```javascript
 `replay-drawings:${symbol}:${timeframe}`
 ```
 
-Storage uses `localStorage`, so drawings persist in the browser but are not saved to the backend.
+This lets drawings made on one timeframe remain available on other timeframes for the same symbol.
+
+### Drawing Colors
+
+Drawing colors are defined in `constants.js`:
+
+```javascript
+export const DRAWING_COLORS = [
+  '#60a5fa',
+  '#fbbf24',
+  '#34d399',
+  '#fb7185',
+  '#a78bfa',
+  '#f97316',
+  '#f8fafc',
+];
+```
+
+The active color applies to newly created line, box, and text drawings. If a drawing is selected, picking a swatch updates that drawing immediately and saves the change. Box fill uses the same color with transparency.
 
 ---
 
@@ -225,11 +322,13 @@ Drawings are stored in chart coordinates, not screen pixels.
 | Stored Field | Meaning |
 |--------------|---------|
 | `time` | Candle timestamp in seconds |
+| `logical` | Lightweight Charts logical index, used for accurate placement beyond the last candle |
 | `price` | Price value on the candle series scale |
 
 When the user clicks or drags on the chart, screen coordinates are converted to chart coordinates:
 
 ```javascript
+const logical = chart.timeScale().coordinateToLogical(x);
 const rawTime = chart.timeScale().coordinateToTime(x);
 const rawPrice = candleSeries.coordinateToPrice(y);
 ```
@@ -237,11 +336,14 @@ const rawPrice = candleSeries.coordinateToPrice(y);
 When drawing the overlay, chart coordinates are converted back to screen coordinates:
 
 ```javascript
-const x = chart.timeScale().timeToCoordinate(time);
+const logicalFromTime = estimateLogicalFromTime(visibleCandles, point.time);
+const x = chart.timeScale().logicalToCoordinate(logicalFromTime);
 const y = candleSeries.priceToCoordinate(price);
 ```
 
-This is why drawings stay attached to candle time/price while the chart scrolls or zooms.
+This is why drawings stay attached to candle time/price while the chart scrolls or zooms. Logical coordinates also allow drawing tools to extend beyond the last loaded candle instead of snapping back to the final candle.
+
+When switching timeframe, drawing timestamps are projected into the currently visible candle set. This keeps shared drawings visible across timeframes. Boxes use a minimum visible rectangle size so very short lower-timeframe boxes do not collapse into a 1px sliver on higher timeframes.
 
 ---
 
@@ -252,11 +354,14 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 | Drawing Type | Rendered As |
 |--------------|-------------|
 | Line | SVG `<line>` |
-| Box | SVG `<rect>` |
+| Box | SVG `<rect>` with color-based transparent fill |
 | Text | Absolutely positioned React `<div>` |
 | Resize handles | Small SVG `<rect>` handles |
+| Fullscreen | Browser fullscreen API on the chart wrapper |
 
 The overlay is intentionally `pointer-events: none`; mouse events are handled by the chart wrapper in `TradingViewChart.jsx`.
+
+`ChartStage.jsx` includes a fullscreen button in the chart's top-right corner. Fullscreen mode uses the browser Fullscreen API when available and falls back to internal fullscreen state if needed. The chart and overlay are both resized through the same wrapper, so drawing alignment is preserved.
 
 ### Overlay Refresh
 
@@ -290,10 +395,13 @@ Dragging a selected drawing moves it by calculating:
 
 ```javascript
 const deltaTime = coords.time - startMouse.time;
+const deltaLogical = coords.logical - startMouse.logical;
 const deltaPrice = coords.price - startMouse.price;
 ```
 
 `offsetDrawing()` applies that delta to the drawing's stored chart coordinates.
+
+When a drawing or resize handle is dragged, the wrapper intercepts the mouse event in capture phase, stops propagation, and temporarily disables chart `handleScroll`/`handleScale`. This prevents the chart from panning while the drawing itself is being moved.
 
 ### Resizing
 
@@ -325,6 +433,10 @@ Available stroke widths:
 ```
 
 The selected `strokeWidth` is saved on the drawing object and persisted in `localStorage`.
+
+### Color
+
+All drawing types support color. The selected color is stored on the drawing object as `color` and persisted in `localStorage`.
 
 ---
 
@@ -377,11 +489,18 @@ Backend errors are returned as JSON responses from `MarketDataController.php`.
 | `useRef` | Keep chart instances and latest drawing/tool state available to event handlers |
 | `requestAnimationFrame` | Throttle overlay re-render requests during chart viewport movement |
 | `ResizeObserver` | Keep chart and overlay dimensions synchronized |
-| `localStorage` | Persist drawings per symbol/timeframe without backend calls |
+| `localStorage` | Persist drawings per symbol without backend calls |
+| Database | Persist the user's available market symbols |
 
 ---
 
 ## Build Verification
+
+After backend/database changes, run:
+
+```bash
+php artisan migrate
+```
 
 After chart changes, run:
 
@@ -404,10 +523,13 @@ Current known build warnings are unrelated to the chart changes:
 The chart now includes:
 
 1. Lightweight Charts candlestick and volume rendering.
-2. Laravel/Bybit candle data flow through `/api/klines`.
-3. Replay mode with follow, stepping, speed controls, and price picking.
-4. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
-5. Drawing tools for line, box, and text.
-6. Drawing persistence per symbol/timeframe in `localStorage`.
-7. Time/price anchored drawings that stay aligned during pan/zoom.
-8. Selection, moving, resize handles, box width/height resizing, and stroke width controls.
+2. Database-backed market symbols through `/api/market-symbols`.
+3. Laravel/Bybit candle data flow through `/api/klines`.
+4. Add-symbol UI in the chart header.
+5. Replay mode with follow, stepping, speed controls, current-price reset, and price picking.
+6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
+7. Drawing tools for line, box, and text.
+8. Drawing colors, stroke widths, selection, moving, and resizing.
+9. Drawing persistence per symbol in `localStorage`, including migration from old per-timeframe keys.
+10. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
+11. Fullscreen chart mode.
