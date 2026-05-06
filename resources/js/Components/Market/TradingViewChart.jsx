@@ -6,194 +6,18 @@ import {
   CrosshairMode,
   LineStyle,
 } from 'lightweight-charts';
-
-const INTERVAL_MAP = {
-  '1m': '1',
-  '3m': '3',
-  '5m': '5',
-  '15m': '15',
-  '30m': '30',
-  '1h': '60',
-  '2h': '120',
-  '4h': '240',
-  '6h': '360',
-  '12h': '720',
-  '1d': 'D',
-  '1w': 'W',
-  '1M': 'M',
-};
-
-const TIMEFRAMES = [
-  { value: '1m', label: '1 Minute' },
-  { value: '3m', label: '3 Minutes' },
-  { value: '5m', label: '5 Minutes' },
-  { value: '15m', label: '15 Minutes' },
-  { value: '30m', label: '30 Minutes' },
-  { value: '1h', label: '1 Hour' },
-  { value: '2h', label: '2 Hours' },
-  { value: '4h', label: '4 Hours' },
-  { value: '6h', label: '6 Hours' },
-  { value: '12h', label: '12 Hours' },
-  { value: '1d', label: '1 Day' },
-  { value: '1w', label: '1 Week' },
-  { value: '1M', label: '1 Month' },
-];
-
-const POPULAR_SYMBOLS = [
-  'BTCUSDT',
-  'ETHUSDT',
-  'BNBUSDT',
-  'SOLUSDT',
-  'XRPUSDT',
-  'ADAUSDT',
-  'DOGEUSDT',
-  'MATICUSDT',
-  'LINKUSDT',
-  'AVAXUSDT',
-];
-
-const CHART_HEIGHT = 780;
-const DRAWING_COLOR = '#60a5fa';
-const DRAWING_FILL = 'rgba(96, 165, 250, 0.16)';
-
-function formatPrice(value) {
-  if (typeof value !== 'number' || Number.isNaN(value)) return '---';
-  return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
-}
-
-function normalizeApiCandles(rawCandles) {
-  if (!Array.isArray(rawCandles)) return [];
-
-  return rawCandles
-    .map((c) => {
-      const rawTime =
-        c?.time ??
-        c?.timestamp ??
-        c?.openTime ??
-        c?.open_time ??
-        c?.t ??
-        c?.[0];
-
-      const open = c?.open ?? c?.o ?? c?.[1];
-      const high = c?.high ?? c?.h ?? c?.[2];
-      const low = c?.low ?? c?.l ?? c?.[3];
-      const close = c?.close ?? c?.c ?? c?.[4];
-      const volume = c?.volume ?? c?.v ?? c?.[5] ?? 0;
-
-      let time = Number(rawTime);
-      if (!Number.isFinite(time)) return null;
-
-      if (time > 9999999999) {
-        time = Math.floor(time / 1000);
-      } else {
-        time = Math.floor(time);
-      }
-
-      const candle = {
-        time,
-        open: Number(open),
-        high: Number(high),
-        low: Number(low),
-        close: Number(close),
-        volume: Number(volume),
-      };
-
-      if (
-        !Number.isFinite(candle.time) ||
-        !Number.isFinite(candle.open) ||
-        !Number.isFinite(candle.high) ||
-        !Number.isFinite(candle.low) ||
-        !Number.isFinite(candle.close) ||
-        !Number.isFinite(candle.volume)
-      ) {
-        return null;
-      }
-
-      return candle;
-    })
-    .filter(Boolean)
-    .sort((a, b) => a.time - b.time);
-}
-
-function findNearestCandleIndex(candles, targetTime) {
-  if (!candles.length || targetTime == null) return -1;
-
-  const numericTargetTime =
-    typeof targetTime === 'object' && targetTime !== null
-      ? ('timestamp' in targetTime ? Number(targetTime.timestamp) : Number(targetTime.time))
-      : Number(targetTime);
-
-  if (!Number.isFinite(numericTargetTime)) return -1;
-
-  let nearestIndex = 0;
-  let nearestDelta = Number.POSITIVE_INFINITY;
-
-  for (let i = 0; i < candles.length; i += 1) {
-    const delta = Math.abs(candles[i].time - numericTargetTime);
-    if (delta < nearestDelta) {
-      nearestDelta = delta;
-      nearestIndex = i;
-    }
-  }
-
-  return nearestIndex;
-}
-
-function normalizeRect(a, b) {
-  return {
-    left: Math.min(a.x, b.x),
-    top: Math.min(a.y, b.y),
-    width: Math.abs(a.x - b.x),
-    height: Math.abs(a.y - b.y),
-  };
-}
-
-function distanceToSegment(point, a, b) {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-
-  if (dx === 0 && dy === 0) {
-    return Math.hypot(point.x - a.x, point.y - a.y);
-  }
-
-  const t = Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)));
-  const projX = a.x + t * dx;
-  const projY = a.y + t * dy;
-
-  return Math.hypot(point.x - projX, point.y - projY);
-}
-
-function buildStorageKey(symbol, timeframe) {
-  return `replay-drawings:${symbol}:${timeframe}`;
-}
-
-function offsetDrawing(drawing, deltaTime, deltaPrice) {
-  if (drawing.type === 'line' || drawing.type === 'rect') {
-    return {
-      ...drawing,
-      start: {
-        time: drawing.start.time + deltaTime,
-        price: drawing.start.price + deltaPrice,
-      },
-      end: {
-        time: drawing.end.time + deltaTime,
-        price: drawing.end.price + deltaPrice,
-      },
-    };
-  }
-
-  if (drawing.type === 'text') {
-    return {
-      ...drawing,
-      point: {
-        time: drawing.point.time + deltaTime,
-        price: drawing.point.price + deltaPrice,
-      },
-    };
-  }
-
-  return drawing;
-}
+import ChartHeader from './TradingViewChart/ChartHeader';
+import ChartStage from './TradingViewChart/ChartStage';
+import ReplayPanel from './TradingViewChart/ReplayPanel';
+import { CHART_HEIGHT, INTERVAL_MAP } from './TradingViewChart/constants';
+import {
+  buildStorageKey,
+  distanceToSegment,
+  findNearestCandleIndex,
+  normalizeApiCandles,
+  normalizeRect,
+  offsetDrawing,
+} from './TradingViewChart/utils';
 
 export default function TradingViewReplayChart({
   initialSymbol = 'BTCUSDT',
@@ -214,7 +38,9 @@ export default function TradingViewReplayChart({
   const drawingsRef = useRef([]);
   const selectedDrawingIdRef = useRef(null);
   const dragDrawingRef = useRef(null);
+  const resizeDrawingRef = useRef(null);
   const isReplayPricePickActiveRef = useRef(false);
+  const overlayRenderFrameRef = useRef(null);
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [timeframe, setTimeframe] = useState(initialTimeframe);
@@ -238,9 +64,19 @@ export default function TradingViewReplayChart({
   const [tempDrawing, setTempDrawing] = useState(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState(null);
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: CHART_HEIGHT });
+  const [overlayRenderVersion, setOverlayRenderVersion] = useState(0);
 
   const [textInput, setTextInput] = useState(null);
   const [textDraft, setTextDraft] = useState('');
+
+  const scheduleOverlayRender = useCallback(() => {
+    if (overlayRenderFrameRef.current) return;
+
+    overlayRenderFrameRef.current = requestAnimationFrame(() => {
+      overlayRenderFrameRef.current = null;
+      setOverlayRenderVersion((version) => version + 1);
+    });
+  }, []);
 
   const visibleCandles = useMemo(() => {
     if (!replayMode) return allCandles;
@@ -259,6 +95,10 @@ export default function TradingViewReplayChart({
     if (!visibleCandles.length) return null;
     return visibleCandles[visibleCandles.length - 1].close;
   }, [visibleCandles]);
+
+  const selectedDrawing = useMemo(() => {
+    return drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
+  }, [drawings, selectedDrawingId]);
 
   useEffect(() => {
     isSpacePressedRef.current = isSpacePressed;
@@ -293,6 +133,7 @@ export default function TradingViewReplayChart({
         width: Math.floor(rect.width),
         height: Math.floor(rect.height || CHART_HEIGHT),
       });
+      scheduleOverlayRender();
     };
 
     updateSize();
@@ -301,7 +142,7 @@ export default function TradingViewReplayChart({
     observer.observe(wrapperRef.current);
 
     return () => observer.disconnect();
-  }, []);
+  }, [scheduleOverlayRender]);
 
   const saveDrawings = useCallback((nextDrawings) => {
     setDrawings(nextDrawings);
@@ -395,7 +236,7 @@ export default function TradingViewReplayChart({
 
       return null;
     }).filter(Boolean);
-  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize]);
+  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion]);
 
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
@@ -423,6 +264,47 @@ export default function TradingViewReplayChart({
       if (d.type === 'text') {
         const { p } = d.screen;
         if (Math.abs(x - p.x) <= 80 && Math.abs(y - p.y) <= 24) return d.id;
+      }
+    }
+
+    return null;
+  }, [renderedDrawings]);
+
+  const hitTestResizeHandle = useCallback((x, y) => {
+    if (!selectedDrawingIdRef.current) return null;
+
+    const selected = renderedDrawings.find((d) => d.id === selectedDrawingIdRef.current);
+    if (!selected || selected.type === 'text') return null;
+
+    const handles = [];
+
+    if (selected.type === 'line') {
+      handles.push(
+        { handle: 'start', point: selected.screen.p1 },
+        { handle: 'end', point: selected.screen.p2 }
+      );
+    }
+
+    if (selected.type === 'rect') {
+      const { p1, p2 } = selected.screen;
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+
+      handles.push(
+        { handle: 'start', point: p1 },
+        { handle: 'end', point: p2 },
+        { handle: 'start-x-end-y', point: { x: p1.x, y: p2.y } },
+        { handle: 'end-x-start-y', point: { x: p2.x, y: p1.y } },
+        { handle: 'start-time', point: { x: p1.x, y: midY } },
+        { handle: 'end-time', point: { x: p2.x, y: midY } },
+        { handle: 'start-price', point: { x: midX, y: p1.y } },
+        { handle: 'end-price', point: { x: midX, y: p2.y } }
+      );
+    }
+
+    for (const item of handles) {
+      if (Math.abs(x - item.point.x) <= 8 && Math.abs(y - item.point.y) <= 8) {
+        return { drawingId: selected.id, handle: item.handle };
       }
     }
 
@@ -490,6 +372,7 @@ export default function TradingViewReplayChart({
     });
 
     const handleVisibleRangeChange = () => {
+      scheduleOverlayRender();
       if (isProgrammaticRangeChangeRef.current) return;
       setFollowReplay(false);
     };
@@ -519,9 +402,19 @@ export default function TradingViewReplayChart({
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight || CHART_HEIGHT,
       });
+      scheduleOverlayRender();
     });
 
     resizeObserverRef.current.observe(containerRef.current);
+
+    const handleViewportInteraction = () => {
+      scheduleOverlayRender();
+    };
+
+    containerRef.current.addEventListener('wheel', handleViewportInteraction, { passive: true });
+    containerRef.current.addEventListener('mousemove', handleViewportInteraction, { passive: true });
+    containerRef.current.addEventListener('mouseup', handleViewportInteraction, { passive: true });
+    containerRef.current.addEventListener('mouseleave', handleViewportInteraction, { passive: true });
 
     return () => {
       if (replayTimerRef.current) {
@@ -531,6 +424,18 @@ export default function TradingViewReplayChart({
 
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
       chart.unsubscribeClick(handleChartClick);
+
+      if (containerRef.current) {
+        containerRef.current.removeEventListener('wheel', handleViewportInteraction);
+        containerRef.current.removeEventListener('mousemove', handleViewportInteraction);
+        containerRef.current.removeEventListener('mouseup', handleViewportInteraction);
+        containerRef.current.removeEventListener('mouseleave', handleViewportInteraction);
+      }
+
+      if (overlayRenderFrameRef.current) {
+        cancelAnimationFrame(overlayRenderFrameRef.current);
+        overlayRenderFrameRef.current = null;
+      }
 
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
@@ -542,7 +447,7 @@ export default function TradingViewReplayChart({
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [replayMode, setReplayPointFromCoordinates]);
+  }, [replayMode, scheduleOverlayRender, setReplayPointFromCoordinates]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -562,7 +467,8 @@ export default function TradingViewReplayChart({
     );
 
     volumeSeries.setData(visibleVolume);
-  }, [visibleCandles, visibleVolume]);
+    scheduleOverlayRender();
+  }, [scheduleOverlayRender, visibleCandles, visibleVolume]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -573,8 +479,9 @@ export default function TradingViewReplayChart({
 
     requestAnimationFrame(() => {
       isProgrammaticRangeChangeRef.current = false;
+      scheduleOverlayRender();
     });
-  }, [allCandles, symbol, timeframe]);
+  }, [allCandles, scheduleOverlayRender, symbol, timeframe]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -585,8 +492,9 @@ export default function TradingViewReplayChart({
 
     requestAnimationFrame(() => {
       isProgrammaticRangeChangeRef.current = false;
+      scheduleOverlayRender();
     });
-  }, [replayIndex, replayMode, followReplay, visibleCandles.length]);
+  }, [followReplay, replayIndex, replayMode, scheduleOverlayRender, visibleCandles.length]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -680,6 +588,8 @@ export default function TradingViewReplayChart({
         setTempDrawing(null);
         setTool(null);
         setTextInput(null);
+        resizeDrawingRef.current = null;
+        dragDrawingRef.current = null;
         setIsReplayPricePickActive(false);
       }
     };
@@ -689,6 +599,7 @@ export default function TradingViewReplayChart({
         event.preventDefault();
         setIsSpacePressed(false);
         dragDrawingRef.current = null;
+        resizeDrawingRef.current = null;
       }
     };
 
@@ -722,6 +633,21 @@ export default function TradingViewReplayChart({
 
       const { x, y } = getRelativePoint(event);
 
+      const resizeHit = hitTestResizeHandle(x, y);
+      if (resizeHit) {
+        const drawing = drawingsRef.current.find((d) => d.id === resizeHit.drawingId);
+        if (!drawing) return;
+
+        event.preventDefault();
+        resizeDrawingRef.current = {
+          ...resizeHit,
+          originalDrawing: drawing,
+        };
+        dragDrawingRef.current = null;
+        setSelectedDrawingId(resizeHit.drawingId);
+        return;
+      }
+
       if (toolRef.current === 'line' || toolRef.current === 'rect') {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
@@ -741,9 +667,11 @@ export default function TradingViewReplayChart({
             type: currentTemp.type,
             start: currentTemp.start,
             end: coords,
+            strokeWidth: currentTemp.strokeWidth ?? 2,
           };
           appendDrawing(completed);
           setTempDrawing(null);
+          setTool(null);
         }
         return;
       }
@@ -764,6 +692,7 @@ export default function TradingViewReplayChart({
       const hitId = hitTestDrawing(x, y);
       if (hitId) {
         setSelectedDrawingId(hitId);
+        resizeDrawingRef.current = null;
 
         const coords = getChartCoordinates(x, y);
         const drawing = drawingsRef.current.find((d) => d.id === hitId);
@@ -787,6 +716,7 @@ export default function TradingViewReplayChart({
 
       setSelectedDrawingId(null);
       dragDrawingRef.current = null;
+      resizeDrawingRef.current = null;
       // no replay-price auto-drag here; native chart behavior stays active
     };
 
@@ -807,6 +737,45 @@ export default function TradingViewReplayChart({
         return;
       }
 
+      if (resizeDrawingRef.current) {
+        const coords = getChartCoordinates(x, y);
+        if (!coords) return;
+
+        const { drawingId, handle, originalDrawing } = resizeDrawingRef.current;
+        const resized = { ...originalDrawing };
+
+        if (resized.type === 'line') {
+          resized[handle] = coords;
+        }
+
+        if (resized.type === 'rect') {
+          if (handle === 'start') {
+            resized.start = coords;
+          } else if (handle === 'end') {
+            resized.end = coords;
+          } else if (handle === 'start-x-end-y') {
+            resized.start = { ...resized.start, time: coords.time };
+            resized.end = { ...resized.end, price: coords.price };
+          } else if (handle === 'end-x-start-y') {
+            resized.end = { ...resized.end, time: coords.time };
+            resized.start = { ...resized.start, price: coords.price };
+          } else if (handle === 'start-time') {
+            resized.start = { ...resized.start, time: coords.time };
+          } else if (handle === 'end-time') {
+            resized.end = { ...resized.end, time: coords.time };
+          } else if (handle === 'start-price') {
+            resized.start = { ...resized.start, price: coords.price };
+          } else if (handle === 'end-price') {
+            resized.end = { ...resized.end, price: coords.price };
+          }
+        }
+
+        const next = drawingsRef.current.map((d) => (d.id === drawingId ? resized : d));
+        setDrawings(next);
+        drawingsRef.current = next;
+        return;
+      }
+
       if (dragDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
@@ -823,6 +792,11 @@ export default function TradingViewReplayChart({
     };
 
     const handleMouseUp = () => {
+      if (resizeDrawingRef.current) {
+        saveDrawings(drawingsRef.current);
+        resizeDrawingRef.current = null;
+      }
+
       if (dragDrawingRef.current) {
         saveDrawings(drawingsRef.current);
         dragDrawingRef.current = null;
@@ -838,7 +812,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [appendDrawing, getChartCoordinates, hitTestDrawing, replayMode, saveDrawings]);
+  }, [appendDrawing, getChartCoordinates, hitTestDrawing, hitTestResizeHandle, replayMode, saveDrawings]);
 
   useEffect(() => {
     async function fetchKlines() {
@@ -1002,215 +976,86 @@ export default function TradingViewReplayChart({
     setTool(null);
   };
 
+  const handleToolChange = (nextTool) => {
+    setTool((currentTool) => (
+      typeof nextTool === 'function' ? nextTool(currentTool) : nextTool
+    ));
+    setTempDrawing(null);
+    setTextInput(null);
+    setIsReplayPricePickActive(false);
+  };
+
+  const handleClearDrawings = () => {
+    saveDrawings([]);
+    setSelectedDrawingId(null);
+  };
+
+  const handleDeleteSelectedDrawing = () => {
+    if (!selectedDrawingId) return;
+
+    const next = drawings.filter((d) => d.id !== selectedDrawingId);
+    saveDrawings(next);
+    setSelectedDrawingId(null);
+  };
+
+  const handleDrawingWidthChange = (strokeWidth) => {
+    if (!selectedDrawingId) return;
+
+    const next = drawingsRef.current.map((drawing) => {
+      if (drawing.id !== selectedDrawingId) return drawing;
+      if (drawing.type !== 'line' && drawing.type !== 'rect') return drawing;
+
+      return {
+        ...drawing,
+        strokeWidth,
+      };
+    });
+
+    saveDrawings(next);
+  };
+
+  const handleCancelText = () => {
+    setTextInput(null);
+    setTool(null);
+  };
+
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-gray-800 p-4">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-300">Symbol</label>
-            <select
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value)}
-              className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white"
-            >
-              {POPULAR_SYMBOLS.map((sym) => (
-                <option key={sym} value={sym}>
-                  {sym}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-300">Timeframe</label>
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value)}
-              className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white"
-            >
-              {TIMEFRAMES.map((tf) => (
-                <option key={tf.value} value={tf.value}>
-                  {tf.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-gray-300">Replay</label>
-            <button
-              onClick={toggleReplayMode}
-              className={`w-full rounded-lg p-2 text-lg font-bold text-white ${
-                replayMode ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
-              }`}
-            >
-              {replayMode ? 'Exit Replay Mode' : 'Replay Mode'}
-            </button>
-          </div>
-
-          <div className="flex items-end">
-            <div className="text-white">
-              <div className="text-sm text-gray-400">
-                {replayMode ? 'Replay Price' : 'Current Price'}
-              </div>
-              <div className="text-2xl font-bold text-green-500">
-                ${formatPrice(currentPrice)}
-              </div>
-              {replayMode && (
-                <div className="mt-1 text-xs text-blue-400">
-                  Selected: ${formatPrice(selectedReplayPrice)}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
+      <ChartHeader
+        symbol={symbol}
+        timeframe={timeframe}
+        replayMode={replayMode}
+        currentPrice={currentPrice}
+        selectedReplayPrice={selectedReplayPrice}
+        onSymbolChange={setSymbol}
+        onTimeframeChange={setTimeframe}
+        onToggleReplayMode={toggleReplayMode}
+      />
 
       {replayMode && (
-        <div className="rounded-lg bg-gray-800 p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={stepBackward}
-              className="rounded-lg bg-gray-700 px-3 py-2 text-white hover:bg-gray-600"
-            >
-              ◀
-            </button>
-
-            <button
-              onClick={togglePlay}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-            >
-              {isPlaying ? 'Pause' : 'Play'}
-            </button>
-
-            <button
-              onClick={stepForward}
-              className="rounded-lg bg-gray-700 px-3 py-2 text-white hover:bg-gray-600"
-            >
-              ▶
-            </button>
-
-            <button
-              onClick={resetReplay}
-              className="rounded-lg bg-red-600 px-3 py-2 text-white hover:bg-red-500"
-            >
-              Reset
-            </button>
-
-            <button
-              onClick={handleFollowReplay}
-              className={`rounded-lg px-3 py-2 text-white ${
-                followReplay ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-            >
-              {followReplay ? 'Following' : 'Follow Replay'}
-            </button>
-
-            <button
-              onClick={() => setIsReplayPricePickActive((prev) => !prev)}
-              className={`rounded-lg px-3 py-2 text-white ${
-                isReplayPricePickActive
-                  ? 'bg-amber-600 hover:bg-amber-700'
-                  : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-            >
-              {isReplayPricePickActive ? 'Click Chart to Set Price' : 'Set Replay Price'}
-            </button>
-
-            <div className="ml-4 flex flex-wrap items-center gap-1">
-              <span className="text-xs text-white">Speed:</span>
-              {[
-                { label: '0.25x', value: 3000 },
-                { label: '0.5x', value: 2000 },
-                { label: '1x', value: 1000 },
-                { label: '2x', value: 500 },
-                { label: '4x', value: 250 },
-                { label: '10x', value: 100 },
-                { label: '20x', value: 50 },
-              ].map((speed) => (
-                <button
-                  key={speed.value}
-                  onClick={() => setPlaybackSpeed(speed.value)}
-                  className={`rounded px-2 py-1 text-xs text-white ${
-                    playbackSpeed === speed.value ? 'bg-blue-600' : 'bg-gray-700'
-                  }`}
-                >
-                  {speed.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="ml-auto text-xs text-gray-300">
-              Candle {Math.min(replayIndex + 1, allCandles.length)} / {allCandles.length}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => {
-                setTool((prev) => prev === 'line' ? null : 'line');
-                setTempDrawing(null);
-                setTextInput(null);
-                setIsReplayPricePickActive(false);
-              }}
-              className={`rounded-lg px-3 py-2 text-white ${tool === 'line' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-            >
-              Line
-            </button>
-
-            <button
-              onClick={() => {
-                setTool((prev) => prev === 'rect' ? null : 'rect');
-                setTempDrawing(null);
-                setTextInput(null);
-                setIsReplayPricePickActive(false);
-              }}
-              className={`rounded-lg px-3 py-2 text-white ${tool === 'rect' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-            >
-              Box
-            </button>
-
-            <button
-              onClick={() => {
-                setTool((prev) => prev === 'text' ? null : 'text');
-                setTempDrawing(null);
-                setTextInput(null);
-                setIsReplayPricePickActive(false);
-              }}
-              className={`rounded-lg px-3 py-2 text-white ${tool === 'text' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'}`}
-            >
-              Text
-            </button>
-
-            <button
-              onClick={() => {
-                saveDrawings([]);
-                setSelectedDrawingId(null);
-              }}
-              disabled={!drawings.length}
-              className="rounded-lg bg-red-600 px-3 py-2 text-white disabled:opacity-40"
-            >
-              Clear Drawings
-            </button>
-
-            <button
-              onClick={() => {
-                if (!selectedDrawingId) return;
-                const next = drawings.filter((d) => d.id !== selectedDrawingId);
-                saveDrawings(next);
-                setSelectedDrawingId(null);
-              }}
-              disabled={!selectedDrawingId}
-              className="rounded-lg bg-red-700 px-3 py-2 text-white disabled:opacity-40"
-            >
-              Delete Selected
-            </button>
-          </div>
-
-          <div className="text-xs text-gray-400">
-            Default chart mouse behavior is preserved. Use “Set Replay Price” to arm the next chart click for price selection. Drawings can be selected and dragged. Hold Space to pan if you want, but normal chart drag/pan remains available when no drawing tool is active.
-          </div>
-        </div>
+        <ReplayPanel
+          isPlaying={isPlaying}
+          followReplay={followReplay}
+          isReplayPricePickActive={isReplayPricePickActive}
+          playbackSpeed={playbackSpeed}
+          replayIndex={replayIndex}
+          candleCount={allCandles.length}
+          tool={tool}
+          drawings={drawings}
+          selectedDrawingId={selectedDrawingId}
+          selectedDrawing={selectedDrawing}
+          onStepBackward={stepBackward}
+          onTogglePlay={togglePlay}
+          onStepForward={stepForward}
+          onResetReplay={resetReplay}
+          onFollowReplay={handleFollowReplay}
+          onToggleReplayPricePick={() => setIsReplayPricePickActive((prev) => !prev)}
+          onPlaybackSpeedChange={setPlaybackSpeed}
+          onToolChange={handleToolChange}
+          onDrawingWidthChange={handleDrawingWidthChange}
+          onClearDrawings={handleClearDrawings}
+          onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
+        />
       )}
 
       {loading && (
@@ -1225,144 +1070,22 @@ export default function TradingViewReplayChart({
         </div>
       )}
 
-      <div
-        ref={wrapperRef}
-        className="relative overflow-hidden rounded-lg bg-[#081631]"
-        style={{
-          height: `${CHART_HEIGHT}px`,
-          cursor: replayMode
-            ? (
-                isSpacePressed
-                  ? 'grab'
-                  : tool
-                    ? 'crosshair'
-                    : isReplayPricePickActive
-                      ? 'crosshair'
-                      : 'default'
-              )
-            : 'default',
-        }}
-      >
-        <div ref={containerRef} className="absolute inset-0 z-0" />
-
-        <svg
-          className="pointer-events-none absolute inset-0 z-10"
-          width={overlaySize.width}
-          height={overlaySize.height}
-          style={{ width: '100%', height: '100%' }}
-        >
-          {renderedDrawings.map((d) => {
-            const isSelected = d.id === selectedDrawingId;
-            const stroke = isSelected ? '#fbbf24' : DRAWING_COLOR;
-            const strokeWidth = isSelected ? 3 : 2;
-
-            if (d.type === 'line') {
-              return (
-                <line
-                  key={d.id}
-                  x1={d.screen.p1.x}
-                  y1={d.screen.p1.y}
-                  x2={d.screen.p2.x}
-                  y2={d.screen.p2.y}
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
-                />
-              );
-            }
-
-            if (d.type === 'rect') {
-              const rect = normalizeRect(d.screen.p1, d.screen.p2);
-              return (
-                <rect
-                  key={d.id}
-                  x={rect.left}
-                  y={rect.top}
-                  width={Math.max(rect.width, 1)}
-                  height={Math.max(rect.height, 1)}
-                  fill={d.id.startsWith('temp-') ? 'rgba(96, 165, 250, 0.08)' : DRAWING_FILL}
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
-                  rx={4}
-                />
-              );
-            }
-
-            return null;
-          })}
-        </svg>
-
-        {renderedDrawings
-          .filter((d) => d.type === 'text')
-          .map((d) => {
-            const isSelected = d.id === selectedDrawingId;
-            return (
-              <div
-                key={d.id}
-                className="pointer-events-none absolute z-10"
-                style={{
-                  left: d.screen.p.x + 8,
-                  top: d.screen.p.y - 10,
-                  transform: 'translateY(-50%)',
-                }}
-              >
-                <div
-                  className="rounded border px-2 py-1 text-xs text-white shadow-lg"
-                  style={{
-                    borderColor: isSelected ? '#fbbf24' : DRAWING_COLOR,
-                    background: 'rgba(15, 23, 42, 0.9)',
-                  }}
-                >
-                  {d.text}
-                </div>
-              </div>
-            );
-          })}
-
-        {textInput && (
-          <div
-            className="absolute z-20 w-56 rounded-lg border border-blue-500 bg-slate-900 p-3 shadow-2xl"
-            style={{
-              left: Math.min(textInput.x + 12, Math.max(overlaySize.width - 240, 12)),
-              top: Math.max(textInput.y - 12, 12),
-            }}
-          >
-            <div className="mb-2 text-xs font-medium text-gray-300">Text label</div>
-            <input
-              value={textDraft}
-              onChange={(e) => setTextDraft(e.target.value)}
-              placeholder="Enter note"
-              autoFocus
-              className="mb-2 w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveText();
-                if (e.key === 'Escape') {
-                  setTextInput(null);
-                  setTool(null);
-                }
-              }}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handleSaveText}
-                className="rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => {
-                  setTextInput(null);
-                  setTool(null);
-                }}
-                className="rounded bg-gray-700 px-3 py-2 text-xs font-medium text-white"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      <ChartStage
+        wrapperRef={wrapperRef}
+        containerRef={containerRef}
+        replayMode={replayMode}
+        isSpacePressed={isSpacePressed}
+        isReplayPricePickActive={isReplayPricePickActive}
+        tool={tool}
+        overlaySize={overlaySize}
+        renderedDrawings={renderedDrawings}
+        selectedDrawingId={selectedDrawingId}
+        textInput={textInput}
+        textDraft={textDraft}
+        onTextDraftChange={setTextDraft}
+        onSaveText={handleSaveText}
+        onCancelText={handleCancelText}
+      />
     </div>
   );
 }
