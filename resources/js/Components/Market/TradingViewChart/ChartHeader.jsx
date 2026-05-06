@@ -1,17 +1,25 @@
 import React from 'react';
-import { POPULAR_SYMBOLS, TIMEFRAMES } from './constants';
+import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
 export default function ChartHeader({
   symbol,
+  symbols,
+  newSymbol,
+  isSavingSymbol,
+  symbolError,
   timeframe,
   replayMode,
   currentPrice,
   selectedReplayPrice,
   onSymbolChange,
+  onNewSymbolChange,
+  onAddSymbol,
   onTimeframeChange,
   onToggleReplayMode,
 }) {
+  const symbolOptions = symbols.length ? symbols : [{ symbol }];
+
   return (
     <div className="rounded-lg bg-gray-800 p-3">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -22,12 +30,30 @@ export default function ChartHeader({
             onChange={(e) => onSymbolChange(e.target.value)}
             className="w-full rounded-md border border-gray-600 bg-gray-700 px-2 py-1.5 text-sm text-white"
           >
-            {POPULAR_SYMBOLS.map((sym) => (
-              <option key={sym} value={sym}>
-                {sym}
+            {symbolOptions.map((item) => (
+              <option key={item.symbol} value={item.symbol}>
+                {item.symbol}
               </option>
             ))}
           </select>
+          <form onSubmit={onAddSymbol} className="mt-1 flex gap-1">
+            <input
+              value={newSymbol}
+              onChange={(e) => onNewSymbolChange(e.target.value)}
+              placeholder="Add symbol"
+              className="min-w-0 flex-1 rounded-md border border-gray-600 bg-gray-700 px-2 py-1 text-xs uppercase text-white outline-none"
+            />
+            <button
+              type="submit"
+              disabled={isSavingSymbol || !newSymbol.trim()}
+              className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              Add
+            </button>
+          </form>
+          {symbolError && (
+            <div className="mt-1 text-[11px] text-red-400">{symbolError}</div>
+          )}
         </div>
 
         <div>

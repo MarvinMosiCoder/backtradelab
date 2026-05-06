@@ -2,11 +2,50 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MarketSymbol;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\Rule;
 
 class MarketDataController extends Controller
 {
+    public function symbols()
+    {
+        $symbols = MarketSymbol::query()
+            ->where('is_active', true)
+            ->orderBy('symbol')
+            ->get(['id', 'symbol', 'category']);
+
+        return response()->json([
+            'success' => true,
+            'symbols' => $symbols,
+        ]);
+    }
+
+    public function storeSymbol(Request $request)
+    {
+        $validated = $request->validate([
+            'symbol' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9]+$/'],
+            'category' => ['nullable', Rule::in(['spot', 'linear', 'inverse'])],
+        ]);
+
+        $symbol = strtoupper($validated['symbol']);
+        $category = $validated['category'] ?? 'spot';
+
+        $marketSymbol = MarketSymbol::query()->updateOrCreate(
+            ['symbol' => $symbol],
+            [
+                'category' => $category,
+                'is_active' => true,
+            ]
+        );
+
+        return response()->json([
+            'success' => true,
+            'symbol' => $marketSymbol->only(['id', 'symbol', 'category']),
+        ], $marketSymbol->wasRecentlyCreated ? 201 : 200);
+    }
+
     public function klines(Request $request)
     {
         $symbol = strtoupper($request->query('symbol', 'BTCUSDT'));

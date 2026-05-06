@@ -18,6 +18,8 @@ use App\Http\Controllers\MarketDataController;
 Route::apiResource('getSidebar', AdminUsersController::class);
 
 Route::apiResource('postAddSave', AdminUsersController::class);
+Route::get('/market-symbols', [MarketDataController::class, 'symbols']);
+Route::post('/market-symbols', [MarketDataController::class, 'storeSymbol']);
 Route::get('/klines', [MarketDataController::class, 'klines']);
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();

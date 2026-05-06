@@ -48,6 +48,10 @@ export default function TradingViewReplayChart({
   const overlayRenderFrameRef = useRef(null);
 
   const [symbol, setSymbol] = useState(initialSymbol);
+  const [symbols, setSymbols] = useState([]);
+  const [newSymbol, setNewSymbol] = useState('');
+  const [symbolError, setSymbolError] = useState('');
+  const [isSavingSymbol, setIsSavingSymbol] = useState(false);
   const [timeframe, setTimeframe] = useState(initialTimeframe);
 
   const [allCandles, setAllCandles] = useState([]);
@@ -167,6 +171,35 @@ export default function TradingViewReplayChart({
 
     return () => observer.disconnect();
   }, [scheduleOverlayRender]);
+
+  const loadMarketSymbols = useCallback(async () => {
+    try {
+      const response = await fetch('/api/market-symbols', {
+        headers: { Accept: 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      const nextSymbols = Array.isArray(result.symbols) ? result.symbols : [];
+
+      setSymbols(nextSymbols);
+      setSymbol((currentSymbol) => (
+        nextSymbols.length && !nextSymbols.some((item) => item.symbol === currentSymbol)
+          ? nextSymbols[0].symbol
+          : currentSymbol
+      ));
+      setSymbolError('');
+    } catch (err) {
+      setSymbolError(err.message || 'Failed to load symbols');
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMarketSymbols();
+  }, [loadMarketSymbols]);
 
   const saveDrawings = useCallback((nextDrawings) => {
     setDrawings(nextDrawings);
@@ -1173,6 +1206,54 @@ export default function TradingViewReplayChart({
     setTool(null);
   };
 
+  const handleAddSymbol = async (event) => {
+    event.preventDefault();
+
+    const normalizedSymbol = newSymbol.trim().toUpperCase();
+    if (!normalizedSymbol) return;
+
+    setIsSavingSymbol(true);
+    setSymbolError('');
+
+    try {
+      const response = await fetch('/api/market-symbols', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          symbol: normalizedSymbol,
+          category: 'spot',
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Failed to save symbol');
+      }
+
+      const savedSymbol = result.symbol;
+
+      setSymbols((currentSymbols) => {
+        if (currentSymbols.some((item) => item.symbol === savedSymbol.symbol)) {
+          return currentSymbols.map((item) => (
+            item.symbol === savedSymbol.symbol ? savedSymbol : item
+          ));
+        }
+
+        return [...currentSymbols, savedSymbol].sort((a, b) => a.symbol.localeCompare(b.symbol));
+      });
+      setSymbol(savedSymbol.symbol);
+      setNewSymbol('');
+    } catch (err) {
+      setSymbolError(err.message || 'Failed to save symbol');
+    } finally {
+      setIsSavingSymbol(false);
+    }
+  };
+
   const handleToggleFullscreen = async () => {
     const fullscreenElement = fullscreenRef.current;
     if (!fullscreenElement) return;
@@ -1203,11 +1284,20 @@ export default function TradingViewReplayChart({
     >
       <ChartHeader
         symbol={symbol}
+        symbols={symbols}
+        newSymbol={newSymbol}
+        isSavingSymbol={isSavingSymbol}
+        symbolError={symbolError}
         timeframe={timeframe}
         replayMode={replayMode}
         currentPrice={currentPrice}
         selectedReplayPrice={selectedReplayPrice}
         onSymbolChange={setSymbol}
+        onNewSymbolChange={(value) => {
+          setNewSymbol(value.toUpperCase());
+          setSymbolError('');
+        }}
+        onAddSymbol={handleAddSymbol}
         onTimeframeChange={setTimeframe}
         onToggleReplayMode={toggleReplayMode}
       />
