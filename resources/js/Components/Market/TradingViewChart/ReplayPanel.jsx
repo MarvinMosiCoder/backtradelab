@@ -17,6 +17,7 @@ export default function ReplayPanel({
   drawings,
   selectedDrawingId,
   selectedDrawing,
+  toolSettings,
   onStepBackward,
   onTogglePlay,
   onStepForward,
@@ -28,12 +29,31 @@ export default function ReplayPanel({
   onDrawingColorChange,
   onDrawingWidthChange,
   onDrawingLabelChange,
+  onSaveSelectedToolPreset,
+  onApplyToolPreset,
   onClearDrawings,
   onDeleteSelectedDrawing,
 }) {
   const handleToolChange = (nextTool) => {
     onToolChange((currentTool) => (currentTool === nextTool ? null : nextTool));
   };
+  const presetType = selectedDrawing?.type ?? tool;
+  const presetLabel = presetType === 'rect'
+    ? 'Box'
+    : presetType === 'text'
+      ? 'Text'
+      : presetType
+        ? presetType.charAt(0).toUpperCase() + presetType.slice(1)
+        : '';
+  const presetItems = Array.isArray(toolSettings?.presets?.[presetType])
+    ? toolSettings.presets[presetType]
+    : [];
+  const canUsePresets = ['line', 'forecast', 'measure', 'rect', 'text'].includes(presetType);
+  const selectedPresetName = (
+    selectedDrawing?.type === 'text'
+      ? selectedDrawing?.text
+      : selectedDrawing?.labelText
+  )?.trim();
 
   return (
     <div className="space-y-2 rounded-lg bg-gray-800 p-3">
@@ -255,6 +275,38 @@ export default function ReplayPanel({
             placeholder="Text note"
             className="h-7 w-56 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
           />
+        </div>
+      )}
+
+      {canUsePresets && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-xs text-gray-300">{presetLabel} presets:</span>
+
+          {presetItems.map((preset) => (
+            <button
+              key={preset.id ?? preset.name}
+              type="button"
+              onClick={() => onApplyToolPreset(presetType, preset)}
+              className="rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs text-white hover:bg-slate-700"
+              title={`Use ${preset.name}`}
+            >
+              {preset.name}
+            </button>
+          ))}
+
+          {!presetItems.length && (
+            <span className="text-[11px] text-gray-500">No saved presets</span>
+          )}
+
+          {selectedDrawing && selectedPresetName && (
+            <button
+              type="button"
+              onClick={onSaveSelectedToolPreset}
+              className="rounded bg-emerald-700 px-2 py-1 text-xs text-white hover:bg-emerald-600"
+            >
+              Save Preset
+            </button>
+          )}
         </div>
       )}
 

@@ -244,6 +244,10 @@ export default function TradingViewReplayChart({
       settings.labelText = drawing.labelText;
     }
 
+    if (drawing.type === 'text' && typeof drawing.text === 'string') {
+      settings.labelText = drawing.text;
+    }
+
     if (drawing.labelVertical) {
       settings.labelVertical = drawing.labelVertical;
     }
@@ -285,6 +289,42 @@ export default function TradingViewReplayChart({
   const getToolSettingsForType = useCallback((type) => {
     return toolSettings[type] ?? {};
   }, [toolSettings]);
+
+  const getToolPresetsForType = useCallback((type) => {
+    return Array.isArray(toolSettings.presets?.[type])
+      ? toolSettings.presets[type]
+      : [];
+  }, [toolSettings]);
+
+  const saveToolPreset = useCallback((type, preset) => {
+    if (!type || !preset?.name || !preset?.settings) return;
+
+    setToolSettings((currentSettings) => {
+      const currentPresets = Array.isArray(currentSettings.presets?.[type])
+        ? currentSettings.presets[type]
+        : [];
+      const normalizedName = preset.name.trim();
+      const nextPreset = {
+        id: preset.id ?? `${type}-${Date.now()}`,
+        name: normalizedName,
+        settings: preset.settings,
+      };
+      const nextTypePresets = [
+        nextPreset,
+        ...currentPresets.filter((item) => item.name.toLowerCase() !== normalizedName.toLowerCase()),
+      ].slice(0, 20);
+      const nextSettings = {
+        ...currentSettings,
+        presets: {
+          ...(currentSettings.presets ?? {}),
+          [type]: nextTypePresets,
+        },
+      };
+
+      persistToolSettings(nextSettings);
+      return nextSettings;
+    });
+  }, [persistToolSettings]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1674,6 +1714,58 @@ export default function TradingViewReplayChart({
     );
   };
 
+  const handleSaveSelectedToolPreset = () => {
+    const selected = drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current);
+    if (!selected || !['line', 'forecast', 'measure', 'rect', 'text'].includes(selected.type)) return;
+
+    const settings = buildToolSettingsFromDrawing(selected);
+    const presetName = (
+      selected.type === 'text'
+        ? selected.text
+        : selected.labelText
+    )?.trim();
+
+    if (!presetName) return;
+
+    saveToolPreset(selected.type, {
+      name: presetName,
+      settings,
+    });
+    saveToolSettingsForType(selected.type, settings);
+  };
+
+  const handleApplyToolPreset = (type, preset) => {
+    if (!type || !preset?.settings) return;
+
+    const settings = preset.settings;
+
+    saveToolSettingsForType(type, settings);
+
+    if (settings.color) {
+      setDrawingColor(settings.color);
+    }
+
+    if (toolRef.current === 'text' && settings.labelText) {
+      setTextDraft(settings.labelText);
+    }
+
+    if (selectedDrawingIdRef.current) {
+      const next = drawingsRef.current.map((drawing) => {
+        if (drawing.id !== selectedDrawingIdRef.current || drawing.type !== type) {
+          return drawing;
+        }
+
+        return {
+          ...drawing,
+          ...settings,
+          ...(type === 'text' && settings.labelText ? { text: settings.labelText } : {}),
+        };
+      });
+
+      saveDrawings(next);
+    }
+  };
+
   const handleCancelText = () => {
     setTextInput(null);
     setTool(null);
@@ -1788,6 +1880,7 @@ export default function TradingViewReplayChart({
           drawings={drawings}
           selectedDrawingId={selectedDrawingId}
           selectedDrawing={selectedDrawing}
+          toolSettings={toolSettings}
           onStepBackward={stepBackward}
           onTogglePlay={togglePlay}
           onStepForward={stepForward}
@@ -1799,6 +1892,8 @@ export default function TradingViewReplayChart({
           onDrawingColorChange={handleDrawingColorChange}
           onDrawingWidthChange={handleDrawingWidthChange}
           onDrawingLabelChange={handleDrawingLabelChange}
+          onSaveSelectedToolPreset={handleSaveSelectedToolPreset}
+          onApplyToolPreset={handleApplyToolPreset}
           onClearDrawings={handleClearDrawings}
           onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
         />
