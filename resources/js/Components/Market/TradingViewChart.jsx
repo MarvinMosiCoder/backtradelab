@@ -62,9 +62,10 @@ export default function TradingViewReplayChart({
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [symbols, setSymbols] = useState([]);
-  const [newSymbol, setNewSymbol] = useState('');
+  const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolError, setSymbolError] = useState('');
   const [isSavingSymbol, setIsSavingSymbol] = useState(false);
+  const [isLoadingAvailableSymbols, setIsLoadingAvailableSymbols] = useState(false);
   const [timeframe, setTimeframe] = useState(initialTimeframe);
 
   const [allCandles, setAllCandles] = useState([]);
@@ -226,6 +227,49 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     loadMarketSymbols();
   }, [loadMarketSymbols]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAvailableSymbols = async () => {
+      setIsLoadingAvailableSymbols(true);
+
+      try {
+        const response = await fetch('/api/market-symbol-options?category=spot', {
+          headers: { Accept: 'application/json' },
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (!result.success) {
+          throw new Error(result.message || 'Failed to load available symbols');
+        }
+
+        if (!cancelled) {
+          const nextSymbols = Array.isArray(result.symbols) ? result.symbols : [];
+          setAvailableSymbols(nextSymbols);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setSymbolError(err.message || 'Failed to load available symbols');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAvailableSymbols(false);
+        }
+      }
+    };
+
+    loadAvailableSymbols();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const buildToolSettingsFromDrawing = useCallback((drawing) => {
     if (!drawing?.type) return {};
@@ -1771,10 +1815,14 @@ export default function TradingViewReplayChart({
     setTool(null);
   };
 
-  const handleAddSymbol = async (event) => {
-    event.preventDefault();
+  const handleAddSymbol = async (symbolToAdd) => {
+    if (symbolToAdd?.preventDefault) {
+      symbolToAdd.preventDefault();
+    }
 
-    const normalizedSymbol = newSymbol.trim().toUpperCase();
+    const rawSymbol = typeof symbolToAdd === 'string' ? symbolToAdd : '';
+    const selectedAvailableSymbol = availableSymbols.find((item) => item.symbol === rawSymbol);
+    const normalizedSymbol = (selectedAvailableSymbol?.symbol ?? rawSymbol).trim().toUpperCase();
     if (!normalizedSymbol) return;
 
     setIsSavingSymbol(true);
@@ -1789,7 +1837,7 @@ export default function TradingViewReplayChart({
         },
         body: JSON.stringify({
           symbol: normalizedSymbol,
-          category: 'spot',
+          category: selectedAvailableSymbol?.category ?? 'spot',
         }),
       });
 
@@ -1811,7 +1859,6 @@ export default function TradingViewReplayChart({
         return [...currentSymbols, savedSymbol].sort((a, b) => a.symbol.localeCompare(b.symbol));
       });
       setSymbol(savedSymbol.symbol);
-      setNewSymbol('');
     } catch (err) {
       setSymbolError(err.message || 'Failed to save symbol');
     } finally {
@@ -1850,85 +1897,95 @@ export default function TradingViewReplayChart({
       <ChartHeader
         symbol={symbol}
         symbols={symbols}
-        newSymbol={newSymbol}
+        availableSymbols={availableSymbols}
         isSavingSymbol={isSavingSymbol}
+        isLoadingAvailableSymbols={isLoadingAvailableSymbols}
         symbolError={symbolError}
         timeframe={timeframe}
         replayMode={replayMode}
         currentPrice={currentPrice}
         selectedReplayPrice={selectedReplayPrice}
         onSymbolChange={setSymbol}
-        onNewSymbolChange={(value) => {
-          setNewSymbol(value.toUpperCase());
-          setSymbolError('');
-        }}
         onAddSymbol={handleAddSymbol}
         onTimeframeChange={setTimeframe}
         onToggleReplayMode={toggleReplayMode}
       />
 
-      {replayMode && (
-        <ReplayPanel
-          isPlaying={isPlaying}
-          followReplay={followReplay}
-          isReplayPricePickActive={isReplayPricePickActive}
-          playbackSpeed={playbackSpeed}
-          replayIndex={replayIndex}
-          candleCount={allCandles.length}
-          tool={tool}
-          drawingColor={drawingColor}
-          drawings={drawings}
-          selectedDrawingId={selectedDrawingId}
-          selectedDrawing={selectedDrawing}
-          toolSettings={toolSettings}
-          onStepBackward={stepBackward}
-          onTogglePlay={togglePlay}
-          onStepForward={stepForward}
-          onResetReplay={resetReplay}
-          onFollowReplay={handleFollowReplay}
-          onToggleReplayPricePick={() => setIsReplayPricePickActive((prev) => !prev)}
-          onPlaybackSpeedChange={setPlaybackSpeed}
-          onToolChange={handleToolChange}
-          onDrawingColorChange={handleDrawingColorChange}
-          onDrawingWidthChange={handleDrawingWidthChange}
-          onDrawingLabelChange={handleDrawingLabelChange}
-          onSaveSelectedToolPreset={handleSaveSelectedToolPreset}
-          onApplyToolPreset={handleApplyToolPreset}
-          onClearDrawings={handleClearDrawings}
-          onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
-        />
-      )}
+      <div
+        className={
+          replayMode
+            ? `min-h-0 ${isFullscreen ? 'flex-1' : ''}`
+            : isFullscreen
+              ? 'min-h-0 flex-1'
+              : ''
+        }
+      >
+        <div className={`relative min-w-0 space-y-3 ${isFullscreen ? 'h-full' : ''}`}>
+          {loading && (
+            <div className="flex h-24 items-center justify-center rounded-lg bg-gray-900 text-white">
+              Loading...
+            </div>
+          )}
 
-      {loading && (
-        <div className="flex h-24 items-center justify-center rounded-lg bg-gray-900 text-white">
-          Loading...
+          {!loading && error && (
+            <div className="flex h-24 items-center justify-center rounded-lg bg-gray-900 text-red-400">
+              {error}
+            </div>
+          )}
+
+          <ChartStage
+            wrapperRef={wrapperRef}
+            containerRef={containerRef}
+            isFullscreen={isFullscreen}
+            replayMode={replayMode}
+            isSpacePressed={isSpacePressed}
+            isReplayPricePickActive={isReplayPricePickActive}
+            tool={tool}
+            overlaySize={overlaySize}
+            renderedDrawings={renderedDrawings}
+            selectedDrawingId={selectedDrawingId}
+            textInput={textInput}
+            textDraft={textDraft}
+            onTextDraftChange={setTextDraft}
+            onSaveText={handleSaveText}
+            onCancelText={handleCancelText}
+            onToggleFullscreen={handleToggleFullscreen}
+          />
+
+          {replayMode && (
+            <ReplayPanel
+              className="absolute left-3 top-3 z-30"
+              isPlaying={isPlaying}
+              followReplay={followReplay}
+              isReplayPricePickActive={isReplayPricePickActive}
+              playbackSpeed={playbackSpeed}
+              replayIndex={replayIndex}
+              candleCount={allCandles.length}
+              tool={tool}
+              drawingColor={drawingColor}
+              drawings={drawings}
+              selectedDrawingId={selectedDrawingId}
+              selectedDrawing={selectedDrawing}
+              toolSettings={toolSettings}
+              onStepBackward={stepBackward}
+              onTogglePlay={togglePlay}
+              onStepForward={stepForward}
+              onResetReplay={resetReplay}
+              onFollowReplay={handleFollowReplay}
+              onToggleReplayPricePick={() => setIsReplayPricePickActive((prev) => !prev)}
+              onPlaybackSpeedChange={setPlaybackSpeed}
+              onToolChange={handleToolChange}
+              onDrawingColorChange={handleDrawingColorChange}
+              onDrawingWidthChange={handleDrawingWidthChange}
+              onDrawingLabelChange={handleDrawingLabelChange}
+              onSaveSelectedToolPreset={handleSaveSelectedToolPreset}
+              onApplyToolPreset={handleApplyToolPreset}
+              onClearDrawings={handleClearDrawings}
+              onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
+            />
+          )}
         </div>
-      )}
-
-      {!loading && error && (
-        <div className="flex h-24 items-center justify-center rounded-lg bg-gray-900 text-red-400">
-          {error}
-        </div>
-      )}
-
-      <ChartStage
-        wrapperRef={wrapperRef}
-        containerRef={containerRef}
-        isFullscreen={isFullscreen}
-        replayMode={replayMode}
-        isSpacePressed={isSpacePressed}
-        isReplayPricePickActive={isReplayPricePickActive}
-        tool={tool}
-        overlaySize={overlaySize}
-        renderedDrawings={renderedDrawings}
-        selectedDrawingId={selectedDrawingId}
-        textInput={textInput}
-        textDraft={textDraft}
-        onTextDraftChange={setTextDraft}
-        onSaveText={handleSaveText}
-        onCancelText={handleCancelText}
-        onToggleFullscreen={handleToggleFullscreen}
-      />
+      </div>
     </div>
   );
 }

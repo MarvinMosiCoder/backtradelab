@@ -22,6 +22,99 @@ class MarketDataController extends Controller
         ]);
     }
 
+    public function availableSymbols(Request $request)
+    {
+        $validated = $request->validate([
+            'category' => ['nullable', Rule::in(['spot', 'linear', 'inverse'])],
+        ]);
+
+        $category = $validated['category'] ?? 'spot';
+
+        try {
+            $symbols = [];
+            $cursor = null;
+            $requests = 0;
+
+            do {
+                $query = [
+                    'category' => $category,
+                ];
+
+                if ($category !== 'spot') {
+                    $query['limit'] = 1000;
+                }
+
+                if ($category !== 'spot' && $cursor) {
+                    $query['cursor'] = $cursor;
+                }
+
+                $response = Http::withOptions([
+                    'verify' => false, // local only
+                ])
+                    ->withHeaders([
+                        'User-Agent' => 'Mozilla/5.0',
+                        'Accept' => '*/*',
+                    ])
+                    ->timeout(20)
+                    ->get('https://api.bybit.com/v5/market/instruments-info', $query);
+
+                if (!$response->successful()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Failed to fetch available symbols',
+                        'status' => $response->status(),
+                        'body' => $response->body(),
+                    ], $response->status());
+                }
+
+                $json = $response->json();
+
+                if (!is_array($json) || ($json['retCode'] ?? null) !== 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $json['retMsg'] ?? 'Bybit API error',
+                        'data' => $json,
+                    ], 400);
+                }
+
+                $result = $json['result'] ?? [];
+                $list = $result['list'] ?? [];
+
+                foreach ($list as $item) {
+                    $symbol = strtoupper((string) ($item['symbol'] ?? ''));
+
+                    if (!$symbol) {
+                        continue;
+                    }
+
+                    $symbols[$symbol] = [
+                        'symbol' => $symbol,
+                        'category' => $category,
+                        'baseCoin' => $item['baseCoin'] ?? null,
+                        'quoteCoin' => $item['quoteCoin'] ?? null,
+                        'status' => $item['status'] ?? null,
+                    ];
+                }
+
+                $cursor = $result['nextPageCursor'] ?? null;
+                $requests++;
+            } while ($cursor && $requests < 20);
+
+            ksort($symbols);
+
+            return response()->json([
+                'success' => true,
+                'symbols' => array_values($symbols),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Server error while fetching available symbols',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function storeSymbol(Request $request)
     {
         $validated = $request->validate([

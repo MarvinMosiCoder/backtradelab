@@ -28,11 +28,13 @@ User Browser
 Laravel Backend
   routes/api.php
     GET /api/market-symbols
+    GET /api/market-symbol-options
     POST /api/market-symbols
     GET /api/klines
 
   app/Http/Controllers/MarketDataController.php
     lists/saves market symbols
+    fetches available Bybit symbols
     validates params
     fetches Bybit klines
     normalizes candles
@@ -45,6 +47,7 @@ Laravel Backend
 
 External API
   Bybit API v5 market kline endpoint
+  Bybit API v5 market instruments-info endpoint
 ```
 
 ---
@@ -55,16 +58,16 @@ External API
 |------|---------|
 | `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart |
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
-| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, add-symbol form, timeframe, replay toggle, and price display |
-| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | Replay controls, drawing tool buttons, selected drawing color/width controls, clear/delete buttons |
-| `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover |
+| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, searchable add-symbol picker, timeframe, replay toggle, and price display |
+| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, selected drawing style controls, and presets |
+| `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
 | `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
 | `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
-| `routes/api.php` | Defines `/api/market-symbols` and `/api/klines` |
+| `routes/api.php` | Defines `/api/market-symbols`, `/api/market-symbol-options`, and `/api/klines` |
 | `routes/web.php` | Defines authenticated `/market-drawings` and `/market-tool-settings` routes |
-| `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols and fetches/normalizes Bybit candle data |
+| `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Bybit symbol options, and fetches/normalizes Bybit candle data |
 | `app/Models/MarketSymbol.php` | Eloquent model for symbols saved in the database |
 | `app/Models/MarketDrawing.php` | Eloquent model for per-user saved chart drawings |
 | `app/Models/MarketToolSetting.php` | Eloquent model for per-user reusable chart tool defaults |
@@ -101,7 +104,32 @@ The response shape is:
 }
 ```
 
-Users can add symbols from `ChartHeader.jsx`. The frontend sends:
+`TradingViewChart.jsx` also loads the available add-symbol options from Bybit through Laravel:
+
+```javascript
+const response = await fetch('/api/market-symbol-options?category=spot', {
+  headers: { Accept: 'application/json' },
+});
+```
+
+The response contains tradable instruments:
+
+```json
+{
+  "success": true,
+  "symbols": [
+    {
+      "symbol": "ETHUSDT",
+      "category": "spot",
+      "baseCoin": "ETH",
+      "quoteCoin": "USDT",
+      "status": "Trading"
+    }
+  ]
+}
+```
+
+Users add symbols from `ChartHeader.jsx` by clicking `Add Symbol`, searching the available-symbol list, then clicking the plus icon beside a symbol. The frontend sends:
 
 ```javascript
 await fetch('/api/market-symbols', {
@@ -118,6 +146,8 @@ await fetch('/api/market-symbols', {
 ```
 
 The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols`.
+
+After a symbol is saved, `TradingViewChart.jsx` inserts it into the saved-symbol list, selects it as the active chart symbol, and the candle request reloads for that symbol.
 
 ### 2. Frontend Candle Request
 
@@ -159,13 +189,16 @@ The UI timeframe is mapped to the Bybit interval in `constants.js`.
 
 ### 3. Backend Processing
 
-`MarketDataController.php` has three chart-related actions:
+`MarketDataController.php` has four chart-related actions:
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | `symbols()` | `GET /api/market-symbols` | Return active symbols from `market_symbols` |
+| `availableSymbols()` | `GET /api/market-symbol-options` | Return available Bybit instruments for the add-symbol picker |
 | `storeSymbol()` | `POST /api/market-symbols` | Validate, uppercase, and save a symbol |
 | `klines()` | `GET /api/klines` | Fetch normalized Bybit candles |
+
+`availableSymbols()` validates the requested category, calls Bybit `/v5/market/instruments-info`, normalizes symbol/base/quote/status metadata, sorts the symbols alphabetically, and returns them for the searchable picker.
 
 `klines()` validates the requested category/interval, fetches candles from Bybit, deduplicates by timestamp, sorts oldest to newest, and returns normalized candle objects:
 
@@ -321,7 +354,7 @@ The selected-price line effect depends on `timeframe` and `visibleCandles.length
 
 ## Drawing Tools
 
-Drawing tools are only shown in replay mode.
+Drawing tools are only shown in replay mode. In replay mode, `TradingViewChart.jsx` prioritizes the chart by rendering `ChartStage.jsx` as the main workspace and overlaying `ReplayPanel.jsx` as a compact left rail. Clicking a rail icon opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
 
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
@@ -600,8 +633,8 @@ The chart now includes:
 1. Lightweight Charts candlestick and volume rendering.
 2. Database-backed market symbols through `/api/market-symbols`.
 3. Laravel/Bybit candle data flow through `/api/klines`.
-4. Add-symbol UI in the chart header.
-5. Replay mode with follow, stepping, speed controls, current-price reset, and price picking.
+4. Searchable Bybit add-symbol picker in the chart header.
+5. Replay mode with a compact left rail and grouped flyouts for follow, stepping, speed, reset, price picking, drawing tools, style, and presets.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
 7. Drawing tools for line, long/short position, forecast, box, and text.
 8. Drawing colors, stroke widths, selection, moving, and resizing.

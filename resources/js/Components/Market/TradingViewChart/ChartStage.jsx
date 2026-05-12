@@ -1,5 +1,5 @@
 import React from 'react';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { Maximize2, Minimize2, Save, X } from 'lucide-react';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL } from './constants';
 import { colorToRgba, isLineLikeDrawing, isPositionDrawing, normalizeVisibleRect } from './utils';
 
@@ -448,15 +448,19 @@ function TextInputPopover({
       />
       <div className="flex gap-2">
         <button
+          type="button"
           onClick={onSaveText}
-          className="rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white"
+          className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white"
         >
+          <Save size={14} />
           Save
         </button>
         <button
+          type="button"
           onClick={onCancel}
-          className="rounded bg-gray-700 px-3 py-2 text-xs font-medium text-white"
+          className="inline-flex items-center gap-1.5 rounded bg-gray-700 px-3 py-2 text-xs font-medium text-white"
         >
+          <X size={14} />
           Cancel
         </button>
       </div>

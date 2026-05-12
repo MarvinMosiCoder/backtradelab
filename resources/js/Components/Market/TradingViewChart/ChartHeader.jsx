@@ -1,56 +1,146 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
+import { Play, Plus, Search, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
 export default function ChartHeader({
   symbol,
   symbols,
-  newSymbol,
+  availableSymbols,
   isSavingSymbol,
+  isLoadingAvailableSymbols,
   symbolError,
   timeframe,
   replayMode,
   currentPrice,
   selectedReplayPrice,
   onSymbolChange,
-  onNewSymbolChange,
   onAddSymbol,
   onTimeframeChange,
   onToggleReplayMode,
 }) {
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [symbolSearch, setSymbolSearch] = useState('');
   const symbolOptions = symbols.length ? symbols : [{ symbol }];
+  const savedSymbolSet = new Set(symbols.map((item) => item.symbol));
+  const addSymbolOptions = availableSymbols.filter((item) => !savedSymbolSet.has(item.symbol));
+  const addButtonLabel = isLoadingAvailableSymbols
+    ? 'Loading symbols...'
+    : !availableSymbols.length
+      ? 'Symbols unavailable'
+      : addSymbolOptions.length
+        ? 'Add Symbol'
+        : 'All symbols added';
+  const filteredAddSymbolOptions = useMemo(() => {
+    const query = symbolSearch.trim().toUpperCase();
+
+    if (!query) {
+      return addSymbolOptions.slice(0, 80);
+    }
+
+    return addSymbolOptions
+      .filter((item) => {
+        return [
+          item.symbol,
+          item.baseCoin,
+          item.quoteCoin,
+        ].some((value) => String(value ?? '').toUpperCase().includes(query));
+      })
+      .slice(0, 80);
+  }, [addSymbolOptions, symbolSearch]);
+
+  const handleSelectSymbol = (nextSymbol) => {
+    onAddSymbol(nextSymbol);
+    setSymbolSearch('');
+    setIsAddOpen(false);
+  };
 
   return (
     <div className="rounded-lg bg-gray-800 p-3">
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-        <div>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(280px,1.35fr)_minmax(150px,0.65fr)_minmax(160px,0.7fr)_minmax(170px,0.7fr)]">
+        <div className="relative">
           <label className="mb-1 block text-xs font-medium text-gray-300">Symbol</label>
-          <select
-            value={symbol}
-            onChange={(e) => onSymbolChange(e.target.value)}
-            className="w-full rounded-md border border-gray-600 bg-gray-700 px-2 py-1.5 text-sm text-white"
-          >
-            {symbolOptions.map((item) => (
-              <option key={item.symbol} value={item.symbol}>
-                {item.symbol}
-              </option>
-            ))}
-          </select>
-          <form onSubmit={onAddSymbol} className="mt-1 flex gap-1">
-            <input
-              value={newSymbol}
-              onChange={(e) => onNewSymbolChange(e.target.value)}
-              placeholder="Add symbol"
-              className="min-w-0 flex-1 rounded-md border border-gray-600 bg-gray-700 px-2 py-1 text-xs uppercase text-white outline-none"
-            />
-            <button
-              type="submit"
-              disabled={isSavingSymbol || !newSymbol.trim()}
-              className="rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <select
+              value={symbol}
+              onChange={(e) => onSymbolChange(e.target.value)}
+              className="h-9 min-w-0 flex-1 rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
             >
-              Add
+              {symbolOptions.map((item) => (
+                <option key={item.symbol} value={item.symbol}>
+                  {item.symbol}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setIsAddOpen((current) => !current)}
+              disabled={isLoadingAvailableSymbols || !addSymbolOptions.length}
+              className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              <Plus size={14} />
+              {addButtonLabel}
             </button>
-          </form>
+          </div>
+          {isAddOpen && (
+            <div className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-md border border-gray-600 bg-gray-900 shadow-xl sm:right-auto sm:w-96">
+              <div className="flex items-center gap-2 border-b border-gray-700 px-2 py-2">
+                <Search size={14} className="text-gray-400" />
+                <input
+                  autoFocus
+                  value={symbolSearch}
+                  onChange={(event) => setSymbolSearch(event.target.value)}
+                  placeholder="Search symbol"
+                  className="min-w-0 flex-1 bg-transparent text-xs uppercase text-white outline-none placeholder:text-gray-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSymbolSearch('');
+                    setIsAddOpen(false);
+                  }}
+                  className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white"
+                  title="Close"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="max-h-64 overflow-y-auto">
+                {filteredAddSymbolOptions.length ? (
+                  filteredAddSymbolOptions.map((item) => (
+                    <div
+                      key={item.symbol}
+                      className="flex items-center gap-2 border-b border-gray-800 px-2 py-1.5 last:border-b-0"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-semibold text-white">
+                          {item.symbol}
+                        </div>
+                        {(item.baseCoin || item.quoteCoin || item.status) && (
+                          <div className="truncate text-[10px] text-gray-400">
+                            {[item.baseCoin, item.quoteCoin, item.status].filter(Boolean).join(' / ')}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectSymbol(item.symbol)}
+                        disabled={isSavingSymbol}
+                        className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+                        title={`Add ${item.symbol}`}
+                      >
+                        <Plus size={15} />
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className="px-2 py-3 text-center text-xs text-gray-400">
+                    No symbols found
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {symbolError && (
             <div className="mt-1 text-[11px] text-red-400">{symbolError}</div>
           )}
@@ -61,7 +151,7 @@ export default function ChartHeader({
           <select
             value={timeframe}
             onChange={(e) => onTimeframeChange(e.target.value)}
-            className="w-full rounded-md border border-gray-600 bg-gray-700 px-2 py-1.5 text-sm text-white"
+            className="h-9 w-full rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
           >
             {TIMEFRAMES.map((tf) => (
               <option key={tf.value} value={tf.value}>
@@ -74,25 +164,27 @@ export default function ChartHeader({
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-300">Replay</label>
           <button
+            type="button"
             onClick={onToggleReplayMode}
-            className={`w-full rounded-md px-2 py-1.5 text-sm font-semibold text-white ${
+            className={`flex h-9 w-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-semibold text-white ${
               replayMode ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
             }`}
           >
+            {replayMode ? <X size={15} /> : <Play size={15} />}
             {replayMode ? 'Exit Replay Mode' : 'Replay Mode'}
           </button>
         </div>
 
-        <div className="flex items-end">
-          <div className="text-white">
+        <div className="flex items-end lg:justify-end">
+          <div className="min-h-9 text-white lg:text-right">
             <div className="text-xs text-gray-400">
               {replayMode ? 'Replay Price' : 'Current Price'}
             </div>
-            <div className="text-xl font-bold text-green-500">
+            <div className="text-lg font-bold leading-tight text-green-500">
               ${formatPrice(currentPrice)}
             </div>
             {replayMode && (
-              <div className="mt-1 text-xs text-blue-400">
+              <div className="text-xs text-blue-400">
                 Selected: ${formatPrice(selectedReplayPrice)}
               </div>
             )}
