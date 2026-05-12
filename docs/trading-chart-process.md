@@ -60,10 +60,17 @@ External API
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
+| `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
+| `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
 | `routes/api.php` | Defines `/api/market-symbols` and `/api/klines` |
+| `routes/web.php` | Defines authenticated `/market-drawings` and `/market-tool-settings` routes |
 | `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols and fetches/normalizes Bybit candle data |
 | `app/Models/MarketSymbol.php` | Eloquent model for symbols saved in the database |
+| `app/Models/MarketDrawing.php` | Eloquent model for per-user saved chart drawings |
+| `app/Models/MarketToolSetting.php` | Eloquent model for per-user reusable chart tool defaults |
 | `database/migrations/2026_05_06_000001_create_market_symbols_table.php` | Creates the `market_symbols` table |
+| `database/migrations/2026_05_12_000002_create_market_drawings_table.php` | Creates the `market_drawings` table |
+| `database/migrations/2026_05_12_000003_create_market_tool_settings_table.php` | Creates the `market_tool_settings` table |
 
 ---
 
@@ -191,6 +198,49 @@ const visibleCandles = useMemo(() => {
   return allCandles.slice(0, replayIndex + 1);
 }, [allCandles, replayMode, replayIndex]);
 ```
+
+### 5. Per-User Drawing Storage
+
+Chart drawings are stored per authenticated user and symbol in the `market_drawings` table. The table uses `adm_user_id` and `symbol` as a unique pair, and stores the drawing list as JSON.
+
+The frontend loads drawings with:
+
+```javascript
+axios.get('/market-drawings', {
+  params: { symbol },
+});
+```
+
+Drawing changes are saved with:
+
+```javascript
+axios.put('/market-drawings', {
+  symbol,
+  drawings: nextDrawings,
+});
+```
+
+`localStorage` remains as a browser fallback and migration source. If the database has no saved drawing record for the current user and symbol, existing local drawings are loaded and uploaded to the server. The backend returns an `exists` flag so an intentionally empty drawing list is preserved after the user clears their tools. After the first server save, the database is the primary source, so the same user can see their tools on another device after logging in.
+
+### 6. Reusable Tool Defaults
+
+Reusable tool defaults are stored per authenticated user in `market_tool_settings`. These defaults are separate from symbol drawings so they can be used across symbols and timeframes.
+
+The frontend loads defaults with:
+
+```javascript
+axios.get('/market-tool-settings');
+```
+
+Tool defaults are saved with:
+
+```javascript
+axios.put('/market-tool-settings', {
+  settings: nextSettings,
+});
+```
+
+When a drawing is completed, or when a selected drawing's color, width, label text, or label placement is changed, `TradingViewChart.jsx` updates the saved defaults for that tool type. New tools of the same type inherit those saved settings, including line/box text placement and text-tool draft text. `localStorage` mirrors the settings as a fallback if the server request is unavailable.
 
 ---
 
@@ -329,6 +379,9 @@ Drawings are stored in chart coordinates, not screen pixels.
 | `time` | Candle timestamp in seconds |
 | `logical` | Lightweight Charts logical index, used for accurate placement beyond the last candle |
 | `price` | Price value on the candle series scale |
+| `labelText` | Optional text displayed on line-like drawings and boxes |
+| `labelVertical` | Optional label vertical placement: `top`, `middle`, or `bottom` |
+| `labelHorizontal` | Optional label horizontal placement: `left`, `center`, or `right` |
 
 When the user clicks or drags on the chart, screen coordinates are converted to chart coordinates:
 
@@ -347,6 +400,8 @@ const y = candleSeries.priceToCoordinate(price);
 ```
 
 This is why drawings stay attached to candle time/price while the chart scrolls or zooms. Logical coordinates also allow drawing tools to extend beyond the last loaded candle instead of snapping back to the final candle.
+
+For `1d` and higher timeframes, existing intraday drawing timestamps are rendered on the candle bucket that contains the saved timestamp. This keeps tools aligned to daily/weekly/monthly candles instead of placing an intraday timestamp fractionally between two higher-timeframe candles. The saved drawing timestamp is not mutated, so switching back to an intraday timeframe can still use the original precise time.
 
 When switching timeframe, drawing timestamps are projected into the currently visible candle set. This keeps shared drawings visible across timeframes. Boxes use a minimum visible rectangle size so very short lower-timeframe boxes do not collapse into a 1px sliver on higher timeframes.
 
@@ -382,6 +437,8 @@ Lightweight Charts can pan/zoom internally without React state changes. To keep 
 | ResizeObserver events | Chart/container size changed |
 | Data updates | Visible candles changed |
 | Programmatic `fitContent()` / `scrollToPosition()` | Chart viewport moved through code |
+
+Right price-scale wheel scrolling is handled separately from the chart's default wheel behavior. When the cursor is over the right-side price number panel, `TradingViewChart.jsx` intercepts the wheel event before Lightweight Charts handles it, prevents the default time-scale zoom, and updates `chart.priceScale('right').setVisibleRange()` instead. Scrolling up shrinks the visible price range for vertical zoom-in; scrolling down expands the visible price range for vertical zoom-out.
 
 ---
 
@@ -442,11 +499,15 @@ Available stroke widths:
 [1, 2, 3, 4, 6, 8]
 ```
 
-The selected `strokeWidth` is saved on the drawing object and persisted in `localStorage`.
+New line, box, forecast, and position drawings default to `1px`. The selected `strokeWidth` is saved on the drawing object and persisted with the drawing.
+
+### Drawing Labels
+
+Selected line-like drawings and boxes show label controls in `ReplayPanel.jsx`. The label text is saved directly on the drawing, with vertical placement (`top`, `middle`, `bottom`) and horizontal placement (`left`, `center`, `right`). Selected standalone text drawings show an editable text input in the same panel. `ChartStage.jsx` renders labels and text on the overlay and keeps them attached to the drawing as the chart scrolls, zooms, or changes timeframe.
 
 ### Color
 
-Line, forecast, box, and text drawings support color. The selected color is stored on the drawing object as `color` and persisted in `localStorage`. Long/short position drawings keep fixed green and red zones for profit/loss readability.
+Line, forecast, box, and text drawings support color. The selected color is stored on the drawing object as `color` and persisted with the drawing. Long/short position drawings keep fixed green and red zones for profit/loss readability.
 
 ---
 
@@ -473,6 +534,8 @@ Keyboard shortcuts are ignored while typing in inputs or editable elements.
 | Space Pan | Hold `Space` | Native chart panning remains available |
 
 `handleScroll` and `handleScale` are adjusted so drawing tools do not fight with native chart interaction.
+
+Mouse-wheel behavior depends on pointer position. Over the main chart area, Lightweight Charts keeps its native time-scale wheel zoom and scroll behavior. Over the right price number panel, the custom price-scale wheel handler changes price height/range only.
 
 ---
 

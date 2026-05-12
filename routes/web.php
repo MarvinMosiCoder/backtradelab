@@ -13,6 +13,8 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Dashboard\DashboardController;
+use App\Http\Controllers\MarketDrawingController;
+use App\Http\Controllers\MarketToolSettingController;
 use App\Http\Controllers\Users\ChangePasswordController;
 use App\Http\Controllers\Users\ForceChangePasswordController;
 use App\Http\Controllers\Users\ProfilePageController;
@@ -64,6 +66,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('market', function () {
         return Inertia::render('Market/Market');
     })->name('market');
+    Route::get('/market-drawings', [MarketDrawingController::class, 'show'])->name('market-drawings.show');
+    Route::put('/market-drawings', [MarketDrawingController::class, 'update'])->name('market-drawings.update');
+    Route::get('/market-tool-settings', [MarketToolSettingController::class, 'show'])->name('market-tool-settings.show');
+    Route::put('/market-tool-settings', [MarketToolSettingController::class, 'update'])->name('market-tool-settings.update');
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/sidebar', [MenusController::class, 'sidebarMenu'])->name('sidebar');
     //USERS

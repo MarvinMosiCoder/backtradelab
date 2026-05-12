@@ -76,6 +76,66 @@ function getArrowHeadPoints(start, end, size = 10) {
   return `${end.x},${end.y} ${left.x},${left.y} ${right.x},${right.y}`;
 }
 
+function getLineLabelPosition(drawing) {
+  const { p1, p2 } = drawing.screen;
+  const horizontal = drawing.labelHorizontal ?? 'center';
+  const vertical = drawing.labelVertical ?? 'top';
+  const leftPoint = p1.x <= p2.x ? p1 : p2;
+  const rightPoint = p1.x <= p2.x ? p2 : p1;
+  const anchor =
+    horizontal === 'left'
+      ? leftPoint
+      : horizontal === 'right'
+        ? rightPoint
+        : {
+            x: (p1.x + p2.x) / 2,
+            y: (p1.y + p2.y) / 2,
+          };
+  const yOffset =
+    vertical === 'top'
+      ? -10
+      : vertical === 'bottom'
+        ? 18
+        : 4;
+  const textAnchor =
+    horizontal === 'left'
+      ? 'start'
+      : horizontal === 'right'
+        ? 'end'
+        : 'middle';
+
+  return {
+    x: anchor.x,
+    y: anchor.y + yOffset,
+    textAnchor,
+  };
+}
+
+function getBoxLabelPosition(rect, drawing) {
+  const horizontal = drawing.labelHorizontal ?? 'center';
+  const vertical = drawing.labelVertical ?? 'top';
+  const x =
+    horizontal === 'left'
+      ? rect.left + 8
+      : horizontal === 'right'
+        ? rect.left + rect.width - 8
+        : rect.left + rect.width / 2;
+  const y =
+    vertical === 'top'
+      ? rect.top + 16
+      : vertical === 'bottom'
+        ? rect.top + rect.height - 8
+        : rect.top + rect.height / 2 + 4;
+  const textAnchor =
+    horizontal === 'left'
+      ? 'start'
+      : horizontal === 'right'
+        ? 'end'
+        : 'middle';
+
+  return { x, y, textAnchor };
+}
+
 function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
   const selectedDrawing = renderedDrawings.find((d) => d.id === selectedDrawingId);
 
@@ -120,11 +180,13 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
           const drawingColor = d.color ?? DRAWING_COLOR;
           const stroke = isSelected ? '#fbbf24' : drawingColor;
           const strokeWidth = d.id.startsWith('temp-')
-            ? 2
-            : Math.max(d.strokeWidth ?? 2, isSelected ? 3 : 1);
+            ? (d.strokeWidth ?? 1)
+            : Math.max(d.strokeWidth ?? 1, isSelected ? 3 : 1);
 
           if (isLineLikeDrawing(d)) {
             const isUtilityTool = d.type === 'measure' || d.type === 'forecast';
+            const labelText = d.labelText?.trim();
+            const labelPosition = labelText ? getLineLabelPosition(d) : null;
             const midpoint = {
               x: (d.screen.p1.x + d.screen.p2.x) / 2,
               y: (d.screen.p1.y + d.screen.p2.y) / 2,
@@ -174,6 +236,22 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
                     strokeLinejoin="round"
                   >
                     {getToolLabel(d)}
+                  </text>
+                )}
+                {labelText && !d.id.startsWith('temp-') && (
+                  <text
+                    x={labelPosition.x}
+                    y={labelPosition.y}
+                    textAnchor={labelPosition.textAnchor}
+                    fill="#ffffff"
+                    fontSize="12"
+                    fontWeight="600"
+                    paintOrder="stroke"
+                    stroke="rgba(15, 23, 42, 0.95)"
+                    strokeWidth="4"
+                    strokeLinejoin="round"
+                  >
+                    {labelText}
                   </text>
                 )}
               </g>
@@ -251,23 +329,43 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
 
           if (d.type === 'rect') {
             const rect = normalizeVisibleRect(d.screen.p1, d.screen.p2);
+            const labelText = d.labelText?.trim();
+            const labelPosition = labelText ? getBoxLabelPosition(rect, d) : null;
+
             return (
-              <rect
-                key={d.id}
-                x={rect.left}
-                y={rect.top}
-                width={rect.width}
-                height={rect.height}
-                fill={
-                  d.id.startsWith('temp-')
-                    ? colorToRgba(drawingColor, 0.08)
-                    : colorToRgba(drawingColor, 0.16) || DRAWING_FILL
-                }
-                stroke={stroke}
-                strokeWidth={strokeWidth}
-                strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
-                rx={4}
-              />
+              <g key={d.id}>
+                <rect
+                  x={rect.left}
+                  y={rect.top}
+                  width={rect.width}
+                  height={rect.height}
+                  fill={
+                    d.id.startsWith('temp-')
+                      ? colorToRgba(drawingColor, 0.08)
+                      : colorToRgba(drawingColor, 0.16) || DRAWING_FILL
+                  }
+                  stroke={stroke}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
+                  rx={4}
+                />
+                {labelText && !d.id.startsWith('temp-') && (
+                  <text
+                    x={labelPosition.x}
+                    y={labelPosition.y}
+                    textAnchor={labelPosition.textAnchor}
+                    fill="#ffffff"
+                    fontSize="12"
+                    fontWeight="600"
+                    paintOrder="stroke"
+                    stroke="rgba(15, 23, 42, 0.95)"
+                    strokeWidth="4"
+                    strokeLinejoin="round"
+                  >
+                    {labelText}
+                  </text>
+                )}
+              </g>
             );
           }
 

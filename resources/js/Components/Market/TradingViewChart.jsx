@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import axios from 'axios';
 import {
   createChart,
   CandlestickSeries,
@@ -41,6 +42,7 @@ export default function TradingViewReplayChart({
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
+  const visibleCandlesRef = useRef([]);
   const resizeObserverRef = useRef(null);
   const replayTimerRef = useRef(null);
   const isProgrammaticRangeChangeRef = useRef(false);
@@ -85,6 +87,7 @@ export default function TradingViewReplayChart({
   const [drawings, setDrawings] = useState([]);
   const [tempDrawing, setTempDrawing] = useState(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState(null);
+  const [toolSettings, setToolSettings] = useState({});
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: CHART_HEIGHT });
   const [overlayRenderVersion, setOverlayRenderVersion] = useState(0);
 
@@ -111,6 +114,10 @@ export default function TradingViewReplayChart({
       value: c.volume,
       color: c.close >= c.open ? '#26a69a88' : '#ef535088',
     }));
+  }, [visibleCandles]);
+
+  useEffect(() => {
+    visibleCandlesRef.current = visibleCandles;
   }, [visibleCandles]);
 
   const currentPrice = useMemo(() => {
@@ -220,21 +227,109 @@ export default function TradingViewReplayChart({
     loadMarketSymbols();
   }, [loadMarketSymbols]);
 
-  const saveDrawings = useCallback((nextDrawings) => {
-    setDrawings(nextDrawings);
-    drawingsRef.current = nextDrawings;
+  const buildToolSettingsFromDrawing = useCallback((drawing) => {
+    if (!drawing?.type) return {};
+
+    const settings = {};
+
+    if (drawing.color) {
+      settings.color = drawing.color;
+    }
+
+    if (Number.isFinite(Number(drawing.strokeWidth))) {
+      settings.strokeWidth = Number(drawing.strokeWidth);
+    }
+
+    if (typeof drawing.labelText === 'string') {
+      settings.labelText = drawing.labelText;
+    }
+
+    if (drawing.labelVertical) {
+      settings.labelVertical = drawing.labelVertical;
+    }
+
+    if (drawing.labelHorizontal) {
+      settings.labelHorizontal = drawing.labelHorizontal;
+    }
+
+    return settings;
+  }, []);
+
+  const persistToolSettings = useCallback((nextSettings) => {
     try {
-      localStorage.setItem(buildStorageKey(symbol), JSON.stringify(nextDrawings));
+      localStorage.setItem('market-tool-settings', JSON.stringify(nextSettings));
     } catch {}
-  }, [symbol]);
 
-  const appendDrawing = useCallback((drawing) => {
-    const next = [...drawingsRef.current, drawing];
-    saveDrawings(next);
-    setSelectedDrawingId(drawing.id);
-  }, [saveDrawings]);
+    axios.put('/market-tool-settings', {
+      settings: nextSettings,
+    }).catch(() => {});
+  }, []);
 
-  const loadStoredDrawings = useCallback(() => {
+  const saveToolSettingsForType = useCallback((type, updates) => {
+    if (!type || !updates || !Object.keys(updates).length) return;
+
+    setToolSettings((currentSettings) => {
+      const nextSettings = {
+        ...currentSettings,
+        [type]: {
+          ...(currentSettings[type] ?? {}),
+          ...updates,
+        },
+      };
+
+      persistToolSettings(nextSettings);
+      return nextSettings;
+    });
+  }, [persistToolSettings]);
+
+  const getToolSettingsForType = useCallback((type) => {
+    return toolSettings[type] ?? {};
+  }, [toolSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadToolSettings = async () => {
+      let localSettings = {};
+
+      try {
+        const parsed = JSON.parse(localStorage.getItem('market-tool-settings') ?? '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          localSettings = parsed;
+        }
+      } catch {}
+
+      try {
+        const response = await axios.get('/market-tool-settings', {
+          headers: { Accept: 'application/json' },
+        });
+        const serverSettings = response.data?.settings;
+        const nextSettings =
+          serverSettings && typeof serverSettings === 'object' && !Array.isArray(serverSettings)
+            ? serverSettings
+            : localSettings;
+
+        if (!cancelled) {
+          setToolSettings(nextSettings);
+          try {
+            localStorage.setItem('market-tool-settings', JSON.stringify(nextSettings));
+          } catch {}
+        }
+      } catch {
+        if (!cancelled) {
+          setToolSettings(localSettings);
+        }
+      }
+    };
+
+    loadToolSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const loadLocalDrawings = useCallback(() => {
     const drawingMap = new Map();
 
     const addStoredDrawings = (raw) => {
@@ -266,6 +361,59 @@ export default function TradingViewReplayChart({
 
     return storedDrawings;
   }, [symbol]);
+
+  const persistDrawingsToServer = useCallback(async (nextDrawings, activeSymbol = symbol) => {
+    await axios.put('/market-drawings', {
+      symbol: activeSymbol,
+      drawings: nextDrawings,
+    });
+  }, [symbol]);
+
+  const saveDrawings = useCallback((nextDrawings) => {
+    setDrawings(nextDrawings);
+    drawingsRef.current = nextDrawings;
+    try {
+      localStorage.setItem(buildStorageKey(symbol), JSON.stringify(nextDrawings));
+    } catch {}
+
+    persistDrawingsToServer(nextDrawings).catch(() => {});
+  }, [persistDrawingsToServer, symbol]);
+
+  const appendDrawing = useCallback((drawing) => {
+    const next = [...drawingsRef.current, drawing];
+    saveToolSettingsForType(drawing.type, buildToolSettingsFromDrawing(drawing));
+    saveDrawings(next);
+    setSelectedDrawingId(drawing.id);
+  }, [buildToolSettingsFromDrawing, saveDrawings, saveToolSettingsForType]);
+
+  const loadStoredDrawings = useCallback(async () => {
+    const localDrawings = loadLocalDrawings();
+
+    try {
+      const response = await axios.get('/market-drawings', {
+        params: { symbol },
+        headers: { Accept: 'application/json' },
+      });
+
+      const serverDrawings = Array.isArray(response.data?.drawings)
+        ? response.data.drawings
+        : [];
+      const hasServerRecord = Boolean(response.data?.exists);
+      const nextDrawings = hasServerRecord ? serverDrawings : localDrawings;
+
+      if (!hasServerRecord && localDrawings.length) {
+        persistDrawingsToServer(localDrawings).catch(() => {});
+      }
+
+      try {
+        localStorage.setItem(buildStorageKey(symbol), JSON.stringify(nextDrawings));
+      } catch {}
+
+      return nextDrawings;
+    } catch {
+      return localDrawings;
+    }
+  }, [loadLocalDrawings, persistDrawingsToServer, symbol]);
 
   const getDrawingTimes = useCallback((items) => {
     return items.flatMap((drawing) => {
@@ -351,7 +499,25 @@ export default function TradingViewReplayChart({
         ? pointOrTime
         : { time: pointOrTime, price };
 
-    const logicalFromTime = estimateLogicalFromTime(visibleCandles, point.time);
+    const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+    const numericTime = Number(point.time);
+    const shouldSnapToCandleBucket = intervalSeconds >= 86400 && Number.isFinite(numericTime);
+    let logicalFromTime = estimateLogicalFromTime(visibleCandles, point.time);
+
+    if (shouldSnapToCandleBucket && visibleCandles.length) {
+      const containingIndex = visibleCandles.findIndex((candle, index) => {
+        const nextCandle = visibleCandles[index + 1];
+        return (
+          numericTime >= candle.time &&
+          (!nextCandle || numericTime < nextCandle.time)
+        );
+      });
+
+      if (containingIndex >= 0) {
+        logicalFromTime = containingIndex;
+      }
+    }
+
     const x =
       Number.isFinite(logicalFromTime)
         ? chart.timeScale().logicalToCoordinate(logicalFromTime)
@@ -364,7 +530,7 @@ export default function TradingViewReplayChart({
 
     if (x == null || y == null) return null;
     return { x, y };
-  }, [visibleCandles]);
+  }, [timeframe, visibleCandles]);
 
   const setReplayPointFromCoordinates = useCallback((x, y, moveCandle = true) => {
     const chart = chartRef.current;
@@ -630,10 +796,100 @@ export default function TradingViewReplayChart({
 
     resizeObserverRef.current.observe(containerRef.current);
 
+    const getCurrentPriceRange = () => {
+      const chart = chartRef.current;
+      const series = candleSeriesRef.current;
+      if (!series || !containerRef.current) return null;
+
+      const visibleRange = chart?.priceScale('right').getVisibleRange();
+      if (
+        visibleRange &&
+        Number.isFinite(Number(visibleRange.from)) &&
+        Number.isFinite(Number(visibleRange.to)) &&
+        Number(visibleRange.from) !== Number(visibleRange.to)
+      ) {
+        return {
+          from: Math.min(Number(visibleRange.from), Number(visibleRange.to)),
+          to: Math.max(Number(visibleRange.from), Number(visibleRange.to)),
+        };
+      }
+
+      const chartHeight = containerRef.current.clientHeight || CHART_HEIGHT;
+      const topPrice = series.coordinateToPrice(0);
+      const bottomPrice = series.coordinateToPrice(chartHeight);
+
+      if (
+        topPrice != null &&
+        bottomPrice != null &&
+        Number.isFinite(Number(topPrice)) &&
+        Number.isFinite(Number(bottomPrice)) &&
+        Number(topPrice) !== Number(bottomPrice)
+      ) {
+        return {
+          from: Math.min(Number(topPrice), Number(bottomPrice)),
+          to: Math.max(Number(topPrice), Number(bottomPrice)),
+        };
+      }
+
+      const prices = visibleCandlesRef.current.flatMap((candle) => [candle.high, candle.low]);
+      if (!prices.length) return null;
+
+      const minPrice = Math.min(...prices);
+      const maxPrice = Math.max(...prices);
+      const padding = Math.max((maxPrice - minPrice) * 0.1, Math.abs(maxPrice) * 0.001, 1);
+
+      return {
+        from: minPrice - padding,
+        to: maxPrice + padding,
+      };
+    };
+
+    const handlePriceScaleWheel = (event) => {
+      const chart = chartRef.current;
+      const series = candleSeriesRef.current;
+      const el = containerRef.current;
+      if (!chart || !series || !el || event.deltaY === 0) return;
+
+      const priceScaleWidth = chart.priceScale('right').width();
+      if (!priceScaleWidth) return;
+
+      const rect = el.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const isOnRightPriceScale = x >= rect.width - priceScaleWidth && x <= rect.width;
+
+      if (!isOnRightPriceScale || y < 0 || y > rect.height) return;
+
+      const range = getCurrentPriceRange();
+      if (!range) return;
+
+      const span = range.to - range.from;
+      if (!Number.isFinite(span) || span <= 0) return;
+
+      const cursorPrice = series.coordinateToPrice(y);
+      const anchorPrice =
+        cursorPrice != null && Number.isFinite(Number(cursorPrice))
+          ? Number(cursorPrice)
+          : range.from + span / 2;
+      const anchorRatio = Math.min(Math.max((anchorPrice - range.from) / span, 0), 1);
+      const zoomFactor = event.deltaY < 0 ? 0.85 : 1.15;
+      const nextSpan = Math.max(span * zoomFactor, Math.abs(anchorPrice) * 0.000001, 0.000001);
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      chart.priceScale('right').setVisibleRange({
+        from: anchorPrice - nextSpan * anchorRatio,
+        to: anchorPrice + nextSpan * (1 - anchorRatio),
+      });
+      scheduleOverlayRender();
+    };
+
     const handleViewportInteraction = () => {
       scheduleOverlayRender();
     };
 
+    containerRef.current.addEventListener('wheel', handlePriceScaleWheel, { passive: false, capture: true });
     containerRef.current.addEventListener('wheel', handleViewportInteraction, { passive: true });
     containerRef.current.addEventListener('mousemove', handleViewportInteraction, { passive: true });
     containerRef.current.addEventListener('mouseup', handleViewportInteraction, { passive: true });
@@ -649,6 +905,7 @@ export default function TradingViewReplayChart({
       chart.unsubscribeClick(handleChartClick);
 
       if (containerRef.current) {
+        containerRef.current.removeEventListener('wheel', handlePriceScaleWheel, { capture: true });
         containerRef.current.removeEventListener('wheel', handleViewportInteraction);
         containerRef.current.removeEventListener('mousemove', handleViewportInteraction);
         containerRef.current.removeEventListener('mouseup', handleViewportInteraction);
@@ -907,12 +1164,17 @@ export default function TradingViewReplayChart({
         const currentTemp = tempDrawingRef.current;
 
         if (!currentTemp) {
+          const savedToolSettings = getToolSettingsForType(toolRef.current);
           setTempDrawing({
             id: `temp-${Date.now()}`,
             type: toolRef.current,
             start: coords,
             end: coords,
-            color: drawingColorRef.current,
+            strokeWidth: savedToolSettings.strokeWidth ?? 1,
+            color: savedToolSettings.color ?? drawingColorRef.current,
+            labelText: savedToolSettings.labelText ?? '',
+            labelVertical: savedToolSettings.labelVertical ?? 'top',
+            labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
           });
         } else {
           const completed = {
@@ -920,8 +1182,11 @@ export default function TradingViewReplayChart({
             type: currentTemp.type,
             start: currentTemp.start,
             end: coords,
-            strokeWidth: currentTemp.strokeWidth ?? 2,
+            strokeWidth: currentTemp.strokeWidth ?? 1,
             color: currentTemp.color ?? drawingColorRef.current,
+            labelText: currentTemp.labelText ?? '',
+            labelVertical: currentTemp.labelVertical ?? 'top',
+            labelHorizontal: currentTemp.labelHorizontal ?? 'center',
           };
 
           if (isPositionDrawing(completed)) {
@@ -942,12 +1207,13 @@ export default function TradingViewReplayChart({
         event.preventDefault();
         event.stopPropagation();
 
+        const savedToolSettings = getToolSettingsForType('text');
         setTextInput({
           x,
           y,
           point: coords,
         });
-        setTextDraft('');
+        setTextDraft(savedToolSettings.labelText ?? '');
         return;
       }
 
@@ -1096,7 +1362,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, hitTestDrawing, hitTestResizeHandle, replayMode, saveDrawings]);
+  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, hitTestDrawing, hitTestResizeHandle, replayMode, saveDrawings]);
 
   useEffect(() => {
     async function fetchKlines() {
@@ -1193,7 +1459,7 @@ export default function TradingViewReplayChart({
         );
 
         try {
-          const saved = loadStoredDrawings();
+          const saved = await loadStoredDrawings();
           setDrawings(saved);
           drawingsRef.current = saved;
         } catch {
@@ -1296,12 +1562,20 @@ export default function TradingViewReplayChart({
       return;
     }
 
-    appendDrawing({
+    const textSettings = getToolSettingsForType('text');
+    const drawing = {
       id: `drawing-${Date.now()}`,
       type: 'text',
       point: textInput.point,
       text: textDraft.trim(),
-      color: drawingColor,
+      color: textSettings.color ?? drawingColor,
+      labelText: textDraft.trim(),
+    };
+
+    appendDrawing(drawing);
+    saveToolSettingsForType('text', {
+      color: drawing.color,
+      labelText: drawing.text,
     });
 
     setTextInput(null);
@@ -1345,6 +1619,10 @@ export default function TradingViewReplayChart({
     });
 
     saveDrawings(next);
+    saveToolSettingsForType(
+      drawingsRef.current.find((drawing) => drawing.id === selectedDrawingId)?.type,
+      { strokeWidth }
+    );
   };
 
   const handleDrawingColorChange = (color) => {
@@ -1363,6 +1641,37 @@ export default function TradingViewReplayChart({
     ));
 
     saveDrawings(next);
+    saveToolSettingsForType(
+      drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current)?.type,
+      { color }
+    );
+  };
+
+  const handleDrawingLabelChange = (updates) => {
+    if (!selectedDrawingIdRef.current) return;
+
+    const next = drawingsRef.current.map((drawing) => {
+      if (
+        drawing.id !== selectedDrawingIdRef.current ||
+        (!isLineLikeDrawing(drawing) && drawing.type !== 'rect' && drawing.type !== 'text')
+      ) {
+        return drawing;
+      }
+
+      return {
+        ...drawing,
+        ...updates,
+      };
+    });
+
+    saveDrawings(next);
+    const selectedType = drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current)?.type;
+    saveToolSettingsForType(
+      selectedType,
+      selectedType === 'text'
+        ? { labelText: updates.labelText ?? updates.text ?? '' }
+        : updates
+    );
   };
 
   const handleCancelText = () => {
@@ -1489,6 +1798,7 @@ export default function TradingViewReplayChart({
           onToolChange={handleToolChange}
           onDrawingColorChange={handleDrawingColorChange}
           onDrawingWidthChange={handleDrawingWidthChange}
+          onDrawingLabelChange={handleDrawingLabelChange}
           onClearDrawings={handleClearDrawings}
           onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
         />

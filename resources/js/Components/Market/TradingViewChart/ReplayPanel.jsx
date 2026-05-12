@@ -27,6 +27,7 @@ export default function ReplayPanel({
   onToolChange,
   onDrawingColorChange,
   onDrawingWidthChange,
+  onDrawingLabelChange,
   onClearDrawings,
   onDeleteSelectedDrawing,
 }) {
@@ -195,7 +196,7 @@ export default function ReplayPanel({
               key={width}
               onClick={() => onDrawingWidthChange(width)}
               className={`flex h-6 w-8 items-center justify-center rounded border text-[11px] text-white ${
-                (selectedDrawing.strokeWidth ?? 2) === width
+                (selectedDrawing.strokeWidth ?? 1) === width
                   ? 'border-blue-400 bg-blue-600'
                   : 'border-gray-600 bg-gray-700 hover:bg-gray-600'
               }`}
@@ -207,6 +208,53 @@ export default function ReplayPanel({
               />
             </button>
           ))}
+        </div>
+      )}
+
+      {selectedDrawing && ['line', 'forecast', 'measure', 'rect'].includes(selectedDrawing.type) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={selectedDrawing.labelText ?? ''}
+            onChange={(event) => onDrawingLabelChange({ labelText: event.target.value })}
+            placeholder={selectedDrawing.type === 'rect' ? 'Box text' : 'Line text'}
+            className="h-7 w-44 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+          />
+
+          <select
+            value={selectedDrawing.labelVertical ?? 'top'}
+            onChange={(event) => onDrawingLabelChange({ labelVertical: event.target.value })}
+            className="h-7 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+            title="Vertical label position"
+          >
+            <option value="top">Top</option>
+            <option value="middle">Middle</option>
+            <option value="bottom">Bottom</option>
+          </select>
+
+          <select
+            value={selectedDrawing.labelHorizontal ?? 'center'}
+            onChange={(event) => onDrawingLabelChange({ labelHorizontal: event.target.value })}
+            className="h-7 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+            title="Horizontal label position"
+          >
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </div>
+      )}
+
+      {selectedDrawing?.type === 'text' && (
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={selectedDrawing.text ?? selectedDrawing.labelText ?? ''}
+            onChange={(event) => onDrawingLabelChange({
+              text: event.target.value,
+              labelText: event.target.value,
+            })}
+            placeholder="Text note"
+            className="h-7 w-56 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+          />
         </div>
       )}
 
