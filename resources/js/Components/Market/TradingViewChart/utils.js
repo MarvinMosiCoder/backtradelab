@@ -198,6 +198,27 @@ export function estimateLogicalFromTime(candles, time) {
   return (candles.length - 1) + ((numericTime - candles[candles.length - 1].time) / estimateCandleInterval(candles));
 }
 
+export function estimateDrawingLogicalFromTime(candles, time, intervalSeconds = 60) {
+  const numericTime = Number(time);
+  if (!Array.isArray(candles) || !candles.length || !Number.isFinite(numericTime)) return null;
+
+  if (intervalSeconds >= 14400) {
+    const containingIndex = candles.findIndex((candle, index) => {
+      const nextCandle = candles[index + 1];
+      return (
+        numericTime >= candle.time &&
+        (!nextCandle || numericTime < nextCandle.time)
+      );
+    });
+
+    if (containingIndex >= 0) {
+      return containingIndex;
+    }
+  }
+
+  return estimateLogicalFromTime(candles, numericTime);
+}
+
 function offsetPoint(point, deltaTime, deltaPrice, deltaLogical) {
   const nextPoint = {
     ...point,

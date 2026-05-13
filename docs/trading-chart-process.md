@@ -59,21 +59,28 @@ External API
 | `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart |
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
 | `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, searchable add-symbol picker, timeframe, replay toggle, and price display |
-| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, selected drawing style controls, and presets |
+| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, paper backtest account controls, and the contextual tool style/preset editor |
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
 | `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
 | `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
+| `app/Http/Controllers/MarketBacktestController.php` | Loads paper account state, places market/conditional replay entries, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
 | `routes/api.php` | Defines `/api/market-symbols`, `/api/market-symbol-options`, and `/api/klines` |
-| `routes/web.php` | Defines authenticated `/market-drawings` and `/market-tool-settings` routes |
+| `routes/web.php` | Defines authenticated `/market-drawings`, `/market-tool-settings`, and `/market-backtest/*` routes |
 | `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Bybit symbol options, and fetches/normalizes Bybit candle data |
 | `app/Models/MarketSymbol.php` | Eloquent model for symbols saved in the database |
 | `app/Models/MarketDrawing.php` | Eloquent model for per-user saved chart drawings |
 | `app/Models/MarketToolSetting.php` | Eloquent model for per-user reusable chart tool defaults |
+| `app/Models/MarketBacktestAccount.php` | Eloquent model for a user's paper backtest account |
+| `app/Models/MarketBacktestPosition.php` | Eloquent model for open/closed simulated positions |
+| `app/Models/MarketBacktestTrade.php` | Eloquent model for simulated trade history |
 | `database/migrations/2026_05_06_000001_create_market_symbols_table.php` | Creates the `market_symbols` table |
 | `database/migrations/2026_05_12_000002_create_market_drawings_table.php` | Creates the `market_drawings` table |
 | `database/migrations/2026_05_12_000003_create_market_tool_settings_table.php` | Creates the `market_tool_settings` table |
+| `database/migrations/2026_05_13_000001_create_market_backtest_accounts_table.php` | Creates paper trading accounts |
+| `database/migrations/2026_05_13_000002_create_market_backtest_positions_table.php` | Creates simulated position records |
+| `database/migrations/2026_05_13_000003_create_market_backtest_trades_table.php` | Creates simulated trade history |
 
 ---
 
@@ -273,9 +280,42 @@ axios.put('/market-tool-settings', {
 });
 ```
 
-When a drawing is completed, or when a selected drawing's color, width, label text, or label placement is changed, `TradingViewChart.jsx` updates the saved defaults for that tool type. New tools of the same type inherit those saved settings, including line/box text placement and text-tool draft text. `localStorage` mirrors the settings as a fallback if the server request is unavailable.
+When a drawing is completed, or when a selected drawing's color, width, label text, or label placement is changed, `TradingViewChart.jsx` updates the saved defaults for that tool type. If no drawing is selected, the contextual editor updates the active tool's defaults directly, so Line, Box, Forecast, Text, and position tools can each keep their own style. New tools of the same type inherit those saved settings, including line/box text placement and text-tool draft text. `localStorage` mirrors the settings as a fallback if the server request is unavailable.
 
-The same settings object also stores selectable presets by tool type under `settings.presets`. A selected text, box, line, or forecast drawing with text can be saved as a preset from `ReplayPanel.jsx`. Example text presets can be `BOS`, `MSS`, `HH`, `HL`, `LH`, or `LL`. After saving, the preset appears as a button when that tool type is active or selected. Clicking a preset applies its saved text, color, width, and label placement to the selected drawing, or makes it the default for the next drawing of that type.
+The same settings object also stores selectable presets by tool type under `settings.presets`. A selected text, box, line, or forecast drawing can be saved as a preset from the contextual editor in `ReplayPanel.jsx`. Example text presets can be `BOS`, `MSS`, `HH`, `HL`, `LH`, or `LL`. After saving, the preset appears as a button when that tool type is active or selected. Clicking a preset applies its saved text, color, width, and label placement to the selected drawing, or makes it the default for the next drawing of that type.
+
+---
+
+### 7. Paper Backtest Account
+
+Each authenticated user can use a database-backed demo account while replaying candles. `MarketBacktestController.php` creates a default `Demo Account` with `10,000 USDT` the first time the replay account panel is opened.
+
+The frontend loads account state with:
+
+```javascript
+axios.get('/market-backtest/account', {
+  params: { symbol, price: executionPrice },
+});
+```
+
+Replay orders can be placed as Market or Conditional entries. Market entries fill immediately at the current replay execution price, or at the optional manual entry override. Conditional entries require a trigger price and are stored as pending positions until a replay candle trades through that level. The ticket also accepts optional stop loss and take profit levels. For long positions, SL must be below entry and TP must be above entry; for short positions, SL must be above entry and TP must be below entry. The panel shows estimated risk, reward, and R/R before entry.
+
+Pending entries are checked against the current replay candle high/low. If `low <= entryPrice <= high`, the pending entry is triggered at its configured entry price, the open trade is recorded, margin is locked, and the entry fee is charged. The candle where the order was placed is skipped so a conditional order cannot trigger from price action that already happened before placement. Pending entries can also be cancelled from the Wallet panel before they trigger.
+
+As replay advances, open positions are checked against the current candle high/low. A long closes at SL when `low <= stopLoss`, or at TP when `high >= takeProfit`; a short closes at SL when `high >= stopLoss`, or at TP when `low <= takeProfit`. The entry candle is skipped so a newly opened trade is not closed by price movement that happened before the simulated entry. If SL and TP are both inside the same candle, SL is treated as hit first because the intrabar path is unknown from OHLC data.
+
+The first implementation uses 1x margin paper trading: opening a position locks the requested notional as margin and charges a `0.04%` fee; closing returns margin plus or minus PnL and charges the exit fee.
+
+| Route | Purpose |
+|-------|---------|
+| `GET /market-backtest/account` | Load demo account, open positions, recent trades, and account metrics |
+| `POST /market-backtest/positions` | Place a market entry or pending conditional entry |
+| `POST /market-backtest/positions/{position}/trigger` | Trigger a pending conditional entry when replay price reaches the entry |
+| `POST /market-backtest/positions/{position}/cancel` | Cancel a pending conditional entry |
+| `POST /market-backtest/positions/{position}/close` | Close an open replay position at the current replay price |
+| `POST /market-backtest/reset` | Reset the demo account back to the starting balance |
+
+`ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, optional entry/SL/TP planning fields, pending entry cancel buttons, open position close buttons, and recent trades.
 
 ---
 
@@ -328,7 +368,7 @@ When replay mode is enabled:
 | Reset | Stays in replay mode and jumps to the latest/current candle price |
 | Follow Replay | Scrolls chart to the replay edge |
 | Set Replay Price | Arms the next chart click to pick replay candle/price |
-| Speed buttons | Changes playback interval |
+| Speed buttons | Changes playback interval inside the replay flyout |
 
 Playback speeds are defined in `constants.js`.
 
@@ -344,7 +384,7 @@ Playback speeds are defined in `constants.js`.
 
 Replay price selection creates a dashed price line with `candleSeries.createPriceLine()`.
 
-Changing timeframe while replay is active keeps replay mode enabled, pauses playback, preserves the selected drawing tool, preserves the selected replay price, and moves the replay index to the nearest matching timestamp in the newly loaded candle set.
+Changing timeframe while replay is active keeps replay mode enabled, pauses playback, preserves the selected drawing tool, preserves the selected replay price, and moves the replay index to the nearest matching timestamp in the newly loaded candle set. If drawings exist, the chart frames the replay candle plus drawing timestamps after the new candles load instead of forcing follow mode, so boxes/lines do not disappear when switching between lower and higher timeframes.
 
 The selected replay price is also included in the candlestick series `autoscaleInfoProvider`. This keeps the dashed selected-price line visible after changing timeframe, even if the new candle range would normally autoscale away from that price.
 
@@ -355,6 +395,17 @@ The selected-price line effect depends on `timeframe` and `visibleCandles.length
 ## Drawing Tools
 
 Drawing tools are only shown in replay mode. In replay mode, `TradingViewChart.jsx` prioritizes the chart by rendering `ChartStage.jsx` as the main workspace and overlaying `ReplayPanel.jsx` as a compact left rail. Clicking a rail icon opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
+
+The rail currently has four main groups:
+
+| Group | Behavior |
+|-------|----------|
+| Replay | Back/play/forward, reset, follow, price picking, candle count, and playback speed |
+| Tools | Drawing tool selection plus clear/delete actions |
+| Backtest Account | Paper account metrics, long/short entry, close buttons, and recent trades |
+| Tool Editor | Contextual color, width, label/text, and preset controls for the active tool or selected drawing |
+
+The Tool Editor opens automatically after a tool is clicked or a drawing is selected. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type.
 
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
@@ -375,7 +426,7 @@ Drawings are stored per symbol:
 `replay-drawings:${symbol}`
 ```
 
-Storage uses `localStorage`, so drawings persist in the browser but are not saved to the backend.
+Drawings are saved to the backend through `/market-drawings` and mirrored in `localStorage` as a fallback/migration source. Existing browser-only drawings are merged into the shared per-symbol key and uploaded when no server record exists yet.
 
 Older timeframe-specific drawing keys are still read and migrated/merged when symbols load:
 
@@ -401,7 +452,7 @@ export const DRAWING_COLORS = [
 ];
 ```
 
-The active color applies to newly created line, forecast, box, and text drawings. If a drawing is selected, picking a swatch updates that drawing immediately and saves the change. Box fill uses the same color with transparency, while long/short position tools use fixed green profit and red loss zones.
+The active color applies to the selected drawing or to the active tool defaults. Line, Forecast, Box, Text, Long, and Short can each keep a separate saved color/default style. Box fill uses the same color with transparency, while long/short position tools use fixed green profit and red loss zones.
 
 ---
 
@@ -429,16 +480,16 @@ const rawPrice = candleSeries.coordinateToPrice(y);
 When drawing the overlay, chart coordinates are converted back to screen coordinates:
 
 ```javascript
-const logicalFromTime = estimateLogicalFromTime(visibleCandles, point.time);
+const logicalFromTime = estimateDrawingLogicalFromTime(allCandles, point.time, intervalSeconds);
 const x = chart.timeScale().logicalToCoordinate(logicalFromTime);
 const y = candleSeries.priceToCoordinate(price);
 ```
 
 This is why drawings stay attached to candle time/price while the chart scrolls or zooms. Logical coordinates also allow drawing tools to extend beyond the last loaded candle instead of snapping back to the final candle.
 
-For `1d` and higher timeframes, existing intraday drawing timestamps are rendered on the candle bucket that contains the saved timestamp. This keeps tools aligned to daily/weekly/monthly candles instead of placing an intraday timestamp fractionally between two higher-timeframe candles. The saved drawing timestamp is not mutated, so switching back to an intraday timeframe can still use the original precise time.
+For `4h` and higher timeframes, existing intraday drawing timestamps are rendered on the candle bucket that contains the saved timestamp. This keeps tools aligned to higher timeframe candles instead of placing an intraday timestamp fractionally between two wider candles. The saved drawing timestamp is not mutated, so switching back to an intraday timeframe can still use the original precise time.
 
-When switching timeframe, drawing timestamps are projected into the currently visible candle set. This keeps shared drawings visible across timeframes. Boxes use a minimum visible rectangle size so very short lower-timeframe boxes do not collapse into a 1px sliver on higher timeframes.
+When switching timeframe, drawing timestamps are projected through the full loaded candle set and then rendered onto the active replay series. This keeps shared drawings aligned even when the replay series only shows candles up to the current replay index. On `4h` and higher timeframes, intraday drawing timestamps snap to the containing candle bucket so lower-timeframe tools do not drift toward the side of the chart. Boxes use a minimum visible rectangle size so very short lower-timeframe boxes do not collapse into a 1px sliver on higher timeframes.
 
 ---
 
@@ -526,7 +577,7 @@ Resizing updates stored `time` and/or `price`, so resized drawings remain attach
 
 ### Stroke Width
 
-Selected line, long/short position, forecast, and box drawings show width controls in `ReplayPanel.jsx`.
+Selected line, long/short position, forecast, and box drawings show width controls in the contextual Tool Editor in `ReplayPanel.jsx`. When no drawing is selected, the same controls update the active tool's default width.
 
 Available stroke widths:
 
@@ -534,15 +585,15 @@ Available stroke widths:
 [1, 2, 3, 4, 6, 8]
 ```
 
-New line, box, forecast, and position drawings default to `1px`. The selected `strokeWidth` is saved on the drawing object and persisted with the drawing.
+New line, box, forecast, and position drawings default to the saved width for that tool type, falling back to `1px`. The selected `strokeWidth` is saved on the drawing object and persisted with the drawing.
 
 ### Drawing Labels
 
-Selected line-like drawings and boxes show label controls in `ReplayPanel.jsx`. The label text is saved directly on the drawing, with vertical placement (`top`, `middle`, `bottom`) and horizontal placement (`left`, `center`, `right`). Selected standalone text drawings show an editable text input in the same panel. `ChartStage.jsx` renders labels and text on the overlay and keeps them attached to the drawing as the chart scrolls, zooms, or changes timeframe.
+Selected line-like drawings and boxes show label controls in the contextual Tool Editor in `ReplayPanel.jsx`. The label text is saved directly on the drawing, with vertical placement (`top`, `middle`, `bottom`) and horizontal placement (`left`, `center`, `right`). When only a supported tool is active, label edits become the defaults for the next drawing of that type. Selected standalone text drawings show an editable text input in the same panel. `ChartStage.jsx` renders labels and text on the overlay and keeps them attached to the drawing as the chart scrolls, zooms, or changes timeframe.
 
 ### Color
 
-Line, forecast, box, and text drawings support color. The selected color is stored on the drawing object as `color` and persisted with the drawing. Long/short position drawings keep fixed green and red zones for profit/loss readability.
+Line, forecast, box, text, and position drawings support a saved `color` value. The selected color is stored on the drawing object as `color` and persisted with the drawing. Long/short position drawings still keep fixed green and red zones for profit/loss readability.
 
 ---
 
@@ -597,8 +648,8 @@ Backend errors are returned as JSON responses from `MarketDataController.php`.
 | `useRef` | Keep chart instances and latest drawing/tool state available to event handlers |
 | `requestAnimationFrame` | Throttle overlay re-render requests during chart viewport movement |
 | `ResizeObserver` | Keep chart and overlay dimensions synchronized |
-| `localStorage` | Persist drawings per symbol without backend calls |
-| Database | Persist the user's available market symbols |
+| `localStorage` | Mirror drawings/tool settings for fallback and legacy migration |
+| Database | Persist the user's available market symbols, drawings, reusable tool defaults, and paper backtest records |
 
 ---
 
@@ -634,10 +685,11 @@ The chart now includes:
 2. Database-backed market symbols through `/api/market-symbols`.
 3. Laravel/Bybit candle data flow through `/api/klines`.
 4. Searchable Bybit add-symbol picker in the chart header.
-5. Replay mode with a compact left rail and grouped flyouts for follow, stepping, speed, reset, price picking, drawing tools, style, and presets.
+5. Replay mode with a compact left rail and grouped flyouts for replay controls, drawing tools, paper backtest account controls, and contextual per-tool style/preset editing.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
 7. Drawing tools for line, long/short position, forecast, box, and text.
-8. Drawing colors, stroke widths, selection, moving, and resizing.
-9. Drawing persistence per symbol in `localStorage`, including migration from old per-timeframe keys.
-10. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
-11. Fullscreen chart mode.
+8. Per-tool drawing colors, stroke widths, labels, presets, selection, moving, and resizing.
+9. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
+10. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
+11. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
+12. Fullscreen chart mode.
