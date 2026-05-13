@@ -1255,6 +1255,14 @@ export default function TradingViewReplayChart({
     };
 
     const handleMouseDown = (event) => {
+      if (
+        event.target?.closest?.(
+          '[data-chart-ui], button, input, textarea, select, [contenteditable="true"]'
+        )
+      ) {
+        return;
+      }
+
       if (!replayMode) return;
       if (isSpacePressedRef.current) {
         dragDrawingRef.current = null;

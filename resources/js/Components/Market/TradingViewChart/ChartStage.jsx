@@ -428,6 +428,7 @@ function TextInputPopover({
 
   return (
     <div
+      data-chart-ui="text-input"
       className="absolute z-20 w-56 rounded-lg border border-blue-500 bg-slate-900 p-3 shadow-2xl"
       style={{
         left: Math.min(textInput.x + 12, Math.max(overlaySize.width - 240, 12)),
