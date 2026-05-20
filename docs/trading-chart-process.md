@@ -4,7 +4,7 @@
 
 The Market Analysis chart is a TradingView-style crypto chart built with React and `lightweight-charts`. It renders candlesticks and volume, supports replay mode, and includes local drawing tools for lines, boxes, long/short positions, forecasting, and text notes.
 
-Chart symbols are stored in the database through `market_symbols`. Candle data comes from the Laravel API endpoint `/api/klines`, which fetches Bybit kline data and returns normalized candles to the frontend.
+Chart symbols are stored in the database through `market_symbols`. Candle data comes from the Laravel API endpoint `/api/klines`, which fetches exchange kline data and returns normalized candles to the frontend.
 
 ---
 
@@ -34,9 +34,9 @@ Laravel Backend
 
   app/Http/Controllers/MarketDataController.php
     lists/saves market symbols
-    fetches available Bybit symbols
+    fetches available Binance, OKX, Bybit, BingX, and MEXC symbols
     validates params
-    fetches Bybit klines
+    fetches exchange klines
     normalizes candles
 
   app/Models/MarketSymbol.php
@@ -46,8 +46,7 @@ Laravel Backend
     creates market_symbols table
 
 External API
-  Bybit API v5 market kline endpoint
-  Bybit API v5 market instruments-info endpoint
+  Binance, OKX, Bybit, BingX, and MEXC market/symbol endpoints
 ```
 
 ---
@@ -68,7 +67,7 @@ External API
 | `app/Http/Controllers/MarketBacktestController.php` | Loads paper account state, places market/conditional replay entries, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
 | `routes/api.php` | Defines `/api/market-symbols`, `/api/market-symbol-options`, and `/api/klines` |
 | `routes/web.php` | Defines authenticated `/market-drawings`, `/market-tool-settings`, and `/market-backtest/*` routes |
-| `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Bybit symbol options, and fetches/normalizes Bybit candle data |
+| `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Binance/OKX/Bybit/BingX/MEXC symbol options, and fetches/normalizes candle data |
 | `app/Models/MarketSymbol.php` | Eloquent model for symbols saved in the database |
 | `app/Models/MarketDrawing.php` | Eloquent model for per-user saved chart drawings |
 | `app/Models/MarketToolSetting.php` | Eloquent model for per-user reusable chart tool defaults |
@@ -105,13 +104,18 @@ The response shape is:
     {
       "id": 1,
       "symbol": "BTCUSDT",
+      "exchange": "bybit",
+      "exchange_symbol": "BTCUSDT",
+      "coin_name": "BTC",
+      "base_coin": "BTC",
+      "quote_coin": "USDT",
       "category": "spot"
     }
   ]
 }
 ```
 
-`TradingViewChart.jsx` also loads the available add-symbol options from Bybit through Laravel:
+`TradingViewChart.jsx` also loads the available add-symbol options from Binance, OKX, Bybit, BingX, and MEXC through Laravel. The chart header has a Market selector for Spot or Futures; Futures uses the backend `linear` category.
 
 ```javascript
 const response = await fetch('/api/market-symbol-options?category=spot', {
@@ -127,7 +131,10 @@ The response contains tradable instruments:
   "symbols": [
     {
       "symbol": "ETHUSDT",
+      "exchange": "okx",
+      "exchange_symbol": "ETH-USDT",
       "category": "spot",
+      "coin_name": "ETH",
       "baseCoin": "ETH",
       "quoteCoin": "USDT",
       "status": "Trading"
@@ -147,12 +154,17 @@ await fetch('/api/market-symbols', {
   },
   body: JSON.stringify({
     symbol: normalizedSymbol,
+    exchange: 'okx',
+    exchange_symbol: 'ETH-USDT',
+    coin_name: 'ETH',
+    base_coin: 'ETH',
+    quote_coin: 'USDT',
     category: 'spot',
   }),
 });
 ```
 
-The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols`.
+The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols` with the source exchange, market category, native exchange symbol, coin name, base coin, and quote coin. The database uniqueness is by `exchange + category + symbol`, so the same market name can be saved from multiple exchanges and as both spot and futures.
 
 After a symbol is saved, `TradingViewChart.jsx` inserts it into the saved-symbol list, selects it as the active chart symbol, and the candle request reloads for that symbol.
 
@@ -163,6 +175,7 @@ After a symbol is saved, `TradingViewChart.jsx` inserts it into the saved-symbol
 ```javascript
 const params = new URLSearchParams({
   symbol,
+  exchange,
   interval,
   category: 'spot',
   limit: '1000',
@@ -176,7 +189,7 @@ const response = await fetch(`/api/klines?${params.toString()}`, {
 
 When replay mode is active, timeframe changes anchor the candle request around the current replay candle and saved drawing timestamps. The frontend passes an `end` timestamp to `/api/klines` so lower timeframes load candles around the active replay area instead of only loading the latest market data. This prevents the chart and tools from disappearing when switching from a higher timeframe to a lower one whose latest candle window would otherwise not include the old replay/drawing time.
 
-The UI timeframe is mapped to the Bybit interval in `constants.js`.
+The UI timeframe is mapped to the selected exchange interval in `MarketDataController.php`.
 
 | UI Timeframe | API Interval |
 |--------------|--------------|
@@ -201,13 +214,13 @@ The UI timeframe is mapped to the Bybit interval in `constants.js`.
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | `symbols()` | `GET /api/market-symbols` | Return active symbols from `market_symbols` |
-| `availableSymbols()` | `GET /api/market-symbol-options` | Return available Bybit instruments for the add-symbol picker |
+| `availableSymbols()` | `GET /api/market-symbol-options` | Return available Binance, OKX, Bybit, BingX, and MEXC instruments for the add-symbol picker |
 | `storeSymbol()` | `POST /api/market-symbols` | Validate, uppercase, and save a symbol |
-| `klines()` | `GET /api/klines` | Fetch normalized Bybit candles |
+| `klines()` | `GET /api/klines` | Fetch normalized exchange candles |
 
-`availableSymbols()` validates the requested category, calls Bybit `/v5/market/instruments-info`, normalizes symbol/base/quote/status metadata, sorts the symbols alphabetically, and returns them for the searchable picker.
+`availableSymbols()` validates the requested category, calls the configured exchange symbol endpoints, normalizes symbol/base/quote/status/exchange metadata, sorts the symbols alphabetically, and returns them for the searchable picker. The picker displays the coin name and the source exchange beside each symbol.
 
-`klines()` validates the requested category/interval, fetches candles from Bybit, deduplicates by timestamp, sorts oldest to newest, and returns normalized candle objects:
+`klines()` validates the requested exchange/category/interval, fetches candles from the selected exchange, deduplicates by timestamp, sorts oldest to newest, and returns normalized candle objects:
 
 ```json
 {
@@ -683,8 +696,8 @@ The chart now includes:
 
 1. Lightweight Charts candlestick and volume rendering.
 2. Database-backed market symbols through `/api/market-symbols`.
-3. Laravel/Bybit candle data flow through `/api/klines`.
-4. Searchable Bybit add-symbol picker in the chart header.
+3. Laravel/exchange candle data flow through `/api/klines`.
+4. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
 5. Replay mode with a compact left rail and grouped flyouts for replay controls, drawing tools, paper backtest account controls, and contextual per-tool style/preset editing.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
 7. Drawing tools for line, long/short position, forecast, box, and text.

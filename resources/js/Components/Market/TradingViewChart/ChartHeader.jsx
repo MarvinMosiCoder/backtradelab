@@ -5,6 +5,8 @@ import { formatPrice } from './utils';
 
 export default function ChartHeader({
   symbol,
+  exchange,
+  marketCategory,
   symbols,
   availableSymbols,
   isSavingSymbol,
@@ -14,16 +16,22 @@ export default function ChartHeader({
   replayMode,
   currentPrice,
   selectedReplayPrice,
+  candleColors,
   onSymbolChange,
+  onCategoryChange,
   onAddSymbol,
   onTimeframeChange,
   onToggleReplayMode,
+  onCandleColorChange,
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
-  const symbolOptions = symbols.length ? symbols : [{ symbol }];
-  const savedSymbolSet = new Set(symbols.map((item) => item.symbol));
-  const addSymbolOptions = availableSymbols.filter((item) => !savedSymbolSet.has(item.symbol));
+  const buildSymbolKey = (item) => `${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`;
+  const symbolOptions = symbols.length ? symbols : [{ symbol, exchange: exchange ?? 'bybit', category: marketCategory ?? 'spot' }];
+  const savedSymbolSet = new Set(symbols.map((item) => buildSymbolKey(item)));
+  const addSymbolOptions = availableSymbols.filter((item) => (
+    !savedSymbolSet.has(buildSymbolKey(item))
+  ));
   const addButtonLabel = isLoadingAvailableSymbols
     ? 'Loading symbols...'
     : !availableSymbols.length
@@ -42,8 +50,16 @@ export default function ChartHeader({
       .filter((item) => {
         return [
           item.symbol,
+          item.exchange,
+          item.exchangeLabel,
+          item.exchange_symbol,
+          item.coin_name,
           item.baseCoin,
           item.quoteCoin,
+          item.category,
+          item.baseCoin && item.quoteCoin ? `${item.baseCoin}${item.quoteCoin}` : null,
+          item.baseCoin && item.quoteCoin ? `${item.baseCoin}/${item.quoteCoin}` : null,
+          `${item.exchange ?? ''} ${item.category ?? ''} ${item.symbol ?? ''}`,
         ].some((value) => String(value ?? '').toUpperCase().includes(query));
       })
       .slice(0, 80);
@@ -57,18 +73,21 @@ export default function ChartHeader({
 
   return (
     <div className="rounded-lg bg-gray-800 p-3">
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(280px,1.35fr)_minmax(150px,0.65fr)_minmax(160px,0.7fr)_minmax(170px,0.7fr)]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(280px,1.2fr)_minmax(120px,0.5fr)_minmax(140px,0.5fr)_minmax(140px,0.55fr)_minmax(150px,0.55fr)_minmax(170px,0.6fr)]">
         <div className="relative">
           <label className="mb-1 block text-xs font-medium text-gray-300">Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <select
-              value={symbol}
+              value={`${exchange ?? 'bybit'}:${marketCategory ?? 'spot'}:${symbol}`}
               onChange={(e) => onSymbolChange(e.target.value)}
               className="h-9 min-w-0 flex-1 rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
             >
               {symbolOptions.map((item) => (
-                <option key={item.symbol} value={item.symbol}>
-                  {item.symbol}
+                <option
+                  key={buildSymbolKey(item)}
+                  value={buildSymbolKey(item)}
+                >
+                  {item.symbol} ({String(item.exchange ?? 'bybit').toUpperCase()} {String(item.category ?? 'spot').toUpperCase()})
                 </option>
               ))}
             </select>
@@ -109,25 +128,30 @@ export default function ChartHeader({
                 {filteredAddSymbolOptions.length ? (
                   filteredAddSymbolOptions.map((item) => (
                     <div
-                      key={item.symbol}
+                      key={buildSymbolKey(item)}
                       className="flex items-center gap-2 border-b border-gray-800 px-2 py-1.5 last:border-b-0"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-xs font-semibold text-white">
                           {item.symbol}
+                          <span className="ml-1 text-[10px] font-medium text-emerald-300">
+                            {String(item.exchangeLabel ?? item.exchange ?? '').toUpperCase()} {String(item.category ?? '').toUpperCase()}
+                          </span>
                         </div>
-                        {(item.baseCoin || item.quoteCoin || item.status) && (
+                        {(item.coin_name || item.baseCoin || item.quoteCoin || item.status) && (
                           <div className="truncate text-[10px] text-gray-400">
-                            {[item.baseCoin, item.quoteCoin, item.status].filter(Boolean).join(' / ')}
+                            {[item.coin_name, item.baseCoin && item.quoteCoin ? `${item.baseCoin}/${item.quoteCoin}` : null, item.status]
+                              .filter(Boolean)
+                              .join(' / ')}
                           </div>
                         )}
                       </div>
                       <button
                         type="button"
-                        onClick={() => handleSelectSymbol(item.symbol)}
+                        onClick={() => handleSelectSymbol(item)}
                         disabled={isSavingSymbol}
                         className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
-                        title={`Add ${item.symbol}`}
+                        title={`Add ${item.symbol} from ${String(item.exchange ?? '').toUpperCase()} ${String(item.category ?? '').toUpperCase()}`}
                       >
                         <Plus size={15} />
                       </button>
@@ -144,6 +168,21 @@ export default function ChartHeader({
           {symbolError && (
             <div className="mt-1 text-[11px] text-red-400">{symbolError}</div>
           )}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-300">Market</label>
+          <select
+            value={marketCategory}
+            onChange={(e) => {
+              onCategoryChange(e.target.value);
+              setSymbolSearch('');
+            }}
+            className="h-9 w-full rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
+          >
+            <option value="spot">Spot</option>
+            <option value="linear">Futures</option>
+          </select>
         </div>
 
         <div>
@@ -173,6 +212,36 @@ export default function ChartHeader({
             {replayMode ? <X size={15} /> : <Play size={15} />}
             {replayMode ? 'Exit Replay Mode' : 'Replay Mode'}
           </button>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-300">Candles</label>
+          <div className="flex h-9 items-center gap-2 rounded-md border border-gray-600 bg-gray-700 px-2">
+            <label className="flex items-center gap-1 text-[10px] font-semibold text-gray-300" title="Bull candle color">
+              G
+              <input
+                type="color"
+                value={candleColors.up}
+                onChange={(event) => onCandleColorChange((current) => ({
+                  ...current,
+                  up: event.target.value,
+                }))}
+                className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+              />
+            </label>
+            <label className="flex items-center gap-1 text-[10px] font-semibold text-gray-300" title="Bear candle color">
+              R
+              <input
+                type="color"
+                value={candleColors.down}
+                onChange={(event) => onCandleColorChange((current) => ({
+                  ...current,
+                  down: event.target.value,
+                }))}
+                className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="flex items-end lg:justify-end">

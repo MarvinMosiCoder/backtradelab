@@ -32,6 +32,11 @@ import {
   offsetDrawing,
 } from './TradingViewChart/utils';
 
+const DEFAULT_CANDLE_COLORS = {
+  up: '#26a69a',
+  down: '#ef5350',
+};
+
 export default function TradingViewReplayChart({
   initialSymbol = 'BTCUSDT',
   initialTimeframe = '15m',
@@ -65,6 +70,24 @@ export default function TradingViewReplayChart({
   const pendingVisibleLogicalRangeRef = useRef(null);
 
   const [symbol, setSymbol] = useState(initialSymbol);
+  const [exchange, setExchange] = useState('bybit');
+  const [marketCategory, setMarketCategory] = useState('spot');
+  const [candleColors, setCandleColors] = useState(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_CANDLE_COLORS;
+    }
+
+    try {
+      const stored = JSON.parse(localStorage.getItem('market-chart-candle-colors') || '{}');
+
+      return {
+        up: stored.up || DEFAULT_CANDLE_COLORS.up,
+        down: stored.down || DEFAULT_CANDLE_COLORS.down,
+      };
+    } catch {
+      return DEFAULT_CANDLE_COLORS;
+    }
+  });
   const [symbols, setSymbols] = useState([]);
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolError, setSymbolError] = useState('');
@@ -120,9 +143,9 @@ export default function TradingViewReplayChart({
     return visibleCandles.map((c) => ({
       time: c.time,
       value: c.volume,
-      color: c.close >= c.open ? '#26a69a88' : '#ef535088',
+      color: `${c.close >= c.open ? candleColors.up : candleColors.down}88`,
     }));
-  }, [visibleCandles]);
+  }, [candleColors.down, candleColors.up, visibleCandles]);
 
   useEffect(() => {
     visibleCandlesRef.current = visibleCandles;
@@ -136,7 +159,6 @@ export default function TradingViewReplayChart({
   const executionCandle = replayMode ? allCandles[replayIndex] : null;
   const executionPrice = executionCandle?.close ?? currentPrice;
   const executionTime = executionCandle?.time ?? null;
-
   const selectedDrawing = useMemo(() => {
     return drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
   }, [drawings, selectedDrawingId]);
@@ -176,6 +198,10 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     selectedReplayPriceRef.current = selectedReplayPrice;
   }, [selectedReplayPrice]);
+
+  useEffect(() => {
+    localStorage.setItem('market-chart-candle-colors', JSON.stringify(candleColors));
+  }, [candleColors]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -224,16 +250,40 @@ export default function TradingViewReplayChart({
       const nextSymbols = Array.isArray(result.symbols) ? result.symbols : [];
 
       setSymbols(nextSymbols);
-      setSymbol((currentSymbol) => (
-        nextSymbols.length && !nextSymbols.some((item) => item.symbol === currentSymbol)
-          ? nextSymbols[0].symbol
-          : currentSymbol
-      ));
+      if (nextSymbols.length) {
+        setSymbol((currentSymbol) => {
+          const currentExists = nextSymbols.some((item) => (
+            item.symbol === currentSymbol
+            && (item.exchange ?? 'bybit') === exchange
+            && (item.category ?? 'spot') === marketCategory
+          ));
+
+          return currentExists ? currentSymbol : nextSymbols[0].symbol;
+        });
+        setExchange((currentExchange) => {
+          const currentExists = nextSymbols.some((item) => (
+            item.symbol === symbol
+            && (item.exchange ?? 'bybit') === currentExchange
+            && (item.category ?? 'spot') === marketCategory
+          ));
+
+          return currentExists ? currentExchange : (nextSymbols[0].exchange ?? 'bybit');
+        });
+        setMarketCategory((currentCategory) => {
+          const currentExists = nextSymbols.some((item) => (
+            item.symbol === symbol
+            && (item.exchange ?? 'bybit') === exchange
+            && (item.category ?? 'spot') === currentCategory
+          ));
+
+          return currentExists ? currentCategory : (nextSymbols[0].category ?? 'spot');
+        });
+      }
       setSymbolError('');
     } catch (err) {
       setSymbolError(err.message || 'Failed to load symbols');
     }
-  }, []);
+  }, [exchange, marketCategory, symbol]);
 
   const loadBacktestAccount = useCallback(async (price = executionPrice) => {
     setIsBacktestLoading(true);
@@ -273,7 +323,7 @@ export default function TradingViewReplayChart({
       setIsLoadingAvailableSymbols(true);
 
       try {
-        const response = await fetch('/api/market-symbol-options?category=spot', {
+        const response = await fetch(`/api/market-symbol-options?category=${marketCategory}`, {
           headers: { Accept: 'application/json' },
         });
 
@@ -307,7 +357,7 @@ export default function TradingViewReplayChart({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [marketCategory]);
 
   const buildToolSettingsFromDrawing = useCallback((drawing) => {
     if (!drawing?.type) return {};
@@ -819,6 +869,7 @@ export default function TradingViewReplayChart({
       layout: {
         background: { color: '#081631' },
         textColor: '#d1d4dc',
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: '#12233f' },
@@ -845,12 +896,12 @@ export default function TradingViewReplayChart({
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#26a69a',
-      downColor: '#ef5350',
-      borderUpColor: '#26a69a',
-      borderDownColor: '#ef5350',
-      wickUpColor: '#26a69a',
-      wickDownColor: '#ef5350',
+      upColor: candleColors.up,
+      downColor: candleColors.down,
+      borderUpColor: candleColors.up,
+      borderDownColor: candleColors.down,
+      wickUpColor: candleColors.up,
+      wickDownColor: candleColors.down,
       borderVisible: true,
       priceLineVisible: true,
       lastValueVisible: true,
@@ -1039,6 +1090,20 @@ export default function TradingViewReplayChart({
       volumeSeriesRef.current = null;
     };
   }, [replayMode, scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
+
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (!candleSeries) return;
+
+    candleSeries.applyOptions({
+      upColor: candleColors.up,
+      downColor: candleColors.down,
+      borderUpColor: candleColors.up,
+      borderDownColor: candleColors.down,
+      wickUpColor: candleColors.up,
+      wickDownColor: candleColors.down,
+    });
+  }, [candleColors.down, candleColors.up]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -1538,8 +1603,9 @@ export default function TradingViewReplayChart({
 
         const params = new URLSearchParams({
           symbol,
+          exchange,
           interval,
-          category: 'spot',
+          category: marketCategory,
           limit: '1000',
           max_candles: wasInReplay ? '10000' : '5000',
         });
@@ -1660,7 +1726,7 @@ export default function TradingViewReplayChart({
     }
 
     fetchKlines();
-  }, [symbol, timeframe, getDrawingTimes, loadStoredDrawings]);
+  }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings]);
 
   const toggleReplayMode = () => {
     setIsPlaying(false);
@@ -1945,13 +2011,28 @@ export default function TradingViewReplayChart({
     setTool(null);
   };
 
+  const handleSymbolChange = useCallback((value) => {
+    const [nextExchange, nextCategory, ...symbolParts] = String(value).split(':');
+    const nextSymbol = symbolParts.join(':') || nextCategory || nextExchange;
+
+    setExchange(symbolParts.length ? nextExchange : 'bybit');
+    setMarketCategory(symbolParts.length ? nextCategory : 'spot');
+    setSymbol(nextSymbol);
+  }, []);
+
   const handleAddSymbol = async (symbolToAdd) => {
     if (symbolToAdd?.preventDefault) {
       symbolToAdd.preventDefault();
     }
 
-    const rawSymbol = typeof symbolToAdd === 'string' ? symbolToAdd : '';
-    const selectedAvailableSymbol = availableSymbols.find((item) => item.symbol === rawSymbol);
+    const requestedSymbol = typeof symbolToAdd === 'string' ? symbolToAdd : symbolToAdd?.symbol;
+    const requestedExchange = typeof symbolToAdd === 'object' ? symbolToAdd?.exchange : null;
+    const selectedAvailableSymbol = availableSymbols.find((item) => (
+      item.symbol === requestedSymbol
+      && (!requestedExchange || item.exchange === requestedExchange)
+      && (item.category ?? 'spot') === marketCategory
+    ));
+    const rawSymbol = selectedAvailableSymbol?.symbol ?? requestedSymbol ?? '';
     const normalizedSymbol = (selectedAvailableSymbol?.symbol ?? rawSymbol).trim().toUpperCase();
     if (!normalizedSymbol) return;
 
@@ -1967,7 +2048,12 @@ export default function TradingViewReplayChart({
         },
         body: JSON.stringify({
           symbol: normalizedSymbol,
-          category: selectedAvailableSymbol?.category ?? 'spot',
+          exchange: selectedAvailableSymbol?.exchange ?? 'bybit',
+          exchange_symbol: selectedAvailableSymbol?.exchange_symbol ?? normalizedSymbol,
+          coin_name: selectedAvailableSymbol?.coin_name ?? selectedAvailableSymbol?.baseCoin ?? normalizedSymbol,
+          base_coin: selectedAvailableSymbol?.baseCoin ?? '',
+          quote_coin: selectedAvailableSymbol?.quoteCoin ?? '',
+          category: selectedAvailableSymbol?.category ?? marketCategory,
         }),
       });
 
@@ -1980,14 +2066,28 @@ export default function TradingViewReplayChart({
       const savedSymbol = result.symbol;
 
       setSymbols((currentSymbols) => {
-        if (currentSymbols.some((item) => item.symbol === savedSymbol.symbol)) {
+        if (currentSymbols.some((item) => (
+          item.symbol === savedSymbol.symbol
+          && (item.exchange ?? 'bybit') === (savedSymbol.exchange ?? 'bybit')
+          && (item.category ?? 'spot') === (savedSymbol.category ?? 'spot')
+        ))) {
           return currentSymbols.map((item) => (
-            item.symbol === savedSymbol.symbol ? savedSymbol : item
+            item.symbol === savedSymbol.symbol
+            && (item.exchange ?? 'bybit') === (savedSymbol.exchange ?? 'bybit')
+            && (item.category ?? 'spot') === (savedSymbol.category ?? 'spot')
+              ? savedSymbol
+              : item
           ));
         }
 
-        return [...currentSymbols, savedSymbol].sort((a, b) => a.symbol.localeCompare(b.symbol));
+        return [...currentSymbols, savedSymbol].sort((a, b) => (
+          a.symbol.localeCompare(b.symbol)
+          || (a.exchange ?? '').localeCompare(b.exchange ?? '')
+          || (a.category ?? '').localeCompare(b.category ?? '')
+        ));
       });
+      setExchange(savedSymbol.exchange ?? 'bybit');
+      setMarketCategory(savedSymbol.category ?? 'spot');
       setSymbol(savedSymbol.symbol);
     } catch (err) {
       setSymbolError(err.message || 'Failed to save symbol');
@@ -2296,6 +2396,8 @@ export default function TradingViewReplayChart({
     >
       <ChartHeader
         symbol={symbol}
+        exchange={exchange}
+        marketCategory={marketCategory}
         symbols={symbols}
         availableSymbols={availableSymbols}
         isSavingSymbol={isSavingSymbol}
@@ -2305,10 +2407,13 @@ export default function TradingViewReplayChart({
         replayMode={replayMode}
         currentPrice={currentPrice}
         selectedReplayPrice={selectedReplayPrice}
-        onSymbolChange={setSymbol}
+        candleColors={candleColors}
+        onSymbolChange={handleSymbolChange}
+        onCategoryChange={setMarketCategory}
         onAddSymbol={handleAddSymbol}
         onTimeframeChange={setTimeframe}
         onToggleReplayMode={toggleReplayMode}
+        onCandleColorChange={setCandleColors}
       />
 
       <div
