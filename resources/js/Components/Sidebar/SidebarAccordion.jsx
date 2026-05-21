@@ -238,6 +238,43 @@ const SidebarAccordion = ({ open, closeSidebar }) => {
 
                     </li>
                 </Link>
+                <Link
+                    href={`${window.location.origin}/trade-report`}
+                    onClick={() => {
+                        handleMenuClick("Trade Report");
+                        setIsOpen(false);
+                        closeSidebar();
+                    }}
+                >
+                    <li
+                        className={`${hoverColor} ${hoverTextColor} text-sm flex items-center gap-x-4 cursor-pointer px-3 py-3 rounded-[6px] mb-2 
+                            ${pathname === "trade-report" ? 
+                                (theme === 'bg-skin-black' ?
+                                        theme+`-active text-gray-100` : theme+`-active ${textColorActive}`
+                                )
+                                    : 
+                                    (theme === 'bg-skin-black' ? textColorActive : textColor)
+                            } group`}
+                            onClick={() =>{
+                            handleToggle('', 'trade-report');
+                        }}
+                    >
+                        <i
+                            className="fa fa-calendar-days ml-[1px] text-[15px] text-center"
+                            style={{
+                                fontSize: "17px",
+                                width: "16px",
+                                textAlign: "center",
+                            }}
+                        ></i>
+                        <p
+                            className={`font-poppins font-semibold single-line max-w-[500px] text-[13px] ${!open && "hidden"}`}
+                        >
+                            Trade Report
+                        </p>
+
+                    </li>
+                </Link>
             </ul>
             {links.map((item, index) => (
                 <div

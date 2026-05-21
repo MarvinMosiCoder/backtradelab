@@ -59,6 +59,83 @@ class MarketBacktestController extends Controller
         ]);
     }
 
+    public function report(Request $request)
+    {
+        $validated = $request->validate([
+            'symbol' => ['nullable', 'string', 'max:32', 'regex:/^[A-Za-z0-9]+$/'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
+        ]);
+
+        $account = $this->getOrCreateAccount($request);
+        $symbol = isset($validated['symbol']) ? strtoupper($validated['symbol']) : null;
+        $limit = (int) ($validated['limit'] ?? 500);
+
+        $positions = $account->positions()
+            ->where('status', 'closed')
+            ->when($symbol, fn ($query) => $query->where('symbol', $symbol))
+            ->orderByDesc('closed_at_time')
+            ->orderByDesc('updated_at')
+            ->limit($limit)
+            ->get();
+
+        $totalTrades = $positions->count();
+        $wins = $positions->filter(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl > 0);
+        $losses = $positions->filter(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl < 0);
+        $breakeven = $positions->filter(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl === 0.0);
+        $netPnl = round($positions->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
+        $grossProfit = round($wins->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
+        $grossLoss = round($losses->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
+        $fees = round($positions->sum(fn (MarketBacktestPosition $position) => (float) $position->entry_fee + (float) $position->exit_fee), 8);
+
+        return response()->json([
+            'success' => true,
+            'account' => [
+                'id' => $account->id,
+                'name' => $account->name,
+                'quoteCurrency' => $account->quote_currency,
+            ],
+            'summary' => [
+                'totalTrades' => $totalTrades,
+                'wins' => $wins->count(),
+                'losses' => $losses->count(),
+                'breakeven' => $breakeven->count(),
+                'winRate' => $totalTrades ? round(($wins->count() / $totalTrades) * 100, 2) : 0,
+                'netPnl' => $netPnl,
+                'grossProfit' => $grossProfit,
+                'grossLoss' => $grossLoss,
+                'fees' => $fees,
+                'averageWin' => $wins->count() ? round($grossProfit / $wins->count(), 8) : 0,
+                'averageLoss' => $losses->count() ? round($grossLoss / $losses->count(), 8) : 0,
+                'largestWin' => $wins->count() ? round($wins->max(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8) : 0,
+                'largestLoss' => $losses->count() ? round($losses->min(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8) : 0,
+            ],
+            'trades' => $positions->map(function (MarketBacktestPosition $position) {
+                $pnl = (float) $position->realized_pnl;
+                $margin = (float) $position->margin;
+
+                return [
+                    'id' => $position->id,
+                    'symbol' => $position->symbol,
+                    'side' => $position->side,
+                    'quantity' => (float) $position->quantity,
+                    'margin' => $margin,
+                    'entryPrice' => (float) $position->entry_price,
+                    'exitPrice' => $position->exit_price !== null ? (float) $position->exit_price : null,
+                    'entryFee' => (float) $position->entry_fee,
+                    'exitFee' => (float) $position->exit_fee,
+                    'fee' => round((float) $position->entry_fee + (float) $position->exit_fee, 8),
+                    'pnl' => $pnl,
+                    'pnlPercent' => $margin > 0 ? round(($pnl / $margin) * 100, 4) : 0,
+                    'result' => $pnl > 0 ? 'win' : ($pnl < 0 ? 'loss' : 'breakeven'),
+                    'openedAtTime' => $position->opened_at_time,
+                    'closedAtTime' => $position->closed_at_time,
+                    'createdAt' => optional($position->created_at)->toIso8601String(),
+                    'updatedAt' => optional($position->updated_at)->toIso8601String(),
+                ];
+            })->values(),
+        ]);
+    }
+
     public function openPosition(Request $request)
     {
         $validated = $request->validate([

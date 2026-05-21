@@ -24,6 +24,7 @@ import {
   estimateDrawingLogicalFromTime,
   estimateTimeFromLogical,
   findNearestCandleIndex,
+  isHorizontalRayDrawing,
   isLineLikeDrawing,
   isPositionDrawing,
   isTwoPointDrawing,
@@ -40,6 +41,7 @@ const DEFAULT_CANDLE_COLORS = {
 export default function TradingViewReplayChart({
   initialSymbol = 'BTCUSDT',
   initialTimeframe = '15m',
+  onBacktestAccountChange = null,
 }) {
   const wrapperRef = useRef(null);
   const fullscreenRef = useRef(null);
@@ -110,7 +112,7 @@ export default function TradingViewReplayChart({
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const [tool, setTool] = useState(null); // 'line' | 'rect' | 'long-position' | 'short-position' | 'forecast' | 'text' | null
+  const [tool, setTool] = useState(null); // 'line' | 'horizontal-ray' | 'rect' | 'long-position' | 'short-position' | 'forecast' | 'text' | null
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
   const [drawings, setDrawings] = useState([]);
   const [tempDrawing, setTempDrawing] = useState(null);
@@ -162,6 +164,12 @@ export default function TradingViewReplayChart({
   const selectedDrawing = useMemo(() => {
     return drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
   }, [drawings, selectedDrawingId]);
+
+  useEffect(() => {
+    if (backtestAccount && typeof onBacktestAccountChange === 'function') {
+      onBacktestAccountChange(backtestAccount);
+    }
+  }, [backtestAccount, onBacktestAccountChange]);
 
   useEffect(() => {
     isSpacePressedRef.current = isSpacePressed;
@@ -735,6 +743,21 @@ export default function TradingViewReplayChart({
         const p1 = toScreen(drawing.start);
         const p2 = toScreen(drawing.end);
         if (!p1 || !p2) return null;
+
+        if (isHorizontalRayDrawing(drawing)) {
+          return {
+            ...drawing,
+            screen: {
+              p1,
+              p2,
+              rayEnd: {
+                x: Math.max(overlaySize.width, p1.x),
+                y: p1.y,
+              },
+            },
+          };
+        }
+
         return { ...drawing, screen: { p1, p2 } };
       }
 
@@ -771,8 +794,8 @@ export default function TradingViewReplayChart({
       const d = renderedDrawings[i];
 
       if (isLineLikeDrawing(d)) {
-        const { p1, p2 } = d.screen;
-        if (distanceToSegment(point, p1, p2) <= 8) return d.id;
+        const { p1, p2, rayEnd } = d.screen;
+        if (distanceToSegment(point, p1, rayEnd ?? p2) <= 8) return d.id;
       }
 
       if (d.type === 'rect') {
@@ -820,10 +843,11 @@ export default function TradingViewReplayChart({
     const handles = [];
 
     if (isLineLikeDrawing(selected)) {
-      handles.push(
-        { handle: 'start', point: selected.screen.p1 },
-        { handle: 'end', point: selected.screen.p2 }
-      );
+      handles.push({ handle: 'start', point: selected.screen.p1 });
+
+      if (!isHorizontalRayDrawing(selected)) {
+        handles.push({ handle: 'end', point: selected.screen.p2 });
+      }
     }
 
     if (isPositionDrawing(selected)) {
@@ -1353,7 +1377,7 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (['line', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current)) {
+      if (['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current)) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -1376,11 +1400,14 @@ export default function TradingViewReplayChart({
             labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
           });
         } else {
+          const endPoint = currentTemp.type === 'horizontal-ray'
+            ? { ...coords, price: currentTemp.start.price }
+            : coords;
           const completed = {
             id: `drawing-${Date.now()}`,
             type: currentTemp.type,
             start: currentTemp.start,
-            end: coords,
+            end: endPoint,
             strokeWidth: currentTemp.strokeWidth ?? 1,
             color: currentTemp.color ?? drawingColorRef.current,
             labelText: currentTemp.labelText ?? '',
@@ -1456,7 +1483,7 @@ export default function TradingViewReplayChart({
 
       const { x, y } = getRelativePoint(event);
 
-      if (['line', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current) && tempDrawingRef.current) {
+      if (['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current) && tempDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -1465,7 +1492,11 @@ export default function TradingViewReplayChart({
 
         setTempDrawing((prev) => {
           if (!prev) return prev;
-          return { ...prev, end: coords };
+          const endPoint = prev.type === 'horizontal-ray'
+            ? { ...coords, price: prev.start.price }
+            : coords;
+
+          return { ...prev, end: endPoint };
         });
         return;
       }
@@ -1480,7 +1511,12 @@ export default function TradingViewReplayChart({
         const { drawingId, handle, originalDrawing } = resizeDrawingRef.current;
         const resized = { ...originalDrawing };
 
-        if (isLineLikeDrawing(resized)) {
+        if (isHorizontalRayDrawing(resized)) {
+          if (handle === 'start') {
+            resized.start = coords;
+            resized.end = { ...resized.end, price: coords.price };
+          }
+        } else if (isLineLikeDrawing(resized)) {
           resized[handle] = coords;
         }
 
@@ -1951,7 +1987,7 @@ export default function TradingViewReplayChart({
 
   const handleSaveSelectedToolPreset = (presetName) => {
     const selected = drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current);
-    if (!selected || !['line', 'forecast', 'measure', 'rect', 'text'].includes(selected.type)) return;
+    if (!selected || !['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text'].includes(selected.type)) return;
 
     const settings = buildToolSettingsFromDrawing(selected);
     const fallbackName = (

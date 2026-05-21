@@ -202,7 +202,7 @@ export function estimateDrawingLogicalFromTime(candles, time, intervalSeconds = 
   const numericTime = Number(time);
   if (!Array.isArray(candles) || !candles.length || !Number.isFinite(numericTime)) return null;
 
-  if (intervalSeconds >= 14400) {
+  if (intervalSeconds >= 1800) {
     const containingIndex = candles.findIndex((candle, index) => {
       const nextCandle = candles[index + 1];
       return (
@@ -234,11 +234,15 @@ function offsetPoint(point, deltaTime, deltaPrice, deltaLogical) {
 }
 
 export function isTwoPointDrawing(drawing) {
-  return ['line', 'rect', 'measure', 'forecast', 'long-position', 'short-position'].includes(drawing?.type);
+  return ['line', 'horizontal-ray', 'rect', 'measure', 'forecast', 'long-position', 'short-position'].includes(drawing?.type);
 }
 
 export function isLineLikeDrawing(drawing) {
-  return ['line', 'measure', 'forecast'].includes(drawing?.type);
+  return ['line', 'horizontal-ray', 'measure', 'forecast'].includes(drawing?.type);
+}
+
+export function isHorizontalRayDrawing(drawing) {
+  return drawing?.type === 'horizontal-ray';
 }
 
 export function isPositionDrawing(drawing) {

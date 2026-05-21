@@ -322,6 +322,7 @@ The first implementation uses 1x margin paper trading: opening a position locks 
 | Route | Purpose |
 |-------|---------|
 | `GET /market-backtest/account` | Load demo account, open positions, recent trades, and account metrics |
+| `GET /market-backtest/report` | Load closed-position win/loss report data for the report table and calendar |
 | `POST /market-backtest/positions` | Place a market entry or pending conditional entry |
 | `POST /market-backtest/positions/{position}/trigger` | Trigger a pending conditional entry when replay price reaches the entry |
 | `POST /market-backtest/positions/{position}/cancel` | Cancel a pending conditional entry |
@@ -329,6 +330,22 @@ The first implementation uses 1x margin paper trading: opening a position locks 
 | `POST /market-backtest/reset` | Reset the demo account back to the starting balance |
 
 `ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, optional entry/SL/TP planning fields, pending entry cancel buttons, open position close buttons, and recent trades.
+
+### Trade Report
+
+`TradeReport.jsx` displays closed replay trades as an exchange-style history report. It is available from the sidebar at `/trade-report` through `resources/js/Pages/Market/TradeReportPage.jsx`.
+
+The report uses `GET /market-backtest/report`, which reads closed `market_backtest_positions` for the authenticated user's active demo account. Closed positions are used instead of raw trade rows because each closed position contains the full entry, exit, margin, entry fee, exit fee, and realized PnL in one record.
+
+The report includes:
+
+| View | Purpose |
+|------|---------|
+| Summary cards | Net PnL, win rate, wins, losses, and fees |
+| Calendar | Daily PnL plus daily win/loss counts by close date |
+| Closed-trades table | Symbol, side, entry, exit, margin, fees, PnL, PnL percent, and win/loss result |
+
+The sidebar link is added in `resources/js/Components/Sidebar/SidebarAccordion.jsx` as a direct `Trade Report` navigation item. The report is intentionally separate from the chart page so the chart workspace stays focused on analysis and replay.
 
 ---
 
@@ -423,6 +440,7 @@ The Tool Editor opens automatically after a tool is clicked or a drawing is sele
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
 | Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, color }` |
+| Horizontal Ray | Click anchor, click to finish | `{ type: 'horizontal-ray', start, end, strokeWidth, color }` |
 | Long Position | Click entry, click target/time | `{ type: 'long-position', start, end, strokeWidth, color }` |
 | Short Position | Click entry, click target/time | `{ type: 'short-position', start, end, strokeWidth, color }` |
 | Forecast | Click start, click end | `{ type: 'forecast', start, end, strokeWidth, color }` |
@@ -465,7 +483,7 @@ export const DRAWING_COLORS = [
 ];
 ```
 
-The active color applies to the selected drawing or to the active tool defaults. Line, Forecast, Box, Text, Long, and Short can each keep a separate saved color/default style. Box fill uses the same color with transparency, while long/short position tools use fixed green profit and red loss zones.
+The active color applies to the selected drawing or to the active tool defaults. Line, Horizontal Ray, Forecast, Box, Text, Long, and Short can each keep a separate saved color/default style. Box fill uses the same color with transparency, while long/short position tools use fixed green profit and red loss zones.
 
 ---
 
@@ -500,9 +518,9 @@ const y = candleSeries.priceToCoordinate(price);
 
 This is why drawings stay attached to candle time/price while the chart scrolls or zooms. Logical coordinates also allow drawing tools to extend beyond the last loaded candle instead of snapping back to the final candle.
 
-For `4h` and higher timeframes, existing intraday drawing timestamps are rendered on the candle bucket that contains the saved timestamp. This keeps tools aligned to higher timeframe candles instead of placing an intraday timestamp fractionally between two wider candles. The saved drawing timestamp is not mutated, so switching back to an intraday timeframe can still use the original precise time.
+For `30m` and higher timeframes, existing intraday drawing timestamps are rendered on the candle bucket that contains the saved timestamp. This keeps tools aligned to higher timeframe candles instead of placing an intraday timestamp fractionally between two wider candles. The saved drawing timestamp is not mutated, so switching back to a lower timeframe can still use the original precise time.
 
-When switching timeframe, drawing timestamps are projected through the full loaded candle set and then rendered onto the active replay series. This keeps shared drawings aligned even when the replay series only shows candles up to the current replay index. On `4h` and higher timeframes, intraday drawing timestamps snap to the containing candle bucket so lower-timeframe tools do not drift toward the side of the chart. Boxes use a minimum visible rectangle size so very short lower-timeframe boxes do not collapse into a 1px sliver on higher timeframes.
+When switching timeframe, drawing timestamps are projected through the full loaded candle set and then rendered onto the active replay series. This keeps shared drawings aligned even when the replay series only shows candles up to the current replay index. On `30m` and higher timeframes, intraday drawing timestamps snap to the containing candle bucket so lower-timeframe tools do not drift toward the side of the chart. Boxes use a minimum visible rectangle size so very short lower-timeframe boxes do not collapse into a 1px sliver on higher timeframes.
 
 ---
 
@@ -513,6 +531,7 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 | Drawing Type | Rendered As |
 |--------------|-------------|
 | Line | SVG `<line>` |
+| Horizontal Ray | SVG `<line>` from anchor to the chart's right edge |
 | Long Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label |
 | Short Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label |
 | Forecast | Dashed SVG `<line>` with arrowhead and projection label |
@@ -549,7 +568,7 @@ Right price-scale wheel scrolling is handled separately from the chart's default
 
 | Drawing | Hit Test |
 |---------|----------|
-| Line, Forecast | Distance to line segment |
+| Line, Horizontal Ray, Forecast | Distance to line segment |
 | Long Position, Short Position | Pointer inside the position zone |
 | Box | Pointer inside rectangle bounds |
 | Text | Pointer near the text label anchor |
@@ -575,6 +594,7 @@ When a drawing or resize handle is dragged, the wrapper intercepts the mouse eve
 | Drawing | Handles |
 |---------|---------|
 | Line, Forecast | Start endpoint, end endpoint |
+| Horizontal Ray | Anchor endpoint |
 | Long Position, Short Position | Entry point, target/time point, stop/time point |
 | Box | Four corners and four side midpoints |
 
@@ -704,5 +724,6 @@ The chart now includes:
 8. Per-tool drawing colors, stroke widths, labels, presets, selection, moving, and resizing.
 9. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
 10. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
-11. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
-12. Fullscreen chart mode.
+11. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
+12. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
+13. Fullscreen chart mode.

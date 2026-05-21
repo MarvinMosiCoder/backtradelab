@@ -6,6 +6,7 @@ import {
   Gauge,
   LocateFixed,
   MousePointer2,
+  MoveRight,
   Palette,
   Pause,
   Play,
@@ -99,6 +100,7 @@ function Flyout({ title, icon: Icon, onClose, children }) {
 
 const TOOL_BUTTONS = [
   { type: 'line', label: 'Line', icon: Slash },
+  { type: 'horizontal-ray', label: 'H Ray', icon: MoveRight },
   { type: 'long-position', label: 'Long', icon: TrendingUp },
   { type: 'short-position', label: 'Short', icon: TrendingDown },
   { type: 'forecast', label: 'Forecast', icon: ChartNoAxesCombined },
@@ -111,9 +113,9 @@ const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
   [toolButton.type]: toolButton.label,
 }), {});
 
-const WIDTH_TOOL_TYPES = ['line', 'rect', 'long-position', 'short-position', 'forecast'];
-const LABEL_TOOL_TYPES = ['line', 'forecast', 'measure', 'rect'];
-const PRESET_TOOL_TYPES = ['line', 'forecast', 'measure', 'rect', 'text'];
+const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'];
+const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect'];
+const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text'];
 
 function getToolLabel(type) {
   return TOOL_LABELS[type] ?? (

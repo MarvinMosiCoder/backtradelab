@@ -1,7 +1,13 @@
 import React from 'react';
 import { Maximize2, Minimize2, Save, X } from 'lucide-react';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL } from './constants';
-import { colorToRgba, isLineLikeDrawing, isPositionDrawing, normalizeVisibleRect } from './utils';
+import {
+  colorToRgba,
+  isHorizontalRayDrawing,
+  isLineLikeDrawing,
+  isPositionDrawing,
+  normalizeVisibleRect,
+} from './utils';
 
 function formatSignedNumber(value, digits = 2) {
   const sign = value > 0 ? '+' : '';
@@ -78,18 +84,19 @@ function getArrowHeadPoints(start, end, size = 10) {
 
 function getLineLabelPosition(drawing) {
   const { p1, p2 } = drawing.screen;
+  const visibleEnd = drawing.screen.rayEnd ?? p2;
   const horizontal = drawing.labelHorizontal ?? 'center';
   const vertical = drawing.labelVertical ?? 'top';
-  const leftPoint = p1.x <= p2.x ? p1 : p2;
-  const rightPoint = p1.x <= p2.x ? p2 : p1;
+  const leftPoint = p1.x <= visibleEnd.x ? p1 : visibleEnd;
+  const rightPoint = p1.x <= visibleEnd.x ? visibleEnd : p1;
   const anchor =
     horizontal === 'left'
       ? leftPoint
       : horizontal === 'right'
         ? rightPoint
         : {
-            x: (p1.x + p2.x) / 2,
-            y: (p1.y + p2.y) / 2,
+            x: (p1.x + visibleEnd.x) / 2,
+            y: (p1.y + visibleEnd.y) / 2,
           };
   const yOffset =
     vertical === 'top'
@@ -142,7 +149,11 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
   const resizeHandles = [];
 
   if (isLineLikeDrawing(selectedDrawing)) {
-    resizeHandles.push(selectedDrawing.screen.p1, selectedDrawing.screen.p2);
+    resizeHandles.push(selectedDrawing.screen.p1);
+
+    if (!isHorizontalRayDrawing(selectedDrawing)) {
+      resizeHandles.push(selectedDrawing.screen.p2);
+    }
   }
 
   if (isPositionDrawing(selectedDrawing)) {
@@ -184,12 +195,13 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
             : Math.max(d.strokeWidth ?? 1, isSelected ? 3 : 1);
 
           if (isLineLikeDrawing(d)) {
+            const lineEnd = d.screen.rayEnd ?? d.screen.p2;
             const isUtilityTool = d.type === 'measure' || d.type === 'forecast';
             const labelText = d.labelText?.trim();
             const labelPosition = labelText ? getLineLabelPosition(d) : null;
             const midpoint = {
-              x: (d.screen.p1.x + d.screen.p2.x) / 2,
-              y: (d.screen.p1.y + d.screen.p2.y) / 2,
+              x: (d.screen.p1.x + lineEnd.x) / 2,
+              y: (d.screen.p1.y + lineEnd.y) / 2,
             };
 
             return (
@@ -197,8 +209,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
                 <line
                   x1={d.screen.p1.x}
                   y1={d.screen.p1.y}
-                  x2={d.screen.p2.x}
-                  y2={d.screen.p2.y}
+                  x2={lineEnd.x}
+                  y2={lineEnd.y}
                   stroke={stroke}
                   strokeWidth={strokeWidth}
                   strokeDasharray={

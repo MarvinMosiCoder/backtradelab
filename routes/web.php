@@ -67,11 +67,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('market', function () {
         return Inertia::render('Market/Market');
     })->name('market');
+    Route::get('trade-report', function () {
+        return Inertia::render('Market/TradeReportPage');
+    })->name('trade-report');
     Route::get('/market-drawings', [MarketDrawingController::class, 'show'])->name('market-drawings.show');
     Route::put('/market-drawings', [MarketDrawingController::class, 'update'])->name('market-drawings.update');
     Route::get('/market-tool-settings', [MarketToolSettingController::class, 'show'])->name('market-tool-settings.show');
     Route::put('/market-tool-settings', [MarketToolSettingController::class, 'update'])->name('market-tool-settings.update');
     Route::get('/market-backtest/account', [MarketBacktestController::class, 'show'])->name('market-backtest.show');
+    Route::get('/market-backtest/report', [MarketBacktestController::class, 'report'])->name('market-backtest.report');
     Route::post('/market-backtest/reset', [MarketBacktestController::class, 'reset'])->name('market-backtest.reset');
     Route::post('/market-backtest/positions', [MarketBacktestController::class, 'openPosition'])->name('market-backtest.positions.open');
     Route::post('/market-backtest/positions/{position}/trigger', [MarketBacktestController::class, 'triggerPosition'])->name('market-backtest.positions.trigger');
