@@ -468,6 +468,34 @@ export default function TradingViewReplayChart({
     });
   }, [persistToolSettings]);
 
+  const deleteToolPreset = useCallback((type, preset) => {
+    if (!type || !preset) return;
+
+    setToolSettings((currentSettings) => {
+      const currentPresets = Array.isArray(currentSettings.presets?.[type])
+        ? currentSettings.presets[type]
+        : [];
+      const presetId = preset.id;
+      const presetName = preset.name;
+      const nextTypePresets = currentPresets.filter((item) => {
+        if (presetId) return item.id !== presetId;
+
+        return String(item.name ?? '').toLowerCase() !== String(presetName ?? '').toLowerCase();
+      });
+      const nextSettings = {
+        ...currentSettings,
+        presets: {
+          ...(currentSettings.presets ?? {}),
+          [type]: nextTypePresets,
+        },
+      };
+
+      persistToolSettings(nextSettings);
+      return nextSettings;
+    });
+  }, [persistToolSettings]);
+
+
   useEffect(() => {
     let cancelled = false;
 
@@ -2021,7 +2049,7 @@ export default function TradingViewReplayChart({
 
   const handleSaveSelectedToolPreset = (presetName) => {
     const selected = drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current);
-    if (!selected || !['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text'].includes(selected.type)) return;
+    if (!selected || !['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'].includes(selected.type)) return;
 
     const settings = buildToolSettingsFromDrawing(selected);
     const fallbackName = (
@@ -2074,6 +2102,10 @@ export default function TradingViewReplayChart({
 
       saveDrawings(next);
     }
+  };
+
+  const handleDeleteToolPreset = (type, preset) => {
+    deleteToolPreset(type, preset);
   };
 
   const handleCancelText = () => {
@@ -2556,6 +2588,7 @@ export default function TradingViewReplayChart({
             onDrawingLabelChange={handleDrawingLabelChange}
             onSaveSelectedToolPreset={handleSaveSelectedToolPreset}
             onApplyToolPreset={handleApplyToolPreset}
+            onDeleteToolPreset={handleDeleteToolPreset}
             onClearDrawings={handleClearDrawings}
             onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
             onOpenBacktestPosition={handleOpenBacktestPosition}

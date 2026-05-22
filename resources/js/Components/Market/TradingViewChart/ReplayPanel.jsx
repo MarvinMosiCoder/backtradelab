@@ -115,7 +115,7 @@ const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
 
 const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'];
 const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect'];
-const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text'];
+const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
 
 function getToolLabel(type) {
   return TOOL_LABELS[type] ?? (
@@ -305,6 +305,7 @@ export default function ReplayPanel({
   onDrawingLabelChange,
   onSaveSelectedToolPreset,
   onApplyToolPreset,
+  onDeleteToolPreset,
   onClearDrawings,
   onDeleteSelectedDrawing,
   symbol,
@@ -1027,17 +1028,30 @@ export default function ReplayPanel({
             {canUsePresets && (
               <div className="space-y-2 border-t border-slate-800 pt-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Presets</div>
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-1.5">
                   {presetItems.map((preset) => (
-                    <ControlButton
+                    <div
                       key={preset.id ?? preset.name}
-                      icon={MousePointer2}
-                      onClick={() => onApplyToolPreset(editorType, preset)}
-                      title={`Use ${preset.name}`}
-                      className="max-w-full"
+                      className="grid grid-cols-[minmax(0,1fr)_32px] gap-1.5"
                     >
-                      {preset.name}
-                    </ControlButton>
+                      <ControlButton
+                        icon={MousePointer2}
+                        onClick={() => onApplyToolPreset(editorType, preset)}
+                        title={`Use ${preset.name}`}
+                        className="max-w-full justify-start"
+                      >
+                        {preset.name}
+                      </ControlButton>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteToolPreset(editorType, preset)}
+                        className="flex h-8 w-8 items-center justify-center rounded-md bg-red-950/70 text-red-200 hover:bg-red-900 hover:text-white"
+                        title={`Delete ${preset.name}`}
+                        aria-label={`Delete ${preset.name}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   ))}
 
                   {!presetItems.length && (
