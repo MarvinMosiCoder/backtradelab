@@ -75,7 +75,7 @@ function RailButton({ icon: Icon, active, disabled, title, onClick }) {
   );
 }
 
-function Flyout({ title, icon: Icon, onClose, children }) {
+function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y-3' }) {
   return (
     <div className="ml-2 w-[min(300px,calc(100vw-5.5rem))] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -93,7 +93,7 @@ function Flyout({ title, icon: Icon, onClose, children }) {
           <X size={15} />
         </button>
       </div>
-      <div className="space-y-3">{children}</div>
+      <div className={bodyClassName}>{children}</div>
     </div>
   );
 }
@@ -611,7 +611,12 @@ export default function ReplayPanel({
 
       {activeGroup === 'backtest' && (
         <div className="pointer-events-auto">
-          <Flyout title="Backtest Account" icon={Wallet} onClose={() => setActiveGroup(null)}>
+          <Flyout
+            title="Backtest Account"
+            icon={Wallet}
+            onClose={() => setActiveGroup(null)}
+            bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
+          >
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">

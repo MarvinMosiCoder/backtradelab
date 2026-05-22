@@ -331,6 +331,8 @@ Paper futures trading treats the entered size as margin/collateral. Leverage can
 
 `ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, pending entry cancel buttons, open position close buttons, and recent trades.
 
+The Wallet flyout keeps its header visible and scrolls the account content internally. This keeps the full order ticket, pending entries, open positions, and recent trades reachable on smaller screens without pushing the panel outside the viewport.
+
 The paper account remains internally quote-currency based, normally `USDT`. The Wallet flyout and Trade Report can display account-sized values in `USDT` or `PHP`. When `PHP` is selected, the user can edit the `PHP / USDT` rate; equity, cash, PnL, margin, leveraged value, risk, reward, fees, and report values are converted for display, and PHP margin inputs are converted back to USDT before orders are submitted. Market prices such as entry, stop loss, take profit, trigger, and chart price remain in the symbol's quote price scale.
 
 ### Trade Report
@@ -344,8 +346,8 @@ The report includes:
 | View | Purpose |
 |------|---------|
 | Summary cards | Net PnL, win rate, wins, losses, and fees |
-| Calendar | Daily PnL plus daily win/loss counts by close date |
-| Closed-trades table | Symbol, side, entry, exit, margin, fees, PnL, PnL percent, and win/loss result |
+| Calendar | Daily PnL plus daily win/loss counts by close date, with month arrows and a click-open month/year selector |
+| Closed-trades table | Symbol, side, entry, exit, leverage, margin, leveraged value, fees, PnL, PnL percent, and win/loss result |
 
 The sidebar link is added in `resources/js/Components/Sidebar/SidebarAccordion.jsx` as a direct `Trade Report` navigation item. The report is intentionally separate from the chart page so the chart workspace stays focused on analysis and replay.
 
