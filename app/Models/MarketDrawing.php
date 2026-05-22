@@ -8,6 +8,8 @@ class MarketDrawing extends Model
 {
     protected $fillable = [
         'adm_user_id',
+        'exchange',
+        'category',
         'symbol',
         'drawings',
     ];

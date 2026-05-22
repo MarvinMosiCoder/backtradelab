@@ -132,8 +132,8 @@ export function distanceToSegment(point, a, b) {
   return Math.hypot(point.x - projX, point.y - projY);
 }
 
-export function buildStorageKey(symbol) {
-  return `replay-drawings:${symbol}`;
+export function buildStorageKey(symbol, exchange = 'bybit', category = 'spot') {
+  return `replay-drawings:${exchange}:${category}:${symbol}`;
 }
 
 export function buildLegacyStorageKey(symbol, timeframe) {

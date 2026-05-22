@@ -21,10 +21,43 @@ function formatMoney(value, digits = 2) {
   });
 }
 
+function getStoredValue(key, fallback) {
+  if (typeof window === 'undefined') return fallback;
+
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getPhpRate(value) {
+  const rate = Number(value);
+  return Number.isFinite(rate) && rate > 0 ? rate : 58;
+}
+
+function quoteToDisplayAmount(value, currency, phpRate) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return currency === 'PHP' ? number * phpRate : number;
+}
+
+function formatDisplayMoney(value, currency, phpRate, digits = 2) {
+  const amount = quoteToDisplayAmount(value, currency, phpRate);
+  if (amount == null) return '---';
+  return `${formatMoney(amount, digits)} ${currency}`;
+}
+
 function formatPercent(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '---';
   return `${number.toFixed(2)}%`;
+}
+
+function formatLeverage(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return '1x';
+  return `${Number(number.toFixed(2))}x`;
 }
 
 function getTradeDate(trade) {
@@ -121,6 +154,10 @@ export default function TradeReport({ refreshKey = 0 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [displayCurrency, setDisplayCurrency] = useState(() => (
+    getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
+  ));
+  const [phpRate, setPhpRate] = useState(() => getStoredValue('market-backtest-php-rate', '58'));
 
   const loadReport = async () => {
     setLoading(true);
@@ -147,6 +184,18 @@ export default function TradeReport({ refreshKey = 0 }) {
   useEffect(() => {
     loadReport();
   }, [refreshKey]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('market-backtest-display-currency', displayCurrency);
+    } catch {}
+  }, [displayCurrency]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('market-backtest-php-rate', phpRate);
+    } catch {}
+  }, [phpRate]);
 
   const dailyStats = useMemo(() => {
     const stats = {};
@@ -194,6 +243,13 @@ export default function TradeReport({ refreshKey = 0 }) {
 
   const summary = report.summary ?? {};
   const quoteCurrency = report.account?.quoteCurrency ?? 'USDT';
+  const normalizedPhpRate = getPhpRate(phpRate);
+  const formatReportMoney = (value, digits = 2) => formatDisplayMoney(
+    value,
+    displayCurrency,
+    normalizedPhpRate,
+    digits
+  );
 
   const moveMonth = (amount) => {
     setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
@@ -223,6 +279,29 @@ export default function TradeReport({ refreshKey = 0 }) {
           <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
           Refresh
         </button>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="block">
+            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Currency</span>
+            <select
+              value={displayCurrency}
+              onChange={(event) => setDisplayCurrency(event.target.value === 'PHP' ? 'PHP' : 'USDT')}
+              className="h-8 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs text-white outline-none"
+            >
+              <option value="USDT">{quoteCurrency}</option>
+              <option value="PHP">PHP</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">PHP / {quoteCurrency}</span>
+            <input
+              value={phpRate}
+              onChange={(event) => setPhpRate(event.target.value)}
+              inputMode="decimal"
+              disabled={displayCurrency !== 'PHP'}
+              className="h-8 w-24 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs text-white outline-none disabled:opacity-40"
+            />
+          </label>
+        </div>
       </div>
 
       {error && (
@@ -234,14 +313,14 @@ export default function TradeReport({ refreshKey = 0 }) {
       <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           label="Net PnL"
-          value={`${formatMoney(summary.netPnl)} ${quoteCurrency}`}
+          value={formatReportMoney(summary.netPnl)}
           tone={Number(summary.netPnl) >= 0 ? 'win' : 'loss'}
           icon={Number(summary.netPnl) >= 0 ? TrendingUp : TrendingDown}
         />
         <StatCard label="Win Rate" value={formatPercent(summary.winRate)} />
         <StatCard label="Wins" value={summary.wins ?? 0} tone="win" />
         <StatCard label="Losses" value={summary.losses ?? 0} tone="loss" />
-        <StatCard label="Fees" value={`${formatMoney(summary.fees)} ${quoteCurrency}`} />
+        <StatCard label="Fees" value={formatReportMoney(summary.fees)} />
       </div>
 
       <div className="grid gap-4 px-4 pb-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.4fr)]">
@@ -304,7 +383,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                   {day && (
                     <div className="space-y-1">
                       <div className={`text-xs font-semibold ${getPnlClass(pnl)}`}>
-                        {pnl > 0 ? '+' : ''}{formatMoney(pnl)}
+                        {pnl > 0 ? '+' : ''}{formatReportMoney(pnl)}
                       </div>
                       <div className="text-[10px] text-slate-300">
                         W {day.wins} / L {day.losses}
@@ -334,7 +413,9 @@ export default function TradeReport({ refreshKey = 0 }) {
                   <th className="px-3 py-2">Side</th>
                   <th className="px-3 py-2 text-right">Entry</th>
                   <th className="px-3 py-2 text-right">Exit</th>
+                  <th className="px-3 py-2 text-right">Lev</th>
                   <th className="px-3 py-2 text-right">Margin</th>
+                  <th className="px-3 py-2 text-right">Value</th>
                   <th className="px-3 py-2 text-right">Fee</th>
                   <th className="px-3 py-2 text-right">PnL</th>
                   <th className="px-3 py-2 text-right">Result</th>
@@ -356,10 +437,12 @@ export default function TradeReport({ refreshKey = 0 }) {
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.entryPrice)}</td>
                         <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.exitPrice)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.margin)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-400">{formatMoney(trade.fee)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatLeverage(trade.leverage)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.margin)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.notional)}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-400">{formatReportMoney(trade.fee)}</td>
                         <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold ${getPnlClass(pnl)}`}>
-                          {pnl > 0 ? '+' : ''}{formatMoney(pnl)}
+                          {pnl > 0 ? '+' : ''}{formatReportMoney(pnl)}
                           <span className="ml-1 text-[10px] text-slate-400">({formatPercent(trade.pnlPercent)})</span>
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 text-right">
@@ -372,7 +455,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9} className="px-3 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={11} className="px-3 py-10 text-center text-sm text-slate-500">
                       No closed trades yet. Close a replay position to populate the report.
                     </td>
                   </tr>

@@ -38,8 +38,17 @@ const DEFAULT_CANDLE_COLORS = {
   down: '#ef5350',
 };
 
+function getPositiveNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 export default function TradingViewReplayChart({
   initialSymbol = 'BTCUSDT',
+  initialExchange = 'bingx',
+  initialMarketCategory = 'linear',
   initialTimeframe = '15m',
   onBacktestAccountChange = null,
 }) {
@@ -72,8 +81,8 @@ export default function TradingViewReplayChart({
   const pendingVisibleLogicalRangeRef = useRef(null);
 
   const [symbol, setSymbol] = useState(initialSymbol);
-  const [exchange, setExchange] = useState('bybit');
-  const [marketCategory, setMarketCategory] = useState('spot');
+  const [exchange, setExchange] = useState(initialExchange);
+  const [marketCategory, setMarketCategory] = useState(initialMarketCategory);
   const [candleColors, setCandleColors] = useState(() => {
     if (typeof window === 'undefined') {
       return DEFAULT_CANDLE_COLORS;
@@ -259,33 +268,20 @@ export default function TradingViewReplayChart({
 
       setSymbols(nextSymbols);
       if (nextSymbols.length) {
-        setSymbol((currentSymbol) => {
-          const currentExists = nextSymbols.some((item) => (
-            item.symbol === currentSymbol
-            && (item.exchange ?? 'bybit') === exchange
-            && (item.category ?? 'spot') === marketCategory
-          ));
+        const currentExists = nextSymbols.some((item) => (
+          item.symbol === symbol
+          && (item.exchange ?? 'bybit') === exchange
+          && (item.category ?? 'spot') === marketCategory
+        ));
+        const fallbackForCategory = nextSymbols.find((item) => (item.category ?? 'spot') === marketCategory);
+        const fallbackSymbol = currentExists
+          ? null
+          : fallbackForCategory;
 
-          return currentExists ? currentSymbol : nextSymbols[0].symbol;
-        });
-        setExchange((currentExchange) => {
-          const currentExists = nextSymbols.some((item) => (
-            item.symbol === symbol
-            && (item.exchange ?? 'bybit') === currentExchange
-            && (item.category ?? 'spot') === marketCategory
-          ));
-
-          return currentExists ? currentExchange : (nextSymbols[0].exchange ?? 'bybit');
-        });
-        setMarketCategory((currentCategory) => {
-          const currentExists = nextSymbols.some((item) => (
-            item.symbol === symbol
-            && (item.exchange ?? 'bybit') === exchange
-            && (item.category ?? 'spot') === currentCategory
-          ));
-
-          return currentExists ? currentCategory : (nextSymbols[0].category ?? 'spot');
-        });
+        if (fallbackSymbol) {
+          setSymbol(fallbackSymbol.symbol);
+          setExchange(fallbackSymbol.exchange ?? 'bybit');
+        }
       }
       setSymbolError('');
     } catch (err) {
@@ -293,7 +289,7 @@ export default function TradingViewReplayChart({
     }
   }, [exchange, marketCategory, symbol]);
 
-  const loadBacktestAccount = useCallback(async (price = executionPrice) => {
+  const loadBacktestAccount = useCallback(async (price = null) => {
     setIsBacktestLoading(true);
     setBacktestError('');
 
@@ -312,13 +308,19 @@ export default function TradingViewReplayChart({
     } finally {
       setIsBacktestLoading(false);
     }
-  }, [executionPrice, symbol]);
+  }, [symbol]);
+
+  useEffect(() => {
+    if (!replayMode && currentPrice != null) {
+      loadBacktestAccount(currentPrice);
+    }
+  }, [currentPrice, loadBacktestAccount, replayMode, symbol]);
 
   useEffect(() => {
     if (replayMode) {
       loadBacktestAccount();
     }
-  }, [replayMode, symbol]);
+  }, [loadBacktestAccount, replayMode, symbol]);
 
   useEffect(() => {
     loadMarketSymbols();
@@ -526,12 +528,16 @@ export default function TradingViewReplayChart({
       });
     };
 
-    const sharedKey = buildStorageKey(symbol);
+    const sharedKey = buildStorageKey(symbol, exchange, marketCategory);
     addStoredDrawings(localStorage.getItem(sharedKey));
 
-    TIMEFRAMES.forEach(({ value }) => {
-      addStoredDrawings(localStorage.getItem(buildLegacyStorageKey(symbol, value)));
-    });
+    if (marketCategory === 'spot') {
+      addStoredDrawings(localStorage.getItem(`replay-drawings:${symbol}`));
+
+      TIMEFRAMES.forEach(({ value }) => {
+        addStoredDrawings(localStorage.getItem(buildLegacyStorageKey(symbol, value)));
+      });
+    }
 
     const storedDrawings = Array.from(drawingMap.values());
 
@@ -540,24 +546,26 @@ export default function TradingViewReplayChart({
     }
 
     return storedDrawings;
-  }, [symbol]);
+  }, [exchange, marketCategory, symbol]);
 
   const persistDrawingsToServer = useCallback(async (nextDrawings, activeSymbol = symbol) => {
     await axios.put('/market-drawings', {
       symbol: activeSymbol,
+      exchange,
+      category: marketCategory,
       drawings: nextDrawings,
     });
-  }, [symbol]);
+  }, [exchange, marketCategory, symbol]);
 
   const saveDrawings = useCallback((nextDrawings) => {
     setDrawings(nextDrawings);
     drawingsRef.current = nextDrawings;
     try {
-      localStorage.setItem(buildStorageKey(symbol), JSON.stringify(nextDrawings));
+      localStorage.setItem(buildStorageKey(symbol, exchange, marketCategory), JSON.stringify(nextDrawings));
     } catch {}
 
     persistDrawingsToServer(nextDrawings).catch(() => {});
-  }, [persistDrawingsToServer, symbol]);
+  }, [exchange, marketCategory, persistDrawingsToServer, symbol]);
 
   const appendDrawing = useCallback((drawing) => {
     const next = [...drawingsRef.current, drawing];
@@ -571,7 +579,7 @@ export default function TradingViewReplayChart({
 
     try {
       const response = await axios.get('/market-drawings', {
-        params: { symbol },
+        params: { symbol, exchange, category: marketCategory },
         headers: { Accept: 'application/json' },
       });
 
@@ -586,14 +594,14 @@ export default function TradingViewReplayChart({
       }
 
       try {
-        localStorage.setItem(buildStorageKey(symbol), JSON.stringify(nextDrawings));
+        localStorage.setItem(buildStorageKey(symbol, exchange, marketCategory), JSON.stringify(nextDrawings));
       } catch {}
 
       return nextDrawings;
     } catch {
       return localDrawings;
     }
-  }, [loadLocalDrawings, persistDrawingsToServer, symbol]);
+  }, [exchange, loadLocalDrawings, marketCategory, persistDrawingsToServer, symbol]);
 
   const getDrawingTimes = useCallback((items) => {
     return items.flatMap((drawing) => {
@@ -953,7 +961,6 @@ export default function TradingViewReplayChart({
     };
 
     const handleChartClick = (param) => {
-      if (!replayMode) return;
       if (!isReplayPricePickActiveRef.current) return;
       if (isSpacePressedRef.current) return;
       if (toolRef.current) return;
@@ -961,6 +968,7 @@ export default function TradingViewReplayChart({
       if (!param?.point) return;
 
       setReplayPointFromCoordinates(param.point.x, param.point.y, true);
+      setReplayMode(true);
       setIsReplayPricePickActive(false);
     };
 
@@ -1113,7 +1121,7 @@ export default function TradingViewReplayChart({
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [replayMode, scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
+  }, [scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -1196,10 +1204,10 @@ export default function TradingViewReplayChart({
     if (!chart) return;
 
     chart.applyOptions({
-      handleScroll: isSpacePressed || !replayMode || !tool,
-      handleScale: isSpacePressed || !replayMode || !tool,
+      handleScroll: isSpacePressed || !tool,
+      handleScale: isSpacePressed || !tool,
     });
-  }, [isSpacePressed, replayMode, tool]);
+  }, [isSpacePressed, tool]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -1340,7 +1348,7 @@ export default function TradingViewReplayChart({
     };
 
     const restoreChartMouseInteractions = () => {
-      setChartMouseInteractions(isSpacePressedRef.current || !replayMode || !toolRef.current);
+      setChartMouseInteractions(isSpacePressedRef.current || !toolRef.current);
     };
 
     const handleMouseDown = (event) => {
@@ -1352,7 +1360,6 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (!replayMode) return;
       if (isSpacePressedRef.current) {
         dragDrawingRef.current = null;
         return;
@@ -1478,7 +1485,6 @@ export default function TradingViewReplayChart({
     };
 
     const handleMouseMove = (event) => {
-      if (!replayMode) return;
       if (isSpacePressedRef.current) return;
 
       const { x, y } = getRelativePoint(event);
@@ -1597,7 +1603,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, hitTestDrawing, hitTestResizeHandle, replayMode, saveDrawings]);
+  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, hitTestDrawing, hitTestResizeHandle, saveDrawings]);
 
   useEffect(() => {
     async function fetchKlines() {
@@ -1637,23 +1643,43 @@ export default function TradingViewReplayChart({
         const interval = INTERVAL_MAP[timeframe];
         if (!interval) throw new Error(`Unsupported timeframe: ${timeframe}`);
 
+        const fetchCandles = async (requestParams) => {
+          const response = await fetch(`/api/klines?${requestParams.toString()}`, {
+            headers: { Accept: 'application/json' },
+          });
+          const result = await response.json().catch(() => null);
+
+          if (!response.ok) {
+            throw new Error(result?.message || `HTTP ${response.status}`);
+          }
+
+          if (!result?.success) {
+            throw new Error(result?.message || 'Failed to fetch candles');
+          }
+
+          const normalizedCandles = normalizeApiCandles(result.candles);
+
+          if (!normalizedCandles.length) {
+            throw new Error('No valid candle data returned');
+          }
+
+          return normalizedCandles;
+        };
+
         const params = new URLSearchParams({
           symbol,
           exchange,
           interval,
           category: marketCategory,
           limit: '1000',
-          max_candles: wasInReplay ? '10000' : '5000',
+          max_candles: wasInReplay ? '20000' : '5000',
         });
 
         if (wasInReplay && replayAnchorTime != null) {
           const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
-          const requestedCandles = 10000;
+          const requestedCandles = 20000;
           const windowSeconds = intervalSeconds * requestedCandles;
-          const forwardCandles = Math.max(
-            250,
-            Math.round(requestedCandles * Math.max(0.1, 1 - replayProgress))
-          );
+          const forwardCandles = Math.max(250, Math.round(requestedCandles * 0.05));
           const nowMs = Date.now();
           const replayFocusedEnd = replayAnchorTime + (intervalSeconds * forwardCandles);
           const minimumEndForAnchors =
@@ -1669,27 +1695,7 @@ export default function TradingViewReplayChart({
           params.set('end', String(anchoredEndMs));
         }
 
-        const response = await fetch(`/api/klines?${params.toString()}`, {
-          headers: { Accept: 'application/json' },
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const result = await response.json();
-
-        if (fetchRequestIdRef.current !== requestId) return;
-
-        if (!result.success) {
-          throw new Error(result.message || 'Failed to fetch candles');
-        }
-
-        const normalized = normalizeApiCandles(result.candles);
-
-        if (!normalized.length) {
-          throw new Error('No valid candle data returned');
-        }
+        const normalized = await fetchCandles(params);
 
         if (fetchRequestIdRef.current !== requestId) return;
 
@@ -1749,11 +1755,17 @@ export default function TradingViewReplayChart({
       } catch (err) {
         if (fetchRequestIdRef.current !== requestId) return;
         setError(err.message || 'Failed to load chart');
-        setAllCandles([]);
-        setReplayMode(false);
-        setSelectedReplayPrice(null);
-        setDrawings([]);
-        drawingsRef.current = [];
+
+        if (!allCandles.length) {
+          setAllCandles([]);
+          setReplayMode(false);
+          setSelectedReplayPrice(null);
+          setDrawings([]);
+          drawingsRef.current = [];
+        } else if (wasInReplay) {
+          setReplayMode(true);
+          setSelectedReplayPrice(previousSelectedReplayPrice ?? allCandles[replayIndex]?.close ?? null);
+        }
       } finally {
         if (fetchRequestIdRef.current === requestId) {
           setLoading(false);
@@ -1764,16 +1776,21 @@ export default function TradingViewReplayChart({
     fetchKlines();
   }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings]);
 
+  const startReplayMode = (startIndex = Math.max(0, Math.floor(allCandles.length * 0.3))) => {
+    const nextIndex = Math.min(Math.max(0, startIndex), Math.max(0, allCandles.length - 1));
+
+    setReplayMode(true);
+    setFollowReplay(true);
+    setReplayIndex(nextIndex);
+    setSelectedReplayPrice(allCandles[nextIndex]?.close ?? null);
+    setIsReplayPricePickActive(false);
+  };
+
   const toggleReplayMode = () => {
     setIsPlaying(false);
 
     if (!replayMode) {
-      const startIndex = Math.max(0, Math.floor(allCandles.length * 0.3));
-      setReplayMode(true);
-      setFollowReplay(true);
-      setReplayIndex(startIndex);
-      setSelectedReplayPrice(allCandles[startIndex]?.close ?? null);
-      setIsReplayPricePickActive(false);
+      startReplayMode();
       return;
     }
 
@@ -1790,6 +1807,13 @@ export default function TradingViewReplayChart({
   const stepBackward = () => {
     setIsPlaying(false);
     setFollowReplay(false);
+
+    if (!replayMode) {
+      const startIndex = Math.max(0, allCandles.length - 2);
+      startReplayMode(startIndex);
+      return;
+    }
+
     setReplayIndex((prev) => {
       const next = Math.max(prev - 1, 0);
       setSelectedReplayPrice(allCandles[next]?.close ?? null);
@@ -1800,6 +1824,12 @@ export default function TradingViewReplayChart({
   const stepForward = () => {
     setIsPlaying(false);
     setFollowReplay(false);
+
+    if (!replayMode) {
+      startReplayMode();
+      return;
+    }
+
     setReplayIndex((prev) => {
       const next = Math.min(prev + 1, allCandles.length - 1);
       setSelectedReplayPrice(allCandles[next]?.close ?? null);
@@ -1808,7 +1838,11 @@ export default function TradingViewReplayChart({
   };
 
   const togglePlay = () => {
-    if (!replayMode) return;
+    if (!replayMode) {
+      startReplayMode();
+      setIsPlaying(true);
+      return;
+    }
     if (replayIndex >= allCandles.length - 1) return;
     setIsPlaying((prev) => !prev);
   };
@@ -2136,20 +2170,19 @@ export default function TradingViewReplayChart({
     side,
     orderType = 'market',
     notional,
+    leverage,
     entryPrice,
     stopLoss,
     takeProfit,
   }) => {
-    const fillPrice = Number.isFinite(Number(entryPrice))
-      ? Number(entryPrice)
-      : Number(executionPrice);
+    const fillPrice = getPositiveNumber(entryPrice) ?? getPositiveNumber(executionPrice);
 
-    if (orderType === 'conditional' && (!Number.isFinite(Number(entryPrice)) || Number(entryPrice) <= 0)) {
+    if (orderType === 'conditional' && getPositiveNumber(entryPrice) == null) {
       setBacktestError('Set an entry trigger price for a conditional order.');
       return;
     }
 
-    if (!Number.isFinite(fillPrice) || fillPrice <= 0) {
+    if (fillPrice == null) {
       setBacktestError('No valid entry price is available for this position.');
       return;
     }
@@ -2163,10 +2196,11 @@ export default function TradingViewReplayChart({
         side,
         order_type: orderType,
         notional,
+        leverage,
         price: fillPrice,
         executed_at_time: executionTime,
-        ...(Number.isFinite(Number(stopLoss)) ? { stop_loss: Number(stopLoss) } : {}),
-        ...(Number.isFinite(Number(takeProfit)) ? { take_profit: Number(takeProfit) } : {}),
+        ...(getPositiveNumber(stopLoss) != null ? { stop_loss: getPositiveNumber(stopLoss) } : {}),
+        ...(getPositiveNumber(takeProfit) != null ? { take_profit: getPositiveNumber(takeProfit) } : {}),
       });
 
       setBacktestAccount(response.data?.account ?? null);
@@ -2183,7 +2217,9 @@ export default function TradingViewReplayChart({
     entryTime = executionTime,
     { silent = false } = {}
   ) => {
-    if (!positionId || !Number.isFinite(Number(entryPrice))) {
+    const triggerPrice = getPositiveNumber(entryPrice);
+
+    if (!positionId || triggerPrice == null) {
       setBacktestError('No valid pending entry price is available.');
       return false;
     }
@@ -2195,7 +2231,7 @@ export default function TradingViewReplayChart({
 
     try {
       const response = await axios.post(`/market-backtest/positions/${positionId}/trigger`, {
-        price: Number(entryPrice),
+        price: triggerPrice,
         executed_at_time: entryTime,
       });
 
@@ -2233,7 +2269,9 @@ export default function TradingViewReplayChart({
     closeTime = executionTime,
     { silent = false } = {}
   ) => {
-    if (!positionId || !Number.isFinite(Number(closePrice))) {
+    const exitPrice = getPositiveNumber(closePrice);
+
+    if (!positionId || exitPrice == null) {
       setBacktestError('No replay price is available for closing.');
       return;
     }
@@ -2245,7 +2283,7 @@ export default function TradingViewReplayChart({
 
     try {
       const response = await axios.post(`/market-backtest/positions/${positionId}/close`, {
-        price: Number(closePrice),
+        price: exitPrice,
         executed_at_time: closeTime,
       });
 
@@ -2452,15 +2490,7 @@ export default function TradingViewReplayChart({
         onCandleColorChange={setCandleColors}
       />
 
-      <div
-        className={
-          replayMode
-            ? `min-h-0 ${isFullscreen ? 'flex-1' : ''}`
-            : isFullscreen
-              ? 'min-h-0 flex-1'
-              : ''
-        }
-      >
+      <div className={isFullscreen ? 'min-h-0 flex-1' : 'min-h-0'}>
         <div className={`relative min-w-0 space-y-3 ${isFullscreen ? 'h-full' : ''}`}>
           {loading && (
             <div className="flex h-24 items-center justify-center rounded-lg bg-gray-900 text-white">
@@ -2493,47 +2523,46 @@ export default function TradingViewReplayChart({
             onToggleFullscreen={handleToggleFullscreen}
           />
 
-          {replayMode && (
-            <ReplayPanel
-              className="absolute left-3 top-3 z-30"
-              isPlaying={isPlaying}
-              followReplay={followReplay}
-              isReplayPricePickActive={isReplayPricePickActive}
-              playbackSpeed={playbackSpeed}
-              replayIndex={replayIndex}
-              candleCount={allCandles.length}
-              tool={tool}
-              drawingColor={drawingColor}
-              drawings={drawings}
-              selectedDrawingId={selectedDrawingId}
-              selectedDrawing={selectedDrawing}
-              toolSettings={toolSettings}
-              symbol={symbol}
-              executionPrice={executionPrice}
-              backtestAccount={backtestAccount}
-              backtestError={backtestError}
-              isBacktestLoading={isBacktestLoading}
-              onStepBackward={stepBackward}
-              onTogglePlay={togglePlay}
-              onStepForward={stepForward}
-              onResetReplay={resetReplay}
-              onFollowReplay={handleFollowReplay}
-              onToggleReplayPricePick={() => setIsReplayPricePickActive((prev) => !prev)}
-              onPlaybackSpeedChange={setPlaybackSpeed}
-              onToolChange={handleToolChange}
-              onDrawingColorChange={handleDrawingColorChange}
-              onDrawingWidthChange={handleDrawingWidthChange}
-              onDrawingLabelChange={handleDrawingLabelChange}
-              onSaveSelectedToolPreset={handleSaveSelectedToolPreset}
-              onApplyToolPreset={handleApplyToolPreset}
-              onClearDrawings={handleClearDrawings}
-              onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
-              onOpenBacktestPosition={handleOpenBacktestPosition}
-              onCloseBacktestPosition={handleCloseBacktestPosition}
-              onCancelBacktestPosition={handleCancelBacktestPosition}
-              onResetBacktestAccount={handleResetBacktestAccount}
-            />
-          )}
+          <ReplayPanel
+            className="absolute left-3 top-3 z-30"
+            replayMode={replayMode}
+            isPlaying={isPlaying}
+            followReplay={followReplay}
+            isReplayPricePickActive={isReplayPricePickActive}
+            playbackSpeed={playbackSpeed}
+            replayIndex={replayIndex}
+            candleCount={allCandles.length}
+            tool={tool}
+            drawingColor={drawingColor}
+            drawings={drawings}
+            selectedDrawingId={selectedDrawingId}
+            selectedDrawing={selectedDrawing}
+            toolSettings={toolSettings}
+            symbol={symbol}
+            executionPrice={executionPrice}
+            backtestAccount={backtestAccount}
+            backtestError={backtestError}
+            isBacktestLoading={isBacktestLoading}
+            onStepBackward={stepBackward}
+            onTogglePlay={togglePlay}
+            onStepForward={stepForward}
+            onResetReplay={resetReplay}
+            onFollowReplay={handleFollowReplay}
+            onToggleReplayPricePick={() => setIsReplayPricePickActive((prev) => !prev)}
+            onPlaybackSpeedChange={setPlaybackSpeed}
+            onToolChange={handleToolChange}
+            onDrawingColorChange={handleDrawingColorChange}
+            onDrawingWidthChange={handleDrawingWidthChange}
+            onDrawingLabelChange={handleDrawingLabelChange}
+            onSaveSelectedToolPreset={handleSaveSelectedToolPreset}
+            onApplyToolPreset={handleApplyToolPreset}
+            onClearDrawings={handleClearDrawings}
+            onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
+            onOpenBacktestPosition={handleOpenBacktestPosition}
+            onCloseBacktestPosition={handleCloseBacktestPosition}
+            onCancelBacktestPosition={handleCancelBacktestPosition}
+            onResetBacktestAccount={handleResetBacktestAccount}
+          />
         </div>
       </div>
     </div>

@@ -27,7 +27,11 @@ export default function ChartHeader({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const buildSymbolKey = (item) => `${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`;
-  const symbolOptions = symbols.length ? symbols : [{ symbol, exchange: exchange ?? 'bybit', category: marketCategory ?? 'spot' }];
+  const categorySymbols = symbols.filter((item) => (item.category ?? 'spot') === marketCategory);
+  const currentSymbolOption = { symbol, exchange: exchange ?? 'bybit', category: marketCategory ?? 'spot' };
+  const symbolOptions = categorySymbols.some((item) => buildSymbolKey(item) === buildSymbolKey(currentSymbolOption))
+    ? categorySymbols
+    : [currentSymbolOption, ...categorySymbols];
   const savedSymbolSet = new Set(symbols.map((item) => buildSymbolKey(item)));
   const addSymbolOptions = availableSymbols.filter((item) => (
     !savedSymbolSet.has(buildSymbolKey(item))
@@ -72,7 +76,7 @@ export default function ChartHeader({
   };
 
   return (
-    <div className="rounded-lg bg-gray-800 p-3">
+    <div className="relative z-40 rounded-lg bg-gray-800 p-3">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(280px,1.2fr)_minmax(120px,0.5fr)_minmax(140px,0.5fr)_minmax(140px,0.55fr)_minmax(150px,0.55fr)_minmax(170px,0.6fr)]">
         <div className="relative">
           <label className="mb-1 block text-xs font-medium text-gray-300">Symbol</label>
@@ -102,7 +106,7 @@ export default function ChartHeader({
             </button>
           </div>
           {isAddOpen && (
-            <div className="absolute left-0 right-0 z-30 mt-2 overflow-hidden rounded-md border border-gray-600 bg-gray-900 shadow-xl sm:right-auto sm:w-96">
+            <div className="absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border border-gray-600 bg-gray-900 shadow-xl sm:right-auto sm:w-96">
               <div className="flex items-center gap-2 border-b border-gray-700 px-2 py-2">
                 <Search size={14} className="text-gray-400" />
                 <input
@@ -180,8 +184,8 @@ export default function ChartHeader({
             }}
             className="h-9 w-full rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
           >
-            <option value="spot">Spot</option>
             <option value="linear">Futures</option>
+            <option value="spot">Spot</option>
           </select>
         </div>
 
@@ -210,7 +214,7 @@ export default function ChartHeader({
             }`}
           >
             {replayMode ? <X size={15} /> : <Play size={15} />}
-            {replayMode ? 'Exit Replay Mode' : 'Replay Mode'}
+            {replayMode ? 'Back to Live' : 'Start Replay'}
           </button>
         </div>
 

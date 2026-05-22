@@ -14,6 +14,16 @@ function formatSignedNumber(value, digits = 2) {
   return `${sign}${Number(value).toFixed(digits)}`;
 }
 
+function formatPriceLabel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '---';
+
+  return number.toLocaleString(undefined, {
+    minimumFractionDigits: number >= 100 ? 2 : 4,
+    maximumFractionDigits: number >= 100 ? 2 : 6,
+  });
+}
+
 function formatDuration(seconds) {
   const totalSeconds = Math.max(Math.round(Math.abs(seconds)), 0);
   const days = Math.floor(totalSeconds / 86400);
@@ -65,6 +75,29 @@ function getPositionGeometry(drawing) {
     targetPoint: { x: p2.x, y: targetY },
     stopPoint: { x: pStop.x, y: stopY },
     label: `${isLong ? 'Long' : 'Short'} R/R ${(reward / Math.max(risk, 0.0000001)).toFixed(2)} | Target ${formatSignedNumber(rewardPercent)}% | Stop -${riskPercent.toFixed(2)}% | ${formatDuration(drawing.end.time - drawing.start.time)}`,
+    priceLabels: [
+      {
+        key: 'entry',
+        label: formatPriceLabel(entryPrice),
+        x: right,
+        y: p1.y,
+        color: '#e2e8f0',
+      },
+      {
+        key: 'tp',
+        label: formatPriceLabel(targetPrice),
+        x: right,
+        y: targetY,
+        color: '#4ade80',
+      },
+      {
+        key: 'sl',
+        label: formatPriceLabel(stopPrice),
+        x: right,
+        y: stopY,
+        color: '#f87171',
+      },
+    ],
   };
 }
 
@@ -143,6 +176,29 @@ function getBoxLabelPosition(rect, drawing) {
   return { x, y, textAnchor };
 }
 
+function PositionPriceBadge({ item, overlayWidth, overlayHeight }) {
+  const labelWidth = Math.min(Math.max(item.label.length * 6.5 + 16, 72), 132);
+  const x = Math.max(overlayWidth - labelWidth / 2 - 6, 8);
+  const y = Math.min(Math.max(item.y - 11, 8), Math.max(overlayHeight - 30, 8));
+
+  return (
+    <text
+      x={x}
+      y={y + 15}
+      textAnchor="middle"
+      fill={item.color}
+      fontSize="11"
+      fontWeight="700"
+      paintOrder="stroke"
+      stroke="rgba(8, 22, 49, 0.95)"
+      strokeWidth="3"
+      strokeLinejoin="round"
+    >
+      {item.label}
+    </text>
+  );
+}
+
 function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
   const selectedDrawing = renderedDrawings.find((d) => d.id === selectedDrawingId);
 
@@ -187,12 +243,11 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
         style={{ width: '100%', height: '100%' }}
       >
         {renderedDrawings.map((d) => {
-          const isSelected = d.id === selectedDrawingId;
           const drawingColor = d.color ?? DRAWING_COLOR;
-          const stroke = isSelected ? '#fbbf24' : drawingColor;
+          const stroke = drawingColor;
           const strokeWidth = d.id.startsWith('temp-')
             ? (d.strokeWidth ?? 1)
-            : Math.max(d.strokeWidth ?? 1, isSelected ? 3 : 1);
+            : Math.max(d.strokeWidth ?? 1, 1);
 
           if (isLineLikeDrawing(d)) {
             const lineEnd = d.screen.rayEnd ?? d.screen.p2;
@@ -272,7 +327,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
 
           if (isPositionDrawing(d)) {
             const geometry = getPositionGeometry(d);
-            const outline = isSelected ? '#fbbf24' : 'rgba(226, 232, 240, 0.75)';
+            const outline = 'rgba(226, 232, 240, 0.75)';
 
             return (
               <g key={d.id}>
@@ -321,19 +376,29 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
                   strokeWidth={Math.max(strokeWidth, 2)}
                 />
                 {!d.id.startsWith('temp-') && (
-                  <text
-                    x={geometry.left + 8}
-                    y={geometry.isLong ? geometry.targetY + 18 : geometry.targetY - 10}
-                    fill="#ffffff"
-                    fontSize="12"
-                    fontWeight="600"
-                    paintOrder="stroke"
-                    stroke="rgba(15, 23, 42, 0.95)"
-                    strokeWidth="4"
-                    strokeLinejoin="round"
-                  >
-                    {geometry.label}
-                  </text>
+                  <>
+                    <text
+                      x={geometry.left + 8}
+                      y={geometry.isLong ? geometry.targetY + 18 : geometry.targetY - 10}
+                      fill="#ffffff"
+                      fontSize="12"
+                      fontWeight="600"
+                      paintOrder="stroke"
+                      stroke="rgba(15, 23, 42, 0.95)"
+                      strokeWidth="4"
+                      strokeLinejoin="round"
+                    >
+                      {geometry.label}
+                    </text>
+                    {geometry.priceLabels.map((item) => (
+                      <PositionPriceBadge
+                        key={`${d.id}-${item.key}`}
+                        item={item}
+                        overlayWidth={overlaySize.width}
+                        overlayHeight={overlaySize.height}
+                      />
+                    ))}
+                  </>
                 )}
               </g>
             );
@@ -507,17 +572,11 @@ export default function ChartStage({
       }`}
       style={{
         height: isFullscreen ? '100%' : `${CHART_HEIGHT}px`,
-        cursor: replayMode
-          ? (
-              isSpacePressed
-                ? 'grab'
-                : tool
-                  ? 'crosshair'
-                  : isReplayPricePickActive
-                    ? 'crosshair'
-                    : 'default'
-            )
-          : 'default',
+        cursor: isSpacePressed
+          ? 'grab'
+          : tool || isReplayPricePickActive
+            ? 'crosshair'
+            : 'default',
       }}
     >
       <div ref={containerRef} className="absolute inset-0 z-0" />

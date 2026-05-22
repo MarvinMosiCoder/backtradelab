@@ -163,79 +163,119 @@ class MarketDataController extends Controller
         }
 
         try {
-            $marketSymbol = MarketSymbol::query()
-                ->where('exchange', $exchange)
-                ->where('category', $category)
-                ->where('symbol', $symbol)
-                ->first();
-            $exchangeSymbol = $marketSymbol?->exchange_symbol ?: $this->inferExchangeSymbol($exchange, $symbol);
+            $futuresFallbacks = $end
+                ? ['bybit', 'okx', 'binance', 'bingx', 'mexc']
+                : ['bingx', 'bybit', 'mexc', 'okx', 'binance'];
+            $candidateExchanges = $category === 'spot'
+                ? [$exchange]
+                : array_values(array_unique([$exchange, ...$futuresFallbacks]));
             $allRows = [];
-            $seen = [];
+            $usedExchange = $exchange;
+            $fallbackErrors = [];
 
-            // if no end passed, use "now"
-            $currentEnd = $end ? (int) $end : (int) floor(microtime(true) * 1000);
+            foreach ($candidateExchanges as $candidateExchange) {
+                $marketSymbol = MarketSymbol::query()
+                    ->where('exchange', $candidateExchange)
+                    ->where('category', $category)
+                    ->where('symbol', $symbol)
+                    ->first();
+                $exchangeSymbol = $marketSymbol?->exchange_symbol ?: $this->inferExchangeSymbol($candidateExchange, $symbol, $category);
+                $candidateRows = [];
+                $seen = [];
 
-            // hard loop guard
-            $maxRequests = 30;
-            $requests = 0;
+                // if no end passed, let the exchange return its latest batch
+                $currentEnd = $end ? (int) $end : null;
 
-            while (count($allRows) < $maxCandles && $requests < $maxRequests) {
-                $rowsResult = $this->fetchKlineRows(
-                    $exchange,
-                    $exchangeSymbol,
-                    $symbol,
-                    $category,
-                    $interval,
-                    $chunkLimit,
-                    $currentEnd,
-                    $start ? (int) $start : null
-                );
+                // hard loop guard
+                $maxRequests = 30;
+                $requests = 0;
 
-                if (!$rowsResult['success']) {
-                    return response()->json($rowsResult['payload'], $rowsResult['status']);
-                }
+                while (count($candidateRows) < $maxCandles && $requests < $maxRequests) {
+                    $rowsResult = $this->fetchKlineRows(
+                        $candidateExchange,
+                        $exchangeSymbol,
+                        $symbol,
+                        $category,
+                        $interval,
+                        $chunkLimit,
+                        $currentEnd,
+                        $start ? (int) $start : null
+                    );
 
-                $rows = $rowsResult['rows'];
-
-                if (!is_array($rows) || empty($rows)) {
-                    break;
-                }
-
-                // Bybit returns newest first
-                foreach ($rows as $row) {
-                    $ts = (int) ($row[0] ?? 0);
-                    if ($ts <= 0) {
-                        continue;
+                    if (!$rowsResult['success']) {
+                        $fallbackErrors[$candidateExchange] = $rowsResult['payload']['message'] ?? 'Failed to fetch market data';
+                        break;
                     }
 
-                    if (isset($seen[$ts])) {
-                        continue;
+                    $rows = $rowsResult['rows'];
+
+                    if (!is_array($rows) || empty($rows)) {
+                        break;
                     }
 
-                    $seen[$ts] = true;
-                    $allRows[] = $row;
+                    foreach ($rows as $row) {
+                        $ts = (int) ($row[0] ?? 0);
+                        if ($ts <= 0) {
+                            continue;
+                        }
+
+                        if (isset($seen[$ts])) {
+                            continue;
+                        }
+
+                        $seen[$ts] = true;
+                        $candidateRows[] = $row;
+                    }
+
+                    // move further back in time using oldest candle from this batch
+                    $batchTimestamps = array_values(array_filter(
+                        array_map(fn ($row) => (int) ($row[0] ?? 0), $rows),
+                        fn ($timestamp) => $timestamp > 0
+                    ));
+
+                    if (!$batchTimestamps) {
+                        break;
+                    }
+
+                    $oldestTs = min($batchTimestamps);
+                    $nextEnd = $oldestTs - 1;
+
+                    if ($start && $nextEnd < (int) $start) {
+                        break;
+                    }
+
+                    if ($currentEnd !== null && $nextEnd >= $currentEnd) {
+                        break;
+                    }
+
+                    $currentEnd = $nextEnd;
+                    $requests++;
                 }
 
-                // move further back in time using oldest candle from this batch
-                $oldestTs = (int) end($rows)[0];
-                $nextEnd = $oldestTs - 1;
-
-                if ($start && $nextEnd < (int) $start) {
+                if (!empty($candidateRows)) {
+                    $allRows = $candidateRows;
+                    $usedExchange = $candidateExchange;
                     break;
                 }
 
-                if ($nextEnd >= $currentEnd) {
-                    break;
-                }
-
-                $currentEnd = $nextEnd;
-                $requests++;
+                $fallbackErrors[$candidateExchange] ??= 'No candle data returned';
             }
 
             // sort oldest -> newest
             usort($allRows, function ($a, $b) {
                 return (int)$a[0] <=> (int)$b[0];
             });
+
+            if (empty($allRows)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No candle data returned for this market and timeframe',
+                    'exchange' => $exchange,
+                    'category' => $category,
+                    'symbol' => $symbol,
+                    'fallbackErrors' => $fallbackErrors,
+                ], 502);
+            }
 
             // trim to latest maxCandles if needed
             if (count($allRows) > $maxCandles) {
@@ -255,7 +295,8 @@ class MarketDataController extends Controller
 
             return response()->json([
                 'success' => true,
-                'exchange' => $exchange,
+                'exchange' => $usedExchange,
+                'requested_exchange' => $exchange,
                 'count' => count($candles),
                 'candles' => $candles,
             ]);
@@ -361,10 +402,12 @@ class MarketDataController extends Controller
 
         if ($exchange === 'okx') {
             foreach (($json['data'] ?? []) as $item) {
+                $exchangeSymbol = strtoupper((string) ($item['instId'] ?? ''));
+                $normalizedSymbol = strtoupper(str_replace('-', '', str_replace('-SWAP', '', $exchangeSymbol)));
                 $symbols[] = $this->symbolPayload(
                     $exchange,
-                    strtoupper(str_replace('-', '', (string) ($item['instId'] ?? ''))),
-                    strtoupper((string) ($item['instId'] ?? '')),
+                    $normalizedSymbol,
+                    $exchangeSymbol,
                     $category,
                     $item['baseCcy'] ?? null,
                     $item['quoteCcy'] ?? $item['settleCcy'] ?? null,
@@ -447,7 +490,7 @@ class MarketDataController extends Controller
         string $category,
         string $interval,
         int $limit,
-        int $end,
+        ?int $end,
         ?int $start
     ): array {
         try {
@@ -460,7 +503,7 @@ class MarketDataController extends Controller
                         'symbol' => $symbol,
                         'interval' => $this->mapInterval($exchange, $interval),
                         'limit' => min($limit, 1000),
-                        'endTime' => $end,
+                        ...($end ? ['endTime' => $end] : []),
                         ...($start ? ['startTime' => $start] : []),
                     ]
                 ),
@@ -468,7 +511,7 @@ class MarketDataController extends Controller
                     'instId' => $exchangeSymbol,
                     'bar' => $this->mapInterval($exchange, $interval),
                     'limit' => min($limit, 300),
-                    'before' => $end,
+                    ...($end ? ['after' => $end] : []),
                 ]),
                 'bingx' => $this->marketHttp()->get(
                     $category === 'spot'
@@ -478,7 +521,7 @@ class MarketDataController extends Controller
                     'symbol' => $exchangeSymbol,
                     'interval' => $this->mapInterval($exchange, $interval),
                     'limit' => min($limit, 1000),
-                    'endTime' => $end,
+                    ...($end ? ['endTime' => $end] : []),
                     ...($start ? ['startTime' => $start] : []),
                     ]
                 ),
@@ -487,12 +530,12 @@ class MarketDataController extends Controller
                         'symbol' => $symbol,
                         'interval' => $this->mapInterval($exchange, $interval),
                         'limit' => min($limit, 1000),
-                        'endTime' => $end,
+                        ...($end ? ['endTime' => $end] : []),
                         ...($start ? ['startTime' => $start] : []),
                     ])
                     : $this->marketHttp()->get('https://contract.mexc.com/api/v1/contract/kline/' . $exchangeSymbol, [
                         'interval' => $this->mapInterval($exchange, $interval),
-                        'end' => (int) floor($end / 1000),
+                        ...($end ? ['end' => (int) floor($end / 1000)] : []),
                         ...($start ? ['start' => (int) floor($start / 1000)] : []),
                     ]),
                 default => $this->marketHttp()->get('https://api.bybit.com/v5/market/kline', [
@@ -500,7 +543,7 @@ class MarketDataController extends Controller
                     'symbol' => $symbol,
                     'interval' => $interval,
                     'limit' => $limit,
-                    'end' => $end,
+                    ...($end ? ['end' => $end] : []),
                     ...($start ? ['start' => $start] : []),
                 ]),
             };
@@ -521,11 +564,27 @@ class MarketDataController extends Controller
 
             $json = $response->json();
 
+            if (!is_array($json)) {
+                return [
+                    'success' => false,
+                    'status' => 502,
+                    'payload' => [
+                        'success' => false,
+                        'message' => 'Exchange returned an invalid market data response',
+                        'exchange' => $exchange,
+                        'body' => substr($response->body(), 0, 500),
+                    ],
+                    'rows' => [],
+                ];
+            }
+
+            $rows = $this->normalizeKlineRows($exchange, $json);
+
             return [
                 'success' => true,
                 'status' => 200,
                 'payload' => [],
-                'rows' => $this->normalizeKlineRows($exchange, is_array($json) ? $json : []),
+                'rows' => $rows,
             ];
         } catch (\Throwable $e) {
             return [
@@ -598,9 +657,18 @@ class MarketDataController extends Controller
         }, array_keys($times), $times);
     }
 
-    private function inferExchangeSymbol(string $exchange, string $symbol): string
+    private function inferExchangeSymbol(string $exchange, string $symbol, string $category = 'spot'): string
     {
-        if (in_array($exchange, ['okx', 'bingx'], true)) {
+        if ($exchange === 'okx') {
+            foreach (['USDT', 'USDC', 'BTC', 'ETH'] as $quote) {
+                if (str_ends_with($symbol, $quote)) {
+                    $baseSymbol = substr($symbol, 0, -strlen($quote)) . '-' . $quote;
+                    return $category === 'spot' ? $baseSymbol : $baseSymbol . '-SWAP';
+                }
+            }
+        }
+
+        if ($exchange === 'bingx') {
             foreach (['USDT', 'USDC', 'BTC', 'ETH'] as $quote) {
                 if (str_ends_with($symbol, $quote)) {
                     return substr($symbol, 0, -strlen($quote)) . '-' . $quote;

@@ -311,13 +311,13 @@ axios.get('/market-backtest/account', {
 });
 ```
 
-Replay orders can be placed as Market or Conditional entries. Market entries fill immediately at the current replay execution price, or at the optional manual entry override. Conditional entries require a trigger price and are stored as pending positions until a replay candle trades through that level. The ticket also accepts optional stop loss and take profit levels. For long positions, SL must be below entry and TP must be above entry; for short positions, SL must be above entry and TP must be below entry. The panel shows estimated risk, reward, and R/R before entry.
+Replay orders can be placed as Market or Conditional entries. Market entries fill immediately at the current replay execution price, or at the optional manual entry override. Conditional entries require a trigger price and are stored as pending positions until a replay candle trades through that level. The ticket accepts margin, leverage, optional stop loss, and optional take profit levels. For long positions, SL must be below entry and TP must be above entry; for short positions, SL must be above entry and TP must be below entry. The panel shows estimated leveraged value, risk, reward, and R/R before entry.
 
 Pending entries are checked against the current replay candle high/low. If `low <= entryPrice <= high`, the pending entry is triggered at its configured entry price, the open trade is recorded, margin is locked, and the entry fee is charged. The candle where the order was placed is skipped so a conditional order cannot trigger from price action that already happened before placement. Pending entries can also be cancelled from the Wallet panel before they trigger.
 
 As replay advances, open positions are checked against the current candle high/low. A long closes at SL when `low <= stopLoss`, or at TP when `high >= takeProfit`; a short closes at SL when `high >= stopLoss`, or at TP when `low <= takeProfit`. The entry candle is skipped so a newly opened trade is not closed by price movement that happened before the simulated entry. If SL and TP are both inside the same candle, SL is treated as hit first because the intrabar path is unknown from OHLC data.
 
-The first implementation uses 1x margin paper trading: opening a position locks the requested notional as margin and charges a `0.04%` fee; closing returns margin plus or minus PnL and charges the exit fee.
+Paper futures trading treats the entered size as margin/collateral. Leverage can be set from `1x` to `125x`; quantity, risk, reward, PnL, and fees are calculated from `margin * leverage`, while only margin plus entry fee is reserved from cash. The simulated taker fee is `0.04%` on leveraged entry/exit notional. Closing returns margin plus or minus gross PnL and charges the exit fee.
 
 | Route | Purpose |
 |-------|---------|
@@ -329,13 +329,15 @@ The first implementation uses 1x margin paper trading: opening a position locks 
 | `POST /market-backtest/positions/{position}/close` | Close an open replay position at the current replay price |
 | `POST /market-backtest/reset` | Reset the demo account back to the starting balance |
 
-`ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, optional entry/SL/TP planning fields, pending entry cancel buttons, open position close buttons, and recent trades.
+`ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, pending entry cancel buttons, open position close buttons, and recent trades.
+
+The paper account remains internally quote-currency based, normally `USDT`. The Wallet flyout and Trade Report can display account-sized values in `USDT` or `PHP`. When `PHP` is selected, the user can edit the `PHP / USDT` rate; equity, cash, PnL, margin, leveraged value, risk, reward, fees, and report values are converted for display, and PHP margin inputs are converted back to USDT before orders are submitted. Market prices such as entry, stop loss, take profit, trigger, and chart price remain in the symbol's quote price scale.
 
 ### Trade Report
 
 `TradeReport.jsx` displays closed replay trades as an exchange-style history report. It is available from the sidebar at `/trade-report` through `resources/js/Pages/Market/TradeReportPage.jsx`.
 
-The report uses `GET /market-backtest/report`, which reads closed `market_backtest_positions` for the authenticated user's active demo account. Closed positions are used instead of raw trade rows because each closed position contains the full entry, exit, margin, entry fee, exit fee, and realized PnL in one record.
+The report uses `GET /market-backtest/report`, which reads closed `market_backtest_positions` for the authenticated user's active demo account. Closed positions are used instead of raw trade rows because each closed position contains the full entry, exit, margin, leverage, entry fee, exit fee, and realized PnL in one record.
 
 The report includes:
 
@@ -402,6 +404,8 @@ When replay mode is enabled:
 
 Playback speeds are defined in `constants.js`.
 
+Replay controls live on the same chart surface as the live chart. The compact left rail is always available, and pressing Play, Forward, Back, or Set Replay Price from the live chart starts or arms replay behavior without opening a separate replay chart. Leaving replay returns the same chart to the latest live candle view.
+
 | Label | Interval |
 |-------|----------|
 | `0.25x` | `3000ms` |
@@ -424,15 +428,15 @@ The selected-price line effect depends on `timeframe` and `visibleCandles.length
 
 ## Drawing Tools
 
-Drawing tools are only shown in replay mode. In replay mode, `TradingViewChart.jsx` prioritizes the chart by rendering `ChartStage.jsx` as the main workspace and overlaying `ReplayPanel.jsx` as a compact left rail. Clicking a rail icon opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
+Drawing tools are available on the live chart and in replay mode. `TradingViewChart.jsx` renders `ChartStage.jsx` as the single chart workspace and overlays `ReplayPanel.jsx` as a compact left rail. Clicking a rail icon opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
 
 The rail currently has four main groups:
 
 | Group | Behavior |
 |-------|----------|
-| Replay | Back/play/forward, reset, follow, price picking, candle count, and playback speed |
+| Replay | Start replay, back/play/forward, reset/go latest, follow, price picking, candle count, and playback speed |
 | Tools | Drawing tool selection plus clear/delete actions |
-| Backtest Account | Paper account metrics, long/short entry, close buttons, and recent trades |
+| Backtest Account | Paper account metrics, long/short entry, close buttons, and recent trades using the live price or replay execution price |
 | Tool Editor | Contextual color, width, label/text, and preset controls for the active tool or selected drawing |
 
 The Tool Editor opens automatically after a tool is clicked or a drawing is selected. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type.
@@ -449,7 +453,7 @@ The Tool Editor opens automatically after a tool is clicked or a drawing is sele
 
 After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool.
 
-Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint.
+Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint.
 
 Drawings are stored per symbol:
 
@@ -532,8 +536,8 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 |--------------|-------------|
 | Line | SVG `<line>` |
 | Horizontal Ray | SVG `<line>` from anchor to the chart's right edge |
-| Long Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label |
-| Short Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label |
+| Long Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
+| Short Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
 | Forecast | Dashed SVG `<line>` with arrowhead and projection label |
 | Box | SVG `<rect>` with color-based transparent fill |
 | Text | Plain absolutely positioned React text without a background box |
@@ -718,9 +722,9 @@ The chart now includes:
 2. Database-backed market symbols through `/api/market-symbols`.
 3. Laravel/exchange candle data flow through `/api/klines`.
 4. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
-5. Replay mode with a compact left rail and grouped flyouts for replay controls, drawing tools, paper backtest account controls, and contextual per-tool style/preset editing.
+5. A single live/replay chart with a compact left rail and grouped flyouts for replay controls, drawing tools, paper backtest account controls, and contextual per-tool style/preset editing.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
-7. Drawing tools for line, long/short position, forecast, box, and text.
+7. Drawing tools for line, long/short position, forecast, box, and text on the live chart and in replay mode.
 8. Per-tool drawing colors, stroke widths, labels, presets, selection, moving, and resizing.
 9. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
 10. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.

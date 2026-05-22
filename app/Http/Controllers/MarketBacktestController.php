@@ -112,6 +112,7 @@ class MarketBacktestController extends Controller
             'trades' => $positions->map(function (MarketBacktestPosition $position) {
                 $pnl = (float) $position->realized_pnl;
                 $margin = (float) $position->margin;
+                $leverage = $this->getPositionLeverage($position);
 
                 return [
                     'id' => $position->id,
@@ -119,6 +120,8 @@ class MarketBacktestController extends Controller
                     'side' => $position->side,
                     'quantity' => (float) $position->quantity,
                     'margin' => $margin,
+                    'leverage' => $leverage,
+                    'notional' => $this->getPositionNotional($position),
                     'entryPrice' => (float) $position->entry_price,
                     'exitPrice' => $position->exit_price !== null ? (float) $position->exit_price : null,
                     'entryFee' => (float) $position->entry_fee,
@@ -143,6 +146,7 @@ class MarketBacktestController extends Controller
             'side' => ['required', Rule::in(['long', 'short'])],
             'order_type' => ['nullable', Rule::in(['market', 'conditional'])],
             'notional' => ['required', 'numeric', 'min:1', 'max:1000000000'],
+            'leverage' => ['nullable', 'numeric', 'min:1', 'max:125'],
             'price' => ['required', 'numeric', 'gt:0'],
             'executed_at_time' => ['nullable', 'integer', 'min:0'],
             'stop_loss' => ['nullable', 'numeric', 'gt:0'],
@@ -151,7 +155,9 @@ class MarketBacktestController extends Controller
 
         $account = DB::transaction(function () use ($request, $validated) {
             $account = $this->getOrCreateAccount($request, true);
-            $notional = round((float) $validated['notional'], 8);
+            $margin = round((float) $validated['notional'], 8);
+            $leverage = round((float) ($validated['leverage'] ?? 1), 2);
+            $positionNotional = round($margin * $leverage, 8);
             $price = (float) $validated['price'];
             $stopLoss = isset($validated['stop_loss']) ? (float) $validated['stop_loss'] : null;
             $takeProfit = isset($validated['take_profit']) ? (float) $validated['take_profit'] : null;
@@ -189,17 +195,17 @@ class MarketBacktestController extends Controller
                 }
             }
 
-            $entryFee = round($notional * self::FEE_RATE, 8);
-            $requiredCash = $notional + $entryFee;
+            $entryFee = round($positionNotional * self::FEE_RATE, 8);
+            $requiredCash = $margin + $entryFee;
 
             if ((float) $account->cash_balance < $requiredCash) {
                 abort(response()->json([
                     'success' => false,
-                    'message' => 'Insufficient paper balance for this position size.',
+                    'message' => 'Insufficient paper balance for this margin and entry fee.',
                 ], 422));
             }
 
-            $quantity = round($notional / $price, 10);
+            $quantity = round($positionNotional / $price, 10);
 
             $position = MarketBacktestPosition::query()->create([
                 'market_backtest_account_id' => $account->id,
@@ -207,7 +213,8 @@ class MarketBacktestController extends Controller
                 'side' => $validated['side'],
                 'quantity' => $quantity,
                 'entry_price' => $price,
-                'margin' => $notional,
+                'margin' => $margin,
+                'leverage' => $leverage,
                 'entry_fee' => $entryFee,
                 'opened_at_time' => $validated['executed_at_time'] ?? null,
                 'stop_loss' => $stopLoss,
@@ -227,7 +234,7 @@ class MarketBacktestController extends Controller
                 'action' => 'open',
                 'quantity' => $quantity,
                 'price' => $price,
-                'notional' => $notional,
+                'notional' => $positionNotional,
                 'fee' => $entryFee,
                 'executed_at_time' => $validated['executed_at_time'] ?? null,
             ]);
@@ -271,9 +278,10 @@ class MarketBacktestController extends Controller
             }
 
             $entryPrice = (float) $position->entry_price;
-            $notional = (float) $position->margin;
-            $entryFee = round($notional * self::FEE_RATE, 8);
-            $requiredCash = $notional + $entryFee;
+            $margin = (float) $position->margin;
+            $positionNotional = $this->getPositionNotional($position);
+            $entryFee = round($positionNotional * self::FEE_RATE, 8);
+            $requiredCash = $margin + $entryFee;
 
             if ((float) $account->cash_balance < $requiredCash) {
                 abort(response()->json([
@@ -296,7 +304,7 @@ class MarketBacktestController extends Controller
                 'action' => 'open',
                 'quantity' => (float) $position->quantity,
                 'price' => $entryPrice,
-                'notional' => $notional,
+                'notional' => $positionNotional,
                 'fee' => $entryFee,
                 'executed_at_time' => $validated['executed_at_time'] ?? null,
             ]);
@@ -433,6 +441,18 @@ class MarketBacktestController extends Controller
         ]);
     }
 
+    private function getPositionLeverage(MarketBacktestPosition $position): float
+    {
+        $leverage = (float) ($position->leverage ?? 1);
+
+        return $leverage > 0 ? $leverage : 1;
+    }
+
+    private function getPositionNotional(MarketBacktestPosition $position): float
+    {
+        return round((float) $position->margin * $this->getPositionLeverage($position), 8);
+    }
+
     private function buildPayload(MarketBacktestAccount $account, ?string $symbol = null, ?float $price = null): array
     {
         $openPositions = $account->positions()
@@ -481,6 +501,8 @@ class MarketBacktestController extends Controller
                 'quantity' => (float) $position->quantity,
                 'entryPrice' => (float) $position->entry_price,
                 'margin' => (float) $position->margin,
+                'leverage' => $this->getPositionLeverage($position),
+                'notional' => $this->getPositionNotional($position),
                 'entryFee' => (float) $position->entry_fee,
                 'openedAtTime' => $position->opened_at_time,
                 'stopLoss' => $position->stop_loss !== null ? (float) $position->stop_loss : null,
@@ -499,6 +521,8 @@ class MarketBacktestController extends Controller
                 'quantity' => (float) $position->quantity,
                 'entryPrice' => (float) $position->entry_price,
                 'margin' => (float) $position->margin,
+                'leverage' => $this->getPositionLeverage($position),
+                'notional' => $this->getPositionNotional($position),
                 'entryFee' => (float) $position->entry_fee,
                 'openedAtTime' => $position->opened_at_time,
                 'stopLoss' => $position->stop_loss !== null ? (float) $position->stop_loss : null,

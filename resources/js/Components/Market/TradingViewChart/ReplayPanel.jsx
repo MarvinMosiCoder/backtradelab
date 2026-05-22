@@ -134,6 +134,52 @@ function formatMoney(value, digits = 2) {
   });
 }
 
+function getStoredValue(key, fallback) {
+  if (typeof window === 'undefined') return fallback;
+
+  try {
+    return localStorage.getItem(key) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function getPhpRate(value) {
+  const rate = Number(value);
+  return Number.isFinite(rate) && rate > 0 ? rate : 58;
+}
+
+function quoteToDisplayAmount(value, currency, phpRate) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return currency === 'PHP' ? number * phpRate : number;
+}
+
+function displayToQuoteAmount(value, currency, phpRate) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return currency === 'PHP' ? number / phpRate : number;
+}
+
+function formatDisplayMoney(value, currency, phpRate, digits = 2) {
+  const amount = quoteToDisplayAmount(value, currency, phpRate);
+  if (amount == null) return '---';
+  return `${formatMoney(amount, digits)} ${currency}`;
+}
+
+function formatLeverage(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return '1x';
+  return `${Number(number.toFixed(2))}x`;
+}
+
+function getPositiveNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
 function getBacktestMetrics(account, symbol, executionPrice) {
   const positions = Array.isArray(account?.openPositions) ? account.openPositions : [];
   const price = Number(executionPrice);
@@ -163,11 +209,16 @@ function getBacktestMetrics(account, symbol, executionPrice) {
   };
 }
 
-function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional }) {
+function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, leverage }) {
   const entry = Number(entryPrice);
   const stop = Number(stopLoss);
   const target = Number(takeProfit);
-  const size = Number(notional);
+  const margin = Number(notional);
+  const leverageValue = Number(leverage);
+  const positionNotional =
+    Number.isFinite(margin) && margin > 0 && Number.isFinite(leverageValue) && leverageValue > 0
+      ? margin * leverageValue
+      : null;
 
   if (!Number.isFinite(entry) || entry <= 0) {
     return null;
@@ -185,11 +236,15 @@ function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional }) {
         ? target - entry
         : entry - target
       : null;
-  const quantity = Number.isFinite(size) && size > 0 ? size / entry : null;
+  const quantity = positionNotional ? positionNotional / entry : null;
   const riskAmount = quantity && riskPerUnit && riskPerUnit > 0 ? quantity * riskPerUnit : null;
   const rewardAmount = quantity && rewardPerUnit && rewardPerUnit > 0 ? quantity * rewardPerUnit : null;
 
   return {
+    margin: Number.isFinite(margin) && margin > 0 ? margin : null,
+    leverage: Number.isFinite(leverageValue) && leverageValue > 0 ? leverageValue : null,
+    positionNotional,
+    quantity,
     riskAmount,
     rewardAmount,
     rr: riskAmount && rewardAmount ? rewardAmount / riskAmount : null,
@@ -199,6 +254,7 @@ function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional }) {
 }
 
 export default function ReplayPanel({
+  replayMode,
   isPlaying,
   followReplay,
   isReplayPricePickActive,
@@ -242,9 +298,14 @@ export default function ReplayPanel({
   const [orderType, setOrderType] = useState('market');
   const [orderSide, setOrderSide] = useState('long');
   const [orderNotional, setOrderNotional] = useState('1000');
+  const [orderLeverage, setOrderLeverage] = useState('1');
   const [orderEntryPrice, setOrderEntryPrice] = useState('');
   const [orderStopLoss, setOrderStopLoss] = useState('');
   const [orderTakeProfit, setOrderTakeProfit] = useState('');
+  const [displayCurrency, setDisplayCurrency] = useState(() => (
+    getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
+  ));
+  const [phpRate, setPhpRate] = useState(() => getStoredValue('market-backtest-php-rate', '58'));
 
   const handleToolChange = (nextTool) => {
     onToolChange((currentTool) => (currentTool === nextTool ? null : nextTool));
@@ -288,6 +349,18 @@ export default function ReplayPanel({
     setPresetNameDraft(selectedPresetName ?? '');
   }, [selectedPresetName, selectedDrawingId]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem('market-backtest-display-currency', displayCurrency);
+    } catch {}
+  }, [displayCurrency]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('market-backtest-php-rate', phpRate);
+    } catch {}
+  }, [phpRate]);
+
   const toggleGroup = (group) => {
     setActiveGroup((currentGroup) => (currentGroup === group ? null : group));
   };
@@ -298,39 +371,68 @@ export default function ReplayPanel({
   };
 
   const ActiveToolIcon = activeToolIcon;
+  const quoteCurrency = backtestAccount?.quoteCurrency ?? 'USDT';
+  const normalizedPhpRate = getPhpRate(phpRate);
+  const formatAccountMoney = (value, digits = 2) => formatDisplayMoney(
+    value,
+    displayCurrency,
+    normalizedPhpRate,
+    digits
+  );
+  const handleDisplayCurrencyChange = (nextCurrency) => {
+    const normalizedCurrency = nextCurrency === 'PHP' ? 'PHP' : 'USDT';
+    const currentQuoteNotional = displayToQuoteAmount(orderNotional, displayCurrency, normalizedPhpRate);
+    const nextDisplayNotional = quoteToDisplayAmount(
+      currentQuoteNotional,
+      normalizedCurrency,
+      normalizedPhpRate
+    );
+
+    setDisplayCurrency(normalizedCurrency);
+    if (nextDisplayNotional != null) {
+      setOrderNotional(String(Number(nextDisplayNotional.toFixed(2))));
+    }
+  };
   const backtestMetrics = getBacktestMetrics(backtestAccount, symbol, executionPrice);
-  const canTrade = Number.isFinite(Number(executionPrice)) && !isBacktestLoading;
-  const hasCustomEntryPrice = Number.isFinite(Number(orderEntryPrice)) && Number(orderEntryPrice) > 0;
+  const currentExecutionPrice = getPositiveNumber(executionPrice);
+  const customEntryPrice = getPositiveNumber(orderEntryPrice);
+  const canTrade = currentExecutionPrice != null && !isBacktestLoading;
+  const hasCustomEntryPrice = customEntryPrice != null;
   const isConditionalOrder = orderType === 'conditional';
-  const effectiveEntryPrice = hasCustomEntryPrice ? Number(orderEntryPrice) : Number(executionPrice);
+  const effectiveEntryPrice = hasCustomEntryPrice ? customEntryPrice : currentExecutionPrice;
+  const quoteNotional = displayToQuoteAmount(orderNotional, displayCurrency, normalizedPhpRate);
+  const leverageValue = Number(orderLeverage);
+  const isLeverageValid = Number.isFinite(leverageValue) && leverageValue >= 1 && leverageValue <= 125;
   const orderPlan = getOrderPlan({
     side: orderSide,
     entryPrice: effectiveEntryPrice,
     stopLoss: orderStopLoss,
     takeProfit: orderTakeProfit,
-    notional: orderNotional,
+    notional: quoteNotional,
+    leverage: leverageValue,
   });
   const canSubmitOrder =
     canTrade &&
-    Number.isFinite(Number(orderNotional)) &&
-    Number(orderNotional) > 0 &&
-    Number.isFinite(effectiveEntryPrice) &&
-    effectiveEntryPrice > 0 &&
+    Number.isFinite(Number(quoteNotional)) &&
+    Number(quoteNotional) > 0 &&
+    isLeverageValid &&
+    effectiveEntryPrice != null &&
     (!isConditionalOrder || hasCustomEntryPrice) &&
     (orderPlan?.isStopValid ?? true) &&
     (orderPlan?.isTargetValid ?? true);
 
   const submitBacktestOrder = () => {
-    const notional = Number(orderNotional);
+    const notional = Number(quoteNotional);
     if (!canSubmitOrder || !Number.isFinite(notional) || notional <= 0) return;
 
     onOpenBacktestPosition({
       side: orderSide,
       orderType,
       notional,
+      leverage: leverageValue,
       entryPrice: effectiveEntryPrice,
-      stopLoss: orderStopLoss.trim() ? Number(orderStopLoss) : null,
-      takeProfit: orderTakeProfit.trim() ? Number(orderTakeProfit) : null,
+      stopLoss: getPositiveNumber(orderStopLoss),
+      takeProfit: getPositiveNumber(orderTakeProfit),
     });
   };
 
@@ -339,8 +441,8 @@ export default function ReplayPanel({
       <div className="pointer-events-auto flex flex-col gap-2 rounded-lg border border-slate-700 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur">
         <RailButton
           icon={Play}
-          active={activeGroup === 'replay' || isPlaying}
-          title="Replay Controls"
+          active={activeGroup === 'replay' || replayMode || isPlaying}
+          title={replayMode ? 'Replay Controls' : 'Start Replay'}
           onClick={() => toggleGroup('replay')}
         />
         <RailButton
@@ -367,6 +469,12 @@ export default function ReplayPanel({
       {activeGroup === 'replay' && (
         <div className="pointer-events-auto">
           <Flyout title="Replay" icon={Play} onClose={() => setActiveGroup(null)}>
+            {!replayMode && (
+              <ControlButton icon={Play} onClick={onTogglePlay} variant="primary" className="w-full">
+                Start Replay
+              </ControlButton>
+            )}
+
             <div className="grid grid-cols-3 gap-2">
               <ControlButton icon={SkipBack} onClick={onStepBackward} className="px-0" title="Back">
                 <span className="sr-only">Back</span>
@@ -385,7 +493,7 @@ export default function ReplayPanel({
 
             <div className="grid grid-cols-2 gap-2">
               <ControlButton icon={RotateCcw} onClick={onResetReplay} variant="danger">
-                Reset
+                {replayMode ? 'Reset' : 'Go Latest'}
               </ControlButton>
               <ControlButton
                 icon={LocateFixed}
@@ -393,7 +501,7 @@ export default function ReplayPanel({
                 active={followReplay}
                 variant={followReplay ? 'success' : 'neutral'}
               >
-                {followReplay ? 'Following' : 'Follow'}
+                {replayMode && followReplay ? 'Following' : 'Follow'}
               </ControlButton>
             </div>
 
@@ -408,7 +516,9 @@ export default function ReplayPanel({
             </ControlButton>
 
             <div className="flex h-8 items-center justify-center rounded-md border border-gray-700 px-2 text-xs text-gray-300">
-              Candle {Math.min(replayIndex + 1, candleCount)} / {candleCount}
+              {replayMode
+                ? `Candle ${Math.min(replayIndex + 1, candleCount)} / ${candleCount}`
+                : `Live candles ${candleCount}`}
             </div>
 
             <div className="space-y-2 border-t border-slate-800 pt-3">
@@ -475,22 +585,50 @@ export default function ReplayPanel({
         <div className="pointer-events-auto">
           <Flyout title="Backtest Account" icon={Wallet} onClose={() => setActiveGroup(null)}>
             <div className="grid grid-cols-2 gap-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
+                  Currency
+                </span>
+                <select
+                  value={displayCurrency}
+                  onChange={(event) => handleDisplayCurrencyChange(event.target.value)}
+                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                >
+                  <option value="USDT">{quoteCurrency}</option>
+                  <option value="PHP">PHP</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
+                  PHP / {quoteCurrency}
+                </span>
+                <input
+                  value={phpRate}
+                  onChange={(event) => setPhpRate(event.target.value)}
+                  inputMode="decimal"
+                  disabled={displayCurrency !== 'PHP'}
+                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none disabled:opacity-40"
+                />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
               <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
                 <div className="text-[10px] uppercase tracking-wide text-gray-500">Equity</div>
                 <div className="text-sm font-semibold text-white">
-                  {formatMoney(backtestMetrics.equity)} {backtestAccount?.quoteCurrency ?? 'USDT'}
+                  {formatAccountMoney(backtestMetrics.equity)}
                 </div>
               </div>
               <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
                 <div className="text-[10px] uppercase tracking-wide text-gray-500">Cash</div>
                 <div className="text-sm font-semibold text-white">
-                  {formatMoney(backtestMetrics.cashBalance)}
+                  {formatAccountMoney(backtestMetrics.cashBalance)}
                 </div>
               </div>
               <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
                 <div className="text-[10px] uppercase tracking-wide text-gray-500">Open PnL</div>
                 <div className={`text-sm font-semibold ${backtestMetrics.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {formatMoney(backtestMetrics.unrealizedPnl)}
+                  {formatAccountMoney(backtestMetrics.unrealizedPnl)}
                 </div>
               </div>
               <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
@@ -549,13 +687,23 @@ export default function ReplayPanel({
                   Short
                 </button>
               </div>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_72px_auto] gap-2">
                 <input
                   value={orderNotional}
                   onChange={(event) => setOrderNotional(event.target.value)}
                   inputMode="decimal"
-                  className="h-8 min-w-0 flex-1 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
-                  placeholder="USDT size"
+                  className="h-8 min-w-0 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                  placeholder={`${displayCurrency} margin`}
+                />
+                <input
+                  value={orderLeverage}
+                  onChange={(event) => setOrderLeverage(event.target.value)}
+                  inputMode="decimal"
+                  className={`h-8 min-w-0 rounded border bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500 ${
+                    isLeverageValid ? 'border-slate-600' : 'border-red-500'
+                  }`}
+                  placeholder="Lev"
+                  title="Leverage, 1x to 125x"
                 />
                 <ControlButton
                   icon={orderSide === 'long' ? TrendingUp : TrendingDown}
@@ -565,6 +713,11 @@ export default function ReplayPanel({
                 >
                   {isConditionalOrder ? 'Place' : 'Enter'}
                 </ControlButton>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-400">
+                <span>Margin {orderPlan?.margin ? formatAccountMoney(orderPlan.margin) : '---'}</span>
+                <span>Value {orderPlan?.positionNotional ? formatAccountMoney(orderPlan.positionNotional) : '---'}</span>
+                <span>Lev {isLeverageValid ? formatLeverage(leverageValue) : '---'}</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <label className="block">
@@ -609,8 +762,8 @@ export default function ReplayPanel({
                 </label>
               </div>
               <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-400">
-                <span>Risk {orderPlan?.riskAmount ? formatMoney(orderPlan.riskAmount) : '---'}</span>
-                <span>Reward {orderPlan?.rewardAmount ? formatMoney(orderPlan.rewardAmount) : '---'}</span>
+                <span>Risk {orderPlan?.riskAmount ? formatAccountMoney(orderPlan.riskAmount) : '---'}</span>
+                <span>Reward {orderPlan?.rewardAmount ? formatAccountMoney(orderPlan.rewardAmount) : '---'}</span>
                 <span>R/R {orderPlan?.rr ? orderPlan.rr.toFixed(2) : '---'}</span>
               </div>
             </div>
@@ -629,7 +782,9 @@ export default function ReplayPanel({
                       </div>
                       <div className="mb-2 grid grid-cols-2 gap-1 text-[11px] text-gray-400">
                         <span>Trigger {formatMoney(position.entryPrice)}</span>
-                        <span>Size {formatMoney(position.margin)}</span>
+                        <span>Margin {formatAccountMoney(position.margin)}</span>
+                        <span>Value {formatAccountMoney(position.notional ?? Number(position.margin) * Number(position.leverage ?? 1))}</span>
+                        <span>Lev {formatLeverage(position.leverage)}</span>
                         <span>SL {position.stopLoss ? formatMoney(position.stopLoss) : '---'}</span>
                         <span>TP {position.takeProfit ? formatMoney(position.takeProfit) : '---'}</span>
                       </div>
@@ -667,12 +822,14 @@ export default function ReplayPanel({
                             {position.symbol} {position.side.toUpperCase()}
                           </span>
                           <span className={livePnl >= 0 ? 'text-xs text-emerald-400' : 'text-xs text-red-400'}>
-                            {formatMoney(livePnl)}
+                            {formatAccountMoney(livePnl)}
                           </span>
                         </div>
                         <div className="mb-2 grid grid-cols-2 gap-1 text-[11px] text-gray-400">
                           <span>Entry {formatMoney(position.entryPrice)}</span>
-                          <span>Size {formatMoney(position.margin)}</span>
+                          <span>Margin {formatAccountMoney(position.margin)}</span>
+                          <span>Value {formatAccountMoney(position.notional ?? Number(position.margin) * Number(position.leverage ?? 1))}</span>
+                          <span>Lev {formatLeverage(position.leverage)}</span>
                           <span>SL {position.stopLoss ? formatMoney(position.stopLoss) : '---'}</span>
                           <span>TP {position.takeProfit ? formatMoney(position.takeProfit) : '---'}</span>
                         </div>
@@ -714,7 +871,7 @@ export default function ReplayPanel({
                         {trade.action.toUpperCase()} {trade.side.toUpperCase()} {trade.symbol}
                       </span>
                       <span className={Number(trade.pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                        {trade.pnl == null ? formatMoney(trade.notional) : formatMoney(trade.pnl)}
+                        {trade.pnl == null ? formatAccountMoney(trade.notional) : formatAccountMoney(trade.pnl)}
                       </span>
                     </div>
                   ))
