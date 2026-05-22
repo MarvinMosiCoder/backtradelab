@@ -317,7 +317,7 @@ Pending entries are checked against the current replay candle high/low. If `low 
 
 As replay advances, open positions are checked against the current candle high/low. A long closes at SL when `low <= stopLoss`, or at TP when `high >= takeProfit`; a short closes at SL when `high >= stopLoss`, or at TP when `low <= takeProfit`. The entry candle is skipped so a newly opened trade is not closed by price movement that happened before the simulated entry. If SL and TP are both inside the same candle, SL is treated as hit first because the intrabar path is unknown from OHLC data.
 
-Paper futures trading treats the entered size as margin/collateral. Leverage can be set from `1x` to `125x`; quantity, risk, reward, PnL, and fees are calculated from `margin * leverage`, while only margin plus entry fee is reserved from cash. The simulated taker fee is `0.04%` on leveraged entry/exit notional. Closing returns margin plus or minus gross PnL and charges the exit fee.
+Paper futures trading treats the entered size as margin/collateral. Leverage can be set from `1x` to `125x`; quantity, risk, reward, PnL, and fees are calculated from `margin * leverage`, while only margin plus entry fee is reserved from cash. If the requested margin is within the cash balance but the entry fee would push required cash over the balance, the entry margin is reduced slightly so the fee fits inside available cash. The simulated taker fee is `0.04%` on leveraged entry/exit notional. Closing returns margin plus or minus gross PnL and charges the exit fee.
 
 | Route | Purpose |
 |-------|---------|

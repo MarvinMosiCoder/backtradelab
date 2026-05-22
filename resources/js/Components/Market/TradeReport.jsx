@@ -10,6 +10,20 @@ import {
 } from 'lucide-react';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_LABELS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 function formatMoney(value, digits = 2) {
   const number = Number(value);
@@ -154,6 +168,7 @@ export default function TradeReport({ refreshKey = 0 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [showCalendarPicker, setShowCalendarPicker] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState(() => (
     getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
@@ -240,6 +255,22 @@ export default function TradeReport({ refreshKey = 0 }) {
     month: 'long',
     year: 'numeric',
   });
+  const selectableYears = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = new Set([currentYear, monthDate.getFullYear()]);
+
+    report.trades.forEach((trade) => {
+      const date = getTradeDate(trade);
+      if (date && !Number.isNaN(date.getTime())) {
+        years.add(date.getFullYear());
+      }
+    });
+
+    const minYear = Math.min(currentYear - 5, ...years);
+    const maxYear = Math.max(currentYear + 1, ...years);
+
+    return Array.from({ length: maxYear - minYear + 1 }, (_, index) => maxYear - index);
+  }, [monthDate, report.trades]);
 
   const summary = report.summary ?? {};
   const quoteCurrency = report.account?.quoteCurrency ?? 'USDT';
@@ -258,6 +289,15 @@ export default function TradeReport({ refreshKey = 0 }) {
   const goToCurrentMonth = () => {
     const today = new Date();
     setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    setShowCalendarPicker(false);
+  };
+
+  const setCalendarMonth = (month) => {
+    setMonthDate((current) => new Date(current.getFullYear(), Number(month), 1));
+  };
+
+  const setCalendarYear = (year) => {
+    setMonthDate((current) => new Date(Number(year), current.getMonth(), 1));
   };
 
   return (
@@ -325,7 +365,7 @@ export default function TradeReport({ refreshKey = 0 }) {
 
       <div className="grid gap-4 px-4 pb-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.4fr)]">
         <section className="rounded-lg border border-slate-800 bg-slate-900/70">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
             <button
               type="button"
               onClick={() => moveMonth(-1)}
@@ -337,8 +377,9 @@ export default function TradeReport({ refreshKey = 0 }) {
             </button>
             <button
               type="button"
-              onClick={goToCurrentMonth}
+              onClick={() => setShowCalendarPicker((current) => !current)}
               className="rounded-md px-2 py-1 text-sm font-semibold text-white hover:bg-slate-800"
+              title="Select month and year"
             >
               {monthLabel}
             </button>
@@ -351,6 +392,35 @@ export default function TradeReport({ refreshKey = 0 }) {
             >
               <ChevronRight size={16} />
             </button>
+            {showCalendarPicker && (
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_96px_auto] gap-2 pt-2">
+                <select
+                  value={monthDate.getMonth()}
+                  onChange={(event) => setCalendarMonth(event.target.value)}
+                  className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none"
+                >
+                  {MONTH_LABELS.map((month, index) => (
+                    <option key={month} value={index}>{month}</option>
+                  ))}
+                </select>
+                <select
+                  value={monthDate.getFullYear()}
+                  onChange={(event) => setCalendarYear(event.target.value)}
+                  className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none"
+                >
+                  {selectableYears.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={goToCurrentMonth}
+                  className="h-8 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                >
+                  Today
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-7 gap-px border-b border-slate-800 bg-slate-800 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">

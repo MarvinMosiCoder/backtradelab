@@ -155,9 +155,8 @@ class MarketBacktestController extends Controller
 
         $account = DB::transaction(function () use ($request, $validated) {
             $account = $this->getOrCreateAccount($request, true);
-            $margin = round((float) $validated['notional'], 8);
+            $requestedMargin = round((float) $validated['notional'], 8);
             $leverage = round((float) ($validated['leverage'] ?? 1), 2);
-            $positionNotional = round($margin * $leverage, 8);
             $price = (float) $validated['price'];
             $stopLoss = isset($validated['stop_loss']) ? (float) $validated['stop_loss'] : null;
             $takeProfit = isset($validated['take_profit']) ? (float) $validated['take_profit'] : null;
@@ -195,27 +194,29 @@ class MarketBacktestController extends Controller
                 }
             }
 
-            $entryFee = round($positionNotional * self::FEE_RATE, 8);
-            $requiredCash = $margin + $entryFee;
+            $sizing = $this->resolveEntrySizing(
+                $requestedMargin,
+                $leverage,
+                $price,
+                (float) $account->cash_balance
+            );
 
-            if ((float) $account->cash_balance < $requiredCash) {
+            if (!$sizing) {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'Insufficient paper balance for this margin and entry fee.',
                 ], 422));
             }
 
-            $quantity = round($positionNotional / $price, 10);
-
             $position = MarketBacktestPosition::query()->create([
                 'market_backtest_account_id' => $account->id,
                 'symbol' => strtoupper($validated['symbol']),
                 'side' => $validated['side'],
-                'quantity' => $quantity,
+                'quantity' => $sizing['quantity'],
                 'entry_price' => $price,
-                'margin' => $margin,
+                'margin' => $sizing['margin'],
                 'leverage' => $leverage,
-                'entry_fee' => $entryFee,
+                'entry_fee' => $sizing['entryFee'],
                 'opened_at_time' => $validated['executed_at_time'] ?? null,
                 'stop_loss' => $stopLoss,
                 'take_profit' => $takeProfit,
@@ -232,16 +233,16 @@ class MarketBacktestController extends Controller
                 'symbol' => $position->symbol,
                 'side' => $position->side,
                 'action' => 'open',
-                'quantity' => $quantity,
+                'quantity' => $sizing['quantity'],
                 'price' => $price,
-                'notional' => $positionNotional,
-                'fee' => $entryFee,
+                'notional' => $sizing['positionNotional'],
+                'fee' => $sizing['entryFee'],
                 'executed_at_time' => $validated['executed_at_time'] ?? null,
             ]);
 
             $account->update([
-                'cash_balance' => round((float) $account->cash_balance - $requiredCash, 8),
-                'fees_paid' => round((float) $account->fees_paid + $entryFee, 8),
+                'cash_balance' => round((float) $account->cash_balance - $sizing['requiredCash'], 8),
+                'fees_paid' => round((float) $account->fees_paid + $sizing['entryFee'], 8),
             ]);
 
             return $account->fresh();
@@ -278,12 +279,15 @@ class MarketBacktestController extends Controller
             }
 
             $entryPrice = (float) $position->entry_price;
-            $margin = (float) $position->margin;
-            $positionNotional = $this->getPositionNotional($position);
-            $entryFee = round($positionNotional * self::FEE_RATE, 8);
-            $requiredCash = $margin + $entryFee;
+            $leverage = $this->getPositionLeverage($position);
+            $sizing = $this->resolveEntrySizing(
+                (float) $position->margin,
+                $leverage,
+                $entryPrice,
+                (float) $account->cash_balance
+            );
 
-            if ((float) $account->cash_balance < $requiredCash) {
+            if (!$sizing) {
                 abort(response()->json([
                     'success' => false,
                     'message' => 'Insufficient paper balance to trigger this pending entry.',
@@ -291,7 +295,9 @@ class MarketBacktestController extends Controller
             }
 
             $position->update([
-                'entry_fee' => $entryFee,
+                'quantity' => $sizing['quantity'],
+                'margin' => $sizing['margin'],
+                'entry_fee' => $sizing['entryFee'],
                 'opened_at_time' => $validated['executed_at_time'] ?? null,
                 'status' => 'open',
             ]);
@@ -302,16 +308,16 @@ class MarketBacktestController extends Controller
                 'symbol' => $position->symbol,
                 'side' => $position->side,
                 'action' => 'open',
-                'quantity' => (float) $position->quantity,
+                'quantity' => $sizing['quantity'],
                 'price' => $entryPrice,
-                'notional' => $positionNotional,
-                'fee' => $entryFee,
+                'notional' => $sizing['positionNotional'],
+                'fee' => $sizing['entryFee'],
                 'executed_at_time' => $validated['executed_at_time'] ?? null,
             ]);
 
             $account->update([
-                'cash_balance' => round((float) $account->cash_balance - $requiredCash, 8),
-                'fees_paid' => round((float) $account->fees_paid + $entryFee, 8),
+                'cash_balance' => round((float) $account->cash_balance - $sizing['requiredCash'], 8),
+                'fees_paid' => round((float) $account->fees_paid + $sizing['entryFee'], 8),
             ]);
 
             return $account->fresh();
@@ -451,6 +457,43 @@ class MarketBacktestController extends Controller
     private function getPositionNotional(MarketBacktestPosition $position): float
     {
         return round((float) $position->margin * $this->getPositionLeverage($position), 8);
+    }
+
+    private function resolveEntrySizing(float $requestedMargin, float $leverage, float $price, float $cashBalance): ?array
+    {
+        $margin = round($requestedMargin, 8);
+        $leverage = round(max($leverage, 1), 2);
+
+        if ($margin <= 0 || $price <= 0 || $cashBalance <= 0) {
+            return null;
+        }
+
+        $positionNotional = round($margin * $leverage, 8);
+        $entryFee = round($positionNotional * self::FEE_RATE, 8);
+        $requiredCash = round($margin + $entryFee, 8);
+
+        if ($cashBalance < $requiredCash) {
+            if ($margin > $cashBalance) {
+                return null;
+            }
+
+            $margin = round($cashBalance / (1 + ($leverage * self::FEE_RATE)), 8);
+            $positionNotional = round($margin * $leverage, 8);
+            $entryFee = round($positionNotional * self::FEE_RATE, 8);
+            $requiredCash = round($margin + $entryFee, 8);
+        }
+
+        if ($margin < 1 || $cashBalance < $requiredCash) {
+            return null;
+        }
+
+        return [
+            'margin' => $margin,
+            'positionNotional' => $positionNotional,
+            'entryFee' => $entryFee,
+            'requiredCash' => $requiredCash,
+            'quantity' => round($positionNotional / $price, 10),
+        ];
     }
 
     private function buildPayload(MarketBacktestAccount $account, ?string $symbol = null, ?float $price = null): array

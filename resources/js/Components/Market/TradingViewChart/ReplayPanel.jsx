@@ -209,12 +209,14 @@ function getBacktestMetrics(account, symbol, executionPrice) {
   };
 }
 
-function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, leverage }) {
+function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, leverage, cashBalance, feeRate }) {
   const entry = Number(entryPrice);
   const stop = Number(stopLoss);
   const target = Number(takeProfit);
-  const margin = Number(notional);
+  const requestedMargin = Number(notional);
+  let margin = requestedMargin;
   const leverageValue = Number(leverage);
+  const feeRateValue = Number.isFinite(Number(feeRate)) ? Number(feeRate) : 0.0004;
   const positionNotional =
     Number.isFinite(margin) && margin > 0 && Number.isFinite(leverageValue) && leverageValue > 0
       ? margin * leverageValue
@@ -222,6 +224,25 @@ function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, levera
 
   if (!Number.isFinite(entry) || entry <= 0) {
     return null;
+  }
+
+  let effectivePositionNotional = positionNotional;
+  let entryFee = effectivePositionNotional ? effectivePositionNotional * feeRateValue : null;
+  let requiredCash = margin && entryFee != null ? margin + entryFee : null;
+  let adjustedForFee = false;
+  const availableCash = Number(cashBalance);
+
+  if (
+    Number.isFinite(availableCash) &&
+    availableCash > 0 &&
+    requiredCash > availableCash &&
+    requestedMargin <= availableCash
+  ) {
+    margin = availableCash / (1 + (leverageValue * feeRateValue));
+    effectivePositionNotional = margin * leverageValue;
+    entryFee = effectivePositionNotional * feeRateValue;
+    requiredCash = margin + entryFee;
+    adjustedForFee = true;
   }
 
   const riskPerUnit =
@@ -236,14 +257,18 @@ function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, levera
         ? target - entry
         : entry - target
       : null;
-  const quantity = positionNotional ? positionNotional / entry : null;
+  const quantity = effectivePositionNotional ? effectivePositionNotional / entry : null;
   const riskAmount = quantity && riskPerUnit && riskPerUnit > 0 ? quantity * riskPerUnit : null;
   const rewardAmount = quantity && rewardPerUnit && rewardPerUnit > 0 ? quantity * rewardPerUnit : null;
 
   return {
     margin: Number.isFinite(margin) && margin > 0 ? margin : null,
+    requestedMargin: Number.isFinite(requestedMargin) && requestedMargin > 0 ? requestedMargin : null,
     leverage: Number.isFinite(leverageValue) && leverageValue > 0 ? leverageValue : null,
-    positionNotional,
+    positionNotional: effectivePositionNotional,
+    entryFee,
+    requiredCash,
+    adjustedForFee,
     quantity,
     riskAmount,
     rewardAmount,
@@ -403,6 +428,7 @@ export default function ReplayPanel({
   const quoteNotional = displayToQuoteAmount(orderNotional, displayCurrency, normalizedPhpRate);
   const leverageValue = Number(orderLeverage);
   const isLeverageValid = Number.isFinite(leverageValue) && leverageValue >= 1 && leverageValue <= 125;
+  const feeRate = Number(backtestAccount?.feeRate ?? 0.0004);
   const orderPlan = getOrderPlan({
     side: orderSide,
     entryPrice: effectiveEntryPrice,
@@ -410,6 +436,8 @@ export default function ReplayPanel({
     takeProfit: orderTakeProfit,
     notional: quoteNotional,
     leverage: leverageValue,
+    cashBalance: backtestMetrics.cashBalance,
+    feeRate,
   });
   const canSubmitOrder =
     canTrade &&
@@ -719,6 +747,15 @@ export default function ReplayPanel({
                 <span>Value {orderPlan?.positionNotional ? formatAccountMoney(orderPlan.positionNotional) : '---'}</span>
                 <span>Lev {isLeverageValid ? formatLeverage(leverageValue) : '---'}</span>
               </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-400">
+                <span>Entry fee {orderPlan?.entryFee ? formatAccountMoney(orderPlan.entryFee) : '---'}</span>
+                <span>Need {orderPlan?.requiredCash ? formatAccountMoney(orderPlan.requiredCash) : '---'}</span>
+              </div>
+              {orderPlan?.adjustedForFee && (
+                <div className="rounded-md border border-amber-900 bg-amber-950/50 px-2 py-1 text-[11px] text-amber-200">
+                  Margin adjusted to include entry fee in available cash.
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-2">
                 <label className="block">
                   <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
