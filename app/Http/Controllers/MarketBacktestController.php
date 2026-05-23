@@ -85,6 +85,7 @@ class MarketBacktestController extends Controller
         $netPnl = round($positions->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
         $grossProfit = round($wins->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
         $grossLoss = round($losses->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
+        $lossNetPnl = $grossLoss;
         $fees = round($positions->sum(fn (MarketBacktestPosition $position) => (float) $position->entry_fee + (float) $position->exit_fee), 8);
 
         return response()->json([
@@ -103,6 +104,7 @@ class MarketBacktestController extends Controller
                 'netPnl' => $netPnl,
                 'grossProfit' => $grossProfit,
                 'grossLoss' => $grossLoss,
+                'lossNetPnl' => $lossNetPnl,
                 'fees' => $fees,
                 'averageWin' => $wins->count() ? round($grossProfit / $wins->count(), 8) : 0,
                 'averageLoss' => $losses->count() ? round($grossLoss / $losses->count(), 8) : 0,

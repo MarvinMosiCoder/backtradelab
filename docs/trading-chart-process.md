@@ -345,7 +345,7 @@ The report includes:
 
 | View | Purpose |
 |------|---------|
-| Summary cards | Net PnL, win rate, wins, losses, and fees |
+| Summary cards | Net PnL, loss net PnL, win rate, wins, losses, and fees |
 | Calendar | Daily PnL plus daily win/loss counts by close date, with month arrows and a click-open month/year selector |
 | Closed-trades table | Symbol, side, entry, exit, leverage, margin, leveraged value, fees, PnL, PnL percent, and win/loss result |
 

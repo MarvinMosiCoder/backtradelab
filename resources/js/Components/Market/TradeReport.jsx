@@ -350,12 +350,18 @@ export default function TradeReport({ refreshKey = 0 }) {
         </div>
       )}
 
-      <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6">
         <StatCard
           label="Net PnL"
           value={formatReportMoney(summary.netPnl)}
           tone={Number(summary.netPnl) >= 0 ? 'win' : 'loss'}
           icon={Number(summary.netPnl) >= 0 ? TrendingUp : TrendingDown}
+        />
+        <StatCard
+          label="Loss Net PnL"
+          value={formatReportMoney(summary.lossNetPnl ?? summary.grossLoss ?? 0)}
+          tone="loss"
+          icon={TrendingDown}
         />
         <StatCard label="Win Rate" value={formatPercent(summary.winRate)} />
         <StatCard label="Wins" value={summary.wins ?? 0} tone="win" />
