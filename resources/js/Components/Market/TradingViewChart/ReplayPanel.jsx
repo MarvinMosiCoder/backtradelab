@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BoxSelect,
+  ChevronDown,
   ChartNoAxesCombined,
   Crosshair,
   Gauge,
@@ -98,6 +99,23 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
   );
 }
 
+function TopMenuButton({ icon: Icon, children, active, disabled, onClick, className = '' }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        active ? 'bg-blue-600' : 'bg-slate-800 hover:bg-slate-700'
+      } ${className}`}
+    >
+      {Icon && <Icon size={14} className="shrink-0" />}
+      <span className="truncate">{children}</span>
+      <ChevronDown size={13} className="shrink-0 opacity-70" />
+    </button>
+  );
+}
+
 const TOOL_BUTTONS = [
   { type: 'line', label: 'Line', icon: Slash },
   { type: 'horizontal-ray', label: 'H Ray', icon: MoveRight },
@@ -114,6 +132,7 @@ const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
 }), {});
 
 const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'];
+const LINE_STYLE_TOOL_TYPES = ['line', 'horizontal-ray', 'rect'];
 const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect'];
 const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
 
@@ -122,6 +141,318 @@ function getToolLabel(type) {
     type
       ? type.charAt(0).toUpperCase() + type.slice(1)
       : ''
+  );
+}
+
+function TopToolEditorBar({
+  editorLabel,
+  editorType,
+  activeColor,
+  activeStrokeWidth,
+  activeLineStyle,
+  activeLabelText,
+  activeText,
+  activeLabelVertical,
+  activeLabelHorizontal,
+  canEditWidth,
+  canEditLineStyle,
+  canEditLabel,
+  canEditText,
+  canUsePresets,
+  presetItems,
+  presetNameDraft,
+  setPresetNameDraft,
+  selectedDrawing,
+  openMenu,
+  setOpenMenu,
+  onDrawingColorChange,
+  onDrawingWidthChange,
+  onDrawingLineStyleChange,
+  onDrawingLabelChange,
+  onApplyToolPreset,
+  onDeleteToolPreset,
+  onDeleteSelectedDrawing,
+  onSavePreset,
+}) {
+  const toggleMenu = (menu) => {
+    setOpenMenu((currentMenu) => (currentMenu === menu ? null : menu));
+  };
+
+  const menuPanelClass =
+    'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur';
+
+  return (
+    <div className="pointer-events-auto ml-2 max-w-[calc(100vw-5.5rem)] rounded-lg border border-slate-700 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex h-8 items-center gap-2 rounded-md bg-slate-900 px-2.5 text-xs font-semibold text-gray-200">
+          <Palette size={14} />
+          <span>{editorLabel || 'Tool'}</span>
+        </div>
+
+        <div className="relative">
+          <TopMenuButton
+            active={openMenu === 'color'}
+            onClick={() => toggleMenu('color')}
+            className="w-24 justify-start"
+          >
+            <span
+              className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/50"
+              style={{ backgroundColor: activeColor }}
+            />
+            Color
+          </TopMenuButton>
+          {openMenu === 'color' && (
+            <div className={menuPanelClass}>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Color</div>
+              <div className="grid grid-cols-7 gap-1.5">
+                {DRAWING_COLORS.map((color) => {
+                  const isActive = activeColor?.toLowerCase() === color.toLowerCase();
+
+                  return (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => {
+                        onDrawingColorChange(color);
+                        setOpenMenu(null);
+                      }}
+                      className={`h-7 w-7 rounded-full border ${
+                        isActive ? 'border-white ring-2 ring-blue-400' : 'border-gray-500'
+                      }`}
+                      style={{ backgroundColor: color }}
+                      title={color}
+                      aria-label={`Use color ${color}`}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {canEditWidth && (
+          <div className="relative">
+            <TopMenuButton active={openMenu === 'width'} onClick={() => toggleMenu('width')}>
+              {activeStrokeWidth}px
+            </TopMenuButton>
+            {openMenu === 'width' && (
+              <div className={menuPanelClass}>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Line Width</div>
+                <div className="grid grid-cols-6 gap-2">
+                  {DRAWING_WIDTHS.map((width) => (
+                    <button
+                      key={width}
+                      type="button"
+                      onClick={() => {
+                        onDrawingWidthChange(width);
+                        setOpenMenu(null);
+                      }}
+                      className={`flex h-8 items-center justify-center rounded border text-[11px] text-white ${
+                        activeStrokeWidth === width
+                          ? 'border-blue-400 bg-blue-600'
+                          : 'border-gray-600 bg-gray-700 hover:bg-gray-600'
+                      }`}
+                      title={`${width}px`}
+                    >
+                      <span
+                        className="block rounded-full bg-white"
+                        style={{ width: 18, height: Math.max(width, 1) }}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {canEditLineStyle && (
+          <div className="relative">
+            <TopMenuButton active={openMenu === 'style'} onClick={() => toggleMenu('style')}>
+              {activeLineStyle === 'dashed' ? 'Dashed' : 'Solid'}
+            </TopMenuButton>
+            {openMenu === 'style' && (
+              <div className={menuPanelClass}>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Line Style</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'solid', label: 'Solid', dash: false },
+                    { value: 'dashed', label: 'Dashed', dash: true },
+                  ].map((style) => (
+                    <button
+                      key={style.value}
+                      type="button"
+                      onClick={() => {
+                        onDrawingLineStyleChange(style.value);
+                        setOpenMenu(null);
+                      }}
+                      className={`flex h-9 items-center justify-center gap-2 rounded border px-2 text-xs font-medium text-white ${
+                        activeLineStyle === style.value
+                          ? 'border-blue-400 bg-blue-600'
+                          : 'border-gray-600 bg-gray-700 hover:bg-gray-600'
+                      }`}
+                    >
+                      <span
+                        className="h-px w-8 bg-white"
+                        style={style.dash ? {
+                          backgroundImage: 'linear-gradient(to right, #fff 0 55%, transparent 55% 100%)',
+                          backgroundSize: '8px 1px',
+                          backgroundColor: 'transparent',
+                        } : undefined}
+                      />
+                      {style.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {canEditLabel && (
+          <div className="relative">
+            <TopMenuButton active={openMenu === 'label'} onClick={() => toggleMenu('label')}>
+              Label
+            </TopMenuButton>
+            {openMenu === 'label' && (
+              <div className={menuPanelClass}>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Label</div>
+                <input
+                  value={activeLabelText}
+                  onChange={(event) => onDrawingLabelChange({ labelText: event.target.value })}
+                  placeholder={editorType === 'rect' ? 'Box text' : 'Line text'}
+                  className="mb-2 h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={activeLabelVertical}
+                    onChange={(event) => onDrawingLabelChange({ labelVertical: event.target.value })}
+                    className="h-8 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                    title="Vertical label position"
+                  >
+                    <option value="top">Top</option>
+                    <option value="middle">Middle</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                  <select
+                    value={activeLabelHorizontal}
+                    onChange={(event) => onDrawingLabelChange({ labelHorizontal: event.target.value })}
+                    className="h-8 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                    title="Horizontal label position"
+                  >
+                    <option value="left">Left</option>
+                    <option value="center">Center</option>
+                    <option value="right">Right</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {canEditText && (
+          <div className="relative">
+            <TopMenuButton active={openMenu === 'text'} onClick={() => toggleMenu('text')}>
+              Text
+            </TopMenuButton>
+            {openMenu === 'text' && (
+              <div className={menuPanelClass}>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Text</div>
+                <input
+                  value={activeText}
+                  onChange={(event) => onDrawingLabelChange({
+                    text: event.target.value,
+                    labelText: event.target.value,
+                  })}
+                  placeholder="Text note"
+                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {canUsePresets && (
+          <div className="relative">
+            <TopMenuButton active={openMenu === 'presets'} onClick={() => toggleMenu('presets')}>
+              Presets
+            </TopMenuButton>
+            {openMenu === 'presets' && (
+              <div className={menuPanelClass}>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Presets</div>
+                <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                  {presetItems.map((preset) => (
+                    <div
+                      key={preset.id ?? preset.name}
+                      className="grid grid-cols-[minmax(0,1fr)_32px] gap-1.5"
+                    >
+                      <ControlButton
+                        icon={MousePointer2}
+                        onClick={() => {
+                          onApplyToolPreset(editorType, preset);
+                          setOpenMenu(null);
+                        }}
+                        title={`Use ${preset.name}`}
+                        className="max-w-full justify-start"
+                      >
+                        {preset.name}
+                      </ControlButton>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteToolPreset(editorType, preset)}
+                        className="flex h-8 w-8 items-center justify-center rounded-md bg-red-950/70 text-red-200 hover:bg-red-900 hover:text-white"
+                        title={`Delete ${preset.name}`}
+                        aria-label={`Delete ${preset.name}`}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+
+                  {!presetItems.length && (
+                    <span className="text-[11px] text-gray-500">No saved presets</span>
+                  )}
+                </div>
+
+                {selectedDrawing && (
+                  <div className="mt-3 border-t border-slate-800 pt-3">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Save Preset</div>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                      <input
+                        value={presetNameDraft}
+                        onChange={(event) => setPresetNameDraft(event.target.value)}
+                        placeholder={`${editorLabel} preset name`}
+                        className="h-8 min-w-0 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+                      />
+                      <ControlButton
+                        icon={Save}
+                        onClick={onSavePreset}
+                        variant="success"
+                        disabled={!presetNameDraft.trim()}
+                      >
+                        Save
+                      </ControlButton>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {selectedDrawing && (
+          <button
+            type="button"
+            onClick={onDeleteSelectedDrawing}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-red-950/80 text-red-200 transition hover:bg-red-900 hover:text-white"
+            title="Delete selected drawing"
+            aria-label="Delete selected drawing"
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -302,6 +633,7 @@ export default function ReplayPanel({
   onToolChange,
   onDrawingColorChange,
   onDrawingWidthChange,
+  onDrawingLineStyleChange,
   onDrawingLabelChange,
   onSaveSelectedToolPreset,
   onApplyToolPreset,
@@ -320,6 +652,7 @@ export default function ReplayPanel({
   className = '',
 }) {
   const [activeGroup, setActiveGroup] = useState(null);
+  const [activeEditorMenu, setActiveEditorMenu] = useState(null);
   const [presetNameDraft, setPresetNameDraft] = useState('');
   const [orderType, setOrderType] = useState('market');
   const [orderSide, setOrderSide] = useState('long');
@@ -353,11 +686,13 @@ export default function ReplayPanel({
   )?.trim();
   const activeColor = selectedDrawing?.color ?? editorSettings.color ?? drawingColor;
   const activeStrokeWidth = selectedDrawing?.strokeWidth ?? editorSettings.strokeWidth ?? 1;
+  const activeLineStyle = selectedDrawing?.lineStyle ?? editorSettings.lineStyle ?? 'solid';
   const activeLabelText = selectedDrawing?.labelText ?? editorSettings.labelText ?? '';
   const activeText = selectedDrawing?.text ?? activeLabelText;
   const activeLabelVertical = selectedDrawing?.labelVertical ?? editorSettings.labelVertical ?? 'top';
   const activeLabelHorizontal = selectedDrawing?.labelHorizontal ?? editorSettings.labelHorizontal ?? 'center';
   const canEditWidth = WIDTH_TOOL_TYPES.includes(editorType);
+  const canEditLineStyle = LINE_STYLE_TOOL_TYPES.includes(editorType);
   const canEditLabel = LABEL_TOOL_TYPES.includes(editorType);
   const canEditText = editorType === 'text';
   const hasToolEditor = Boolean(editorType);
@@ -370,6 +705,10 @@ export default function ReplayPanel({
       setActiveGroup('tool-editor');
     }
   }, [selectedDrawingId, selectedDrawing, tool]);
+
+  useEffect(() => {
+    setActiveEditorMenu(null);
+  }, [editorType]);
 
   useEffect(() => {
     setPresetNameDraft(selectedPresetName ?? '');
@@ -588,22 +927,15 @@ export default function ReplayPanel({
               ))}
             </div>
 
-            <div className="grid grid-cols-2 gap-2 border-t border-slate-800 pt-3">
+            <div className="border-t border-slate-800 pt-3">
               <ControlButton
                 icon={Trash2}
                 onClick={onClearDrawings}
                 disabled={!drawings.length}
                 variant="danger"
+                className="w-full"
               >
                 Clear
-              </ControlButton>
-              <ControlButton
-                icon={Trash2}
-                onClick={onDeleteSelectedDrawing}
-                disabled={!selectedDrawingId}
-                variant="danger"
-              >
-                Delete
               </ControlButton>
             </div>
           </Flyout>
@@ -928,167 +1260,36 @@ export default function ReplayPanel({
       )}
 
       {activeGroup === 'tool-editor' && hasToolEditor && (
-        <div className="pointer-events-auto">
-          <Flyout title={`${editorLabel} Editor`} icon={Palette} onClose={() => setActiveGroup(null)}>
-            <div className="grid grid-cols-7 gap-1.5">
-              {DRAWING_COLORS.map((color) => {
-                const isActive = activeColor?.toLowerCase() === color.toLowerCase();
-
-                return (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => onDrawingColorChange(color)}
-                    className={`h-7 w-7 rounded-full border ${
-                      isActive ? 'border-white ring-2 ring-blue-400' : 'border-gray-500'
-                    }`}
-                    style={{ backgroundColor: color }}
-                    title={color}
-                    aria-label={`Use color ${color}`}
-                  />
-                );
-              })}
-            </div>
-
-            {canEditWidth && (
-              <div className="space-y-2 border-t border-slate-800 pt-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Width</div>
-                <div className="grid grid-cols-6 gap-2">
-                  {DRAWING_WIDTHS.map((width) => (
-                    <button
-                      key={width}
-                      type="button"
-                      onClick={() => onDrawingWidthChange(width)}
-                      className={`flex h-7 items-center justify-center rounded border text-[11px] text-white ${
-                        activeStrokeWidth === width
-                          ? 'border-blue-400 bg-blue-600'
-                          : 'border-gray-600 bg-gray-700 hover:bg-gray-600'
-                      }`}
-                      title={`${width}px`}
-                    >
-                      <span
-                        className="block rounded-full bg-white"
-                        style={{ width: 18, height: Math.max(width, 1) }}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {canEditLabel && (
-              <div className="space-y-2 border-t border-slate-800 pt-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Label</div>
-                <input
-                  value={activeLabelText}
-                  onChange={(event) => onDrawingLabelChange({ labelText: event.target.value })}
-                  placeholder={editorType === 'rect' ? 'Box text' : 'Line text'}
-                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={activeLabelVertical}
-                    onChange={(event) => onDrawingLabelChange({ labelVertical: event.target.value })}
-                    className="h-8 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
-                    title="Vertical label position"
-                  >
-                    <option value="top">Top</option>
-                    <option value="middle">Middle</option>
-                    <option value="bottom">Bottom</option>
-                  </select>
-                  <select
-                    value={activeLabelHorizontal}
-                    onChange={(event) => onDrawingLabelChange({ labelHorizontal: event.target.value })}
-                    className="h-8 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
-                    title="Horizontal label position"
-                  >
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
-                  </select>
-                </div>
-              </div>
-            )}
-
-            {canEditText && (
-              <div className="space-y-2 border-t border-slate-800 pt-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Text</div>
-                <input
-                  value={activeText}
-                  onChange={(event) => onDrawingLabelChange({
-                    text: event.target.value,
-                    labelText: event.target.value,
-                  })}
-                  placeholder="Text note"
-                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
-                />
-              </div>
-            )}
-
-            {canUsePresets && (
-              <div className="space-y-2 border-t border-slate-800 pt-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Presets</div>
-                <div className="space-y-1.5">
-                  {presetItems.map((preset) => (
-                    <div
-                      key={preset.id ?? preset.name}
-                      className="grid grid-cols-[minmax(0,1fr)_32px] gap-1.5"
-                    >
-                      <ControlButton
-                        icon={MousePointer2}
-                        onClick={() => onApplyToolPreset(editorType, preset)}
-                        title={`Use ${preset.name}`}
-                        className="max-w-full justify-start"
-                      >
-                        {preset.name}
-                      </ControlButton>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteToolPreset(editorType, preset)}
-                        className="flex h-8 w-8 items-center justify-center rounded-md bg-red-950/70 text-red-200 hover:bg-red-900 hover:text-white"
-                        title={`Delete ${preset.name}`}
-                        aria-label={`Delete ${preset.name}`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-
-                  {!presetItems.length && (
-                    <span className="text-[11px] text-gray-500">No saved presets</span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {selectedDrawing && canUsePresets && (
-              <div className="space-y-2 border-t border-slate-800 pt-3">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Save Preset</div>
-                <input
-                  value={presetNameDraft}
-                  onChange={(event) => setPresetNameDraft(event.target.value)}
-                  placeholder={`${editorLabel} preset name`}
-                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
-                />
-                <ControlButton
-                  icon={Save}
-                  onClick={handleSavePreset}
-                  variant="success"
-                  disabled={!presetNameDraft.trim()}
-                  className="w-full"
-                >
-                  Save Preset
-                </ControlButton>
-              </div>
-            )}
-
-            {!canEditWidth && !canEditLabel && !canEditText && !canUsePresets && (
-              <span className="text-[11px] text-gray-500">
-                Select or draw a supported tool to edit its style.
-              </span>
-            )}
-          </Flyout>
-        </div>
+        <TopToolEditorBar
+          editorLabel={editorLabel}
+          editorType={editorType}
+          activeColor={activeColor}
+          activeStrokeWidth={activeStrokeWidth}
+          activeLineStyle={activeLineStyle}
+          activeLabelText={activeLabelText}
+          activeText={activeText}
+          activeLabelVertical={activeLabelVertical}
+          activeLabelHorizontal={activeLabelHorizontal}
+          canEditWidth={canEditWidth}
+          canEditLineStyle={canEditLineStyle}
+          canEditLabel={canEditLabel}
+          canEditText={canEditText}
+          canUsePresets={canUsePresets}
+          presetItems={presetItems}
+          presetNameDraft={presetNameDraft}
+          setPresetNameDraft={setPresetNameDraft}
+          selectedDrawing={selectedDrawing}
+          openMenu={activeEditorMenu}
+          setOpenMenu={setActiveEditorMenu}
+          onDrawingColorChange={onDrawingColorChange}
+          onDrawingWidthChange={onDrawingWidthChange}
+          onDrawingLineStyleChange={onDrawingLineStyleChange}
+          onDrawingLabelChange={onDrawingLabelChange}
+          onApplyToolPreset={onApplyToolPreset}
+          onDeleteToolPreset={onDeleteToolPreset}
+          onDeleteSelectedDrawing={onDeleteSelectedDrawing}
+          onSavePreset={handleSavePreset}
+        />
       )}
 
       {activeGroup === 'tool-editor' && !hasToolEditor && (

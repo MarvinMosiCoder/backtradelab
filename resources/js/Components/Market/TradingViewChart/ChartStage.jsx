@@ -252,6 +252,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
           if (isLineLikeDrawing(d)) {
             const lineEnd = d.screen.rayEnd ?? d.screen.p2;
             const isUtilityTool = d.type === 'measure' || d.type === 'forecast';
+            const isDashedLine = d.lineStyle === 'dashed';
             const labelText = d.labelText?.trim();
             const labelPosition = labelText ? getLineLabelPosition(d) : null;
             const midpoint = {
@@ -275,7 +276,9 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
                         ? '8,5'
                         : d.type === 'measure'
                           ? '4,4'
-                          : undefined
+                          : isDashedLine
+                            ? '8,5'
+                            : undefined
                   }
                 />
                 {d.type === 'forecast' && (
@@ -408,6 +411,11 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
             const rect = normalizeVisibleRect(d.screen.p1, d.screen.p2);
             const labelText = d.labelText?.trim();
             const labelPosition = labelText ? getBoxLabelPosition(rect, d) : null;
+            const rectDashArray = d.id.startsWith('temp-')
+              ? '5,5'
+              : d.lineStyle === 'dashed'
+                ? '8,5'
+                : undefined;
 
             return (
               <g key={d.id}>
@@ -423,7 +431,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
                   }
                   stroke={stroke}
                   strokeWidth={strokeWidth}
-                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
+                  strokeDasharray={rectDashArray}
                   rx={4}
                 />
                 {labelText && !d.id.startsWith('temp-') && (

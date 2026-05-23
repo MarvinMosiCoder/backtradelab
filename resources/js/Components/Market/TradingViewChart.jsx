@@ -382,6 +382,10 @@ export default function TradingViewReplayChart({
       settings.strokeWidth = Number(drawing.strokeWidth);
     }
 
+    if (drawing.lineStyle) {
+      settings.lineStyle = drawing.lineStyle;
+    }
+
     if (typeof drawing.labelText === 'string') {
       settings.labelText = drawing.labelText;
     }
@@ -1302,6 +1306,68 @@ export default function TradingViewReplayChart({
     };
   }, [replayMode, isPlaying, replayIndex, allCandles.length, playbackSpeed]);
 
+  const getKeyboardPriceStep = useCallback(() => {
+    const series = candleSeriesRef.current;
+    const height = overlaySize.height || CHART_HEIGHT;
+
+    if (series && height > 0) {
+      const middleY = height / 2;
+      const priceAtMiddle = series.coordinateToPrice(middleY);
+      const priceAtOffset = series.coordinateToPrice(Math.max(0, middleY - 8));
+      const step = Math.abs(Number(priceAtOffset) - Number(priceAtMiddle));
+
+      if (Number.isFinite(step) && step > 0) {
+        return step;
+      }
+    }
+
+    const visibleCandles = visibleCandlesRef.current.length
+      ? visibleCandlesRef.current
+      : allCandles;
+    const highs = visibleCandles.map((candle) => Number(candle.high)).filter(Number.isFinite);
+    const lows = visibleCandles.map((candle) => Number(candle.low)).filter(Number.isFinite);
+    const high = highs.length ? Math.max(...highs) : 0;
+    const low = lows.length ? Math.min(...lows) : 0;
+    const range = high - low;
+
+    return range > 0 ? range / 100 : 1;
+  }, [allCandles, overlaySize.height]);
+
+  const handleNudgeSelectedDrawing = useCallback((key, multiplier = 1) => {
+    const selectedId = selectedDrawingIdRef.current;
+    if (!selectedId) return false;
+
+    const selected = drawingsRef.current.find((drawing) => drawing.id === selectedId);
+    if (!selected) return false;
+
+    const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+    const priceStep = getKeyboardPriceStep();
+    let deltaLogical = 0;
+    let deltaTime = 0;
+    let deltaPrice = 0;
+
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+      deltaLogical = (key === 'ArrowLeft' ? -1 : 1) * multiplier;
+      deltaTime = intervalSeconds * deltaLogical;
+    }
+
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      deltaPrice = (key === 'ArrowUp' ? 1 : -1) * priceStep * multiplier;
+    }
+
+    if (!deltaTime && !deltaPrice && !deltaLogical) return false;
+
+    const next = drawingsRef.current.map((drawing) => (
+      drawing.id === selectedId
+        ? offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical)
+        : drawing
+    ));
+
+    saveDrawings(next);
+    setSelectedDrawingId(selectedId);
+    return true;
+  }, [getKeyboardPriceStep, saveDrawings, timeframe]);
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       const target = event.target;
@@ -1315,7 +1381,32 @@ export default function TradingViewReplayChart({
 
       if (event.code === 'Space') {
         event.preventDefault();
-        setIsSpacePressed(true);
+
+        if (!event.repeat) {
+          if (!replayMode) {
+            const nextIndex = Math.min(
+              Math.max(0, Math.floor(allCandles.length * 0.3)),
+              Math.max(0, allCandles.length - 1)
+            );
+
+            setReplayMode(true);
+            setFollowReplay(true);
+            setReplayIndex(nextIndex);
+            setSelectedReplayPrice(allCandles[nextIndex]?.close ?? null);
+            setIsReplayPricePickActive(false);
+            setIsPlaying(true);
+          } else if (replayIndex < allCandles.length - 1) {
+            setIsPlaying((prev) => !prev);
+          }
+        }
+      }
+
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        const multiplier = event.shiftKey ? 5 : 1;
+
+        if (handleNudgeSelectedDrawing(event.key, multiplier)) {
+          event.preventDefault();
+        }
       }
 
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingIdRef.current) {
@@ -1351,7 +1442,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [saveDrawings]);
+  }, [allCandles, handleNudgeSelectedDrawing, replayIndex, replayMode, saveDrawings]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -1429,6 +1520,7 @@ export default function TradingViewReplayChart({
             start: coords,
             end: coords,
             strokeWidth: savedToolSettings.strokeWidth ?? 1,
+            lineStyle: savedToolSettings.lineStyle ?? 'solid',
             color: savedToolSettings.color ?? drawingColorRef.current,
             labelText: savedToolSettings.labelText ?? '',
             labelVertical: savedToolSettings.labelVertical ?? 'top',
@@ -1444,6 +1536,7 @@ export default function TradingViewReplayChart({
             start: currentTemp.start,
             end: endPoint,
             strokeWidth: currentTemp.strokeWidth ?? 1,
+            lineStyle: currentTemp.lineStyle ?? 'solid',
             color: currentTemp.color ?? drawingColorRef.current,
             labelText: currentTemp.labelText ?? '',
             labelVertical: currentTemp.labelVertical ?? 'top',
@@ -1975,6 +2068,35 @@ export default function TradingViewReplayChart({
       return {
         ...drawing,
         strokeWidth,
+      };
+    });
+
+    saveDrawings(next);
+  };
+
+  const handleDrawingLineStyleChange = (lineStyle) => {
+    const selectedId = selectedDrawingIdRef.current;
+    const selected = drawingsRef.current.find((drawing) => drawing.id === selectedId);
+    const targetType = selected?.type ?? tempDrawingRef.current?.type ?? toolRef.current;
+    const normalizedStyle = lineStyle === 'dashed' ? 'dashed' : 'solid';
+
+    if (!targetType) return;
+
+    saveToolSettingsForType(targetType, { lineStyle: normalizedStyle });
+
+    if (tempDrawingRef.current?.type === targetType) {
+      setTempDrawing((prev) => (prev ? { ...prev, lineStyle: normalizedStyle } : prev));
+    }
+
+    if (!selectedId) return;
+
+    const next = drawingsRef.current.map((drawing) => {
+      if (drawing.id !== selectedId) return drawing;
+      if (!isLineLikeDrawing(drawing) && drawing.type !== 'rect') return drawing;
+
+      return {
+        ...drawing,
+        lineStyle: normalizedStyle,
       };
     });
 
@@ -2585,6 +2707,7 @@ export default function TradingViewReplayChart({
             onToolChange={handleToolChange}
             onDrawingColorChange={handleDrawingColorChange}
             onDrawingWidthChange={handleDrawingWidthChange}
+            onDrawingLineStyleChange={handleDrawingLineStyleChange}
             onDrawingLabelChange={handleDrawingLabelChange}
             onSaveSelectedToolPreset={handleSaveSelectedToolPreset}
             onApplyToolPreset={handleApplyToolPreset}

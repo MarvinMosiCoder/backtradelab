@@ -58,7 +58,7 @@ External API
 | `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart |
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
 | `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, searchable add-symbol picker, timeframe, replay toggle, and price display |
-| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, paper backtest account controls, and the contextual tool style/preset editor |
+| `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a compact top tool editor for drawing styles and presets |
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
@@ -430,27 +430,27 @@ The selected-price line effect depends on `timeframe` and `visibleCandles.length
 
 ## Drawing Tools
 
-Drawing tools are available on the live chart and in replay mode. `TradingViewChart.jsx` renders `ChartStage.jsx` as the single chart workspace and overlays `ReplayPanel.jsx` as a compact left rail. Clicking a rail icon opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
+Drawing tools are available on the live chart and in replay mode. `TradingViewChart.jsx` renders `ChartStage.jsx` as the single chart workspace and overlays `ReplayPanel.jsx` as a compact left rail. Clicking the replay, tools, or backtest rail icons opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
 
 The rail currently has four main groups:
 
 | Group | Behavior |
 |-------|----------|
 | Replay | Start replay, back/play/forward, reset/go latest, follow, price picking, candle count, and playback speed |
-| Tools | Drawing tool selection plus clear/delete actions |
+| Tools | Drawing tool selection plus clear-all action |
 | Backtest Account | Paper account metrics, long/short entry, close buttons, and recent trades using the live price or replay execution price |
-| Tool Editor | Contextual color, width, label/text, and preset controls for the active tool or selected drawing |
+| Tool Editor | Compact top toolbar with dropdowns for color, width, line style, label/text, presets, and selected-drawing delete |
 
-The Tool Editor opens automatically after a tool is clicked or a drawing is selected. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type.
+The Tool Editor opens automatically after a tool is clicked or a drawing is selected. It appears across the top of the chart beside the rail instead of as a large left flyout. The color, width, line style, label/text, and preset buttons each open a compact dropdown list. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type. The selected drawing delete action lives in this top toolbar; the tools flyout keeps the broader clear-all action.
 
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
-| Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, color }` |
-| Horizontal Ray | Click anchor, click to finish | `{ type: 'horizontal-ray', start, end, strokeWidth, color }` |
+| Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, lineStyle, color }` |
+| Horizontal Ray | Click anchor, click to finish | `{ type: 'horizontal-ray', start, end, strokeWidth, lineStyle, color }` |
 | Long Position | Click entry, click target/time | `{ type: 'long-position', start, end, strokeWidth, color }` |
 | Short Position | Click entry, click target/time | `{ type: 'short-position', start, end, strokeWidth, color }` |
 | Forecast | Click start, click end | `{ type: 'forecast', start, end, strokeWidth, color }` |
-| Box | Click first corner, click opposite corner | `{ type: 'rect', start, end, strokeWidth, color }` |
+| Box | Click first corner, click opposite corner | `{ type: 'rect', start, end, strokeWidth, lineStyle, color }` |
 | Text | Click point, enter label | `{ type: 'text', point, text, color }` |
 
 After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool.
@@ -616,7 +616,7 @@ Resizing updates stored `time` and/or `price`, so resized drawings remain attach
 
 ### Stroke Width
 
-Selected line, long/short position, forecast, and box drawings show width controls in the contextual Tool Editor in `ReplayPanel.jsx`. When no drawing is selected, the same controls update the active tool's default width.
+Selected line, long/short position, forecast, and box drawings show width controls in the top Tool Editor in `ReplayPanel.jsx`. When no drawing is selected, the same controls update the active tool's default width.
 
 Available stroke widths:
 
@@ -626,9 +626,13 @@ Available stroke widths:
 
 New line, box, forecast, and position drawings default to the saved width for that tool type, falling back to `1px`. The selected `strokeWidth` is saved on the drawing object and persisted with the drawing.
 
+### Line Style
+
+Line, horizontal ray, and box drawings support a saved `lineStyle` value. The top Tool Editor shows a style dropdown with `Solid` and `Dashed`. New drawings default to the saved style for that tool type, falling back to `solid`. Forecast drawings keep their built-in dashed projection style.
+
 ### Drawing Labels
 
-Selected line-like drawings and boxes show label controls in the contextual Tool Editor in `ReplayPanel.jsx`. The label text is saved directly on the drawing, with vertical placement (`top`, `middle`, `bottom`) and horizontal placement (`left`, `center`, `right`). When only a supported tool is active, label edits become the defaults for the next drawing of that type. Selected standalone text drawings show an editable text input in the same panel. `ChartStage.jsx` renders labels and text on the overlay and keeps them attached to the drawing as the chart scrolls, zooms, or changes timeframe.
+Selected line-like drawings and boxes show label controls in the top Tool Editor in `ReplayPanel.jsx`. The label text is saved directly on the drawing, with vertical placement (`top`, `middle`, `bottom`) and horizontal placement (`left`, `center`, `right`). When only a supported tool is active, label edits become the defaults for the next drawing of that type. Selected standalone text drawings show an editable text input in the same toolbar. `ChartStage.jsx` renders labels and text on the overlay and keeps them attached to the drawing as the chart scrolls, zooms, or changes timeframe.
 
 ### Color
 
@@ -643,7 +647,10 @@ Line, forecast, box, text, and position drawings support a saved `color` value. 
 | `Escape` | Cancel temp drawing, close text input, clear active resize/drag, exit price pick |
 | `Delete` | Delete selected drawing |
 | `Backspace` | Delete selected drawing |
-| `Space` | Temporarily allow chart pan behavior and cancel active drag/resize on key up |
+| `Space` | Start replay if needed, then toggle play/pause |
+| `ArrowLeft` / `ArrowRight` | Move selected drawing one candle backward/forward |
+| `ArrowUp` / `ArrowDown` | Move selected drawing up/down by a small visible price step |
+| `Shift` + `Arrow` | Move selected drawing faster |
 
 Keyboard shortcuts are ignored while typing in inputs or editable elements.
 
@@ -656,7 +663,7 @@ Keyboard shortcuts are ignored while typing in inputs or editable elements.
 | Default | No drawing tool, no replay price pick | Native chart pan/zoom, select/move/resize drawings |
 | Drawing | Line, Long, Short, Forecast, Box, or Text selected | Place a new drawing |
 | Replay Price Pick | `Set Replay Price` armed | Next chart click picks replay candle and price |
-| Space Pan | Hold `Space` | Native chart panning remains available |
+| Replay Playback | Press `Space` | Start replay if needed, then toggle play/pause |
 
 `handleScroll` and `handleScale` are adjusted so drawing tools do not fight with native chart interaction.
 
@@ -724,7 +731,7 @@ The chart now includes:
 2. Database-backed market symbols through `/api/market-symbols`.
 3. Laravel/exchange candle data flow through `/api/klines`.
 4. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
-5. A single live/replay chart with a compact left rail and grouped flyouts for replay controls, drawing tools, paper backtest account controls, and contextual per-tool style/preset editing.
+5. A single live/replay chart with a compact left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
 7. Drawing tools for line, long/short position, forecast, box, and text on the live chart and in replay mode.
 8. Per-tool drawing colors, stroke widths, labels, presets, selection, moving, and resizing.
