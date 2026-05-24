@@ -30,6 +30,11 @@ class MarketBacktestAccount extends Model
         return $this->hasMany(MarketBacktestPosition::class);
     }
 
+    public function sessions()
+    {
+        return $this->hasMany(MarketBacktestSession::class);
+    }
+
     public function trades()
     {
         return $this->hasMany(MarketBacktestTrade::class);

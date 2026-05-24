@@ -76,11 +76,16 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/market-tool-settings', [MarketToolSettingController::class, 'update'])->name('market-tool-settings.update');
     Route::get('/market-backtest/account', [MarketBacktestController::class, 'show'])->name('market-backtest.show');
     Route::get('/market-backtest/report', [MarketBacktestController::class, 'report'])->name('market-backtest.report');
+    Route::get('/market-backtest/report/export', [MarketBacktestController::class, 'exportReport'])->name('market-backtest.report.export');
     Route::post('/market-backtest/reset', [MarketBacktestController::class, 'reset'])->name('market-backtest.reset');
+    Route::post('/market-backtest/sessions', [MarketBacktestController::class, 'startSession'])->name('market-backtest.sessions.start');
+    Route::post('/market-backtest/sessions/{session}/end', [MarketBacktestController::class, 'endSession'])->name('market-backtest.sessions.end');
     Route::post('/market-backtest/positions', [MarketBacktestController::class, 'openPosition'])->name('market-backtest.positions.open');
     Route::post('/market-backtest/positions/{position}/trigger', [MarketBacktestController::class, 'triggerPosition'])->name('market-backtest.positions.trigger');
     Route::post('/market-backtest/positions/{position}/cancel', [MarketBacktestController::class, 'cancelPosition'])->name('market-backtest.positions.cancel');
     Route::post('/market-backtest/positions/{position}/close', [MarketBacktestController::class, 'closePosition'])->name('market-backtest.positions.close');
+    Route::post('/market-backtest/positions/{position}/snapshot', [MarketBacktestController::class, 'uploadPositionSnapshot'])->name('market-backtest.positions.snapshot');
+    Route::put('/market-backtest/trades/{position}/journal', [MarketBacktestController::class, 'updateTradeJournal'])->name('market-backtest.trades.journal');
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/sidebar', [MenusController::class, 'sidebarMenu'])->name('sidebar');
     //USERS

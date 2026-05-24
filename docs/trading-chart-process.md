@@ -56,7 +56,10 @@ External API
 | File | Purpose |
 |------|---------|
 | `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart |
+| `resources/js/Pages/Market/TradeReportPage.jsx` | Trade reporting page that renders the standalone calendar module and PnL report table module |
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
+| `resources/js/Components/Market/TradeCalendar.jsx` | Standalone trade calendar module showing daily PnL and win/loss counts by close date |
+| `resources/js/Components/Market/TradeReport.jsx` | PnL report module with summary cards, CSV/JSON export, closed-trades table, snapshots, and journal editing |
 | `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, searchable add-symbol picker, timeframe, replay toggle, and price display |
 | `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a compact top tool editor for drawing styles and presets |
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
@@ -64,7 +67,7 @@ External API
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
 | `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
 | `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
-| `app/Http/Controllers/MarketBacktestController.php` | Loads paper account state, places market/conditional replay entries, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
+| `app/Http/Controllers/MarketBacktestController.php` | Loads paper account/session state, starts/ends backtest sessions, places market/conditional replay entries, updates trade journal notes/tags, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
 | `routes/api.php` | Defines `/api/market-symbols`, `/api/market-symbol-options`, and `/api/klines` |
 | `routes/web.php` | Defines authenticated `/market-drawings`, `/market-tool-settings`, and `/market-backtest/*` routes |
 | `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Binance/OKX/Bybit/BingX/MEXC symbol options, and fetches/normalizes candle data |
@@ -72,6 +75,7 @@ External API
 | `app/Models/MarketDrawing.php` | Eloquent model for per-user saved chart drawings |
 | `app/Models/MarketToolSetting.php` | Eloquent model for per-user reusable chart tool defaults |
 | `app/Models/MarketBacktestAccount.php` | Eloquent model for a user's paper backtest account |
+| `app/Models/MarketBacktestSession.php` | Eloquent model for named backtest sessions that group replay positions and trades |
 | `app/Models/MarketBacktestPosition.php` | Eloquent model for open/closed simulated positions |
 | `app/Models/MarketBacktestTrade.php` | Eloquent model for simulated trade history |
 | `database/migrations/2026_05_06_000001_create_market_symbols_table.php` | Creates the `market_symbols` table |
@@ -80,6 +84,9 @@ External API
 | `database/migrations/2026_05_13_000001_create_market_backtest_accounts_table.php` | Creates paper trading accounts |
 | `database/migrations/2026_05_13_000002_create_market_backtest_positions_table.php` | Creates simulated position records |
 | `database/migrations/2026_05_13_000003_create_market_backtest_trades_table.php` | Creates simulated trade history |
+| `database/migrations/2026_05_24_000001_create_market_backtest_sessions_table.php` | Creates backtest sessions and links positions/trades to sessions |
+| `database/migrations/2026_05_24_000002_add_journal_fields_to_market_backtest_positions.php` | Adds setup tags, freeform tags, reasons, mistake, emotion, and notes to closed position records |
+| `database/migrations/2026_05_24_000003_create_market_backtest_snapshots_table.php` | Stores entry/exit chart snapshot file links for backtest positions |
 
 ---
 
@@ -307,9 +314,15 @@ The frontend loads account state with:
 
 ```javascript
 axios.get('/market-backtest/account', {
-  params: { symbol, price: executionPrice },
+  params: { symbol, exchange, category: marketCategory, timeframe, price: executionPrice },
 });
 ```
+
+The account response includes `account.activeSession` when a session is active. If the account is opened with symbol/timeframe context and no active session exists, the backend creates one using a default name such as `BTCUSDT 15m Session`. The Wallet flyout also exposes `New` and `End` actions. Starting a new session ends any active session for the account, then creates a fresh active session for the current symbol, exchange, market category, and timeframe.
+
+New positions and their open/close trade rows store `market_backtest_session_id`. The Wallet flyout filters open positions, pending entries, and recent trades to the active session when one exists, so each session behaves like a focused backtest run while the underlying paper account balance remains shared.
+
+When a market entry is placed, a pending entry is placed, a pending entry triggers, or an open position closes, the chart attempts to capture the visible chart canvas and SVG drawing overlay as a PNG. Snapshots are uploaded to the public disk under `market-backtest-snapshots` and linked to the position as `entry` or `exit` snapshots. The Trade Report shows entry/exit snapshot links when they are available. The public storage link must exist for snapshot URLs to resolve in the browser.
 
 Replay orders can be placed as Market or Conditional entries. Market entries fill immediately at the current replay execution price, or at the optional manual entry override. Conditional entries require a trigger price and are stored as pending positions until a replay candle trades through that level. The ticket accepts margin, leverage, optional stop loss, and optional take profit levels. For long positions, SL must be below entry and TP must be above entry; for short positions, SL must be above entry and TP must be below entry. The panel shows estimated leveraged value, risk, reward, and R/R before entry.
 
@@ -323,13 +336,18 @@ Paper futures trading treats the entered size as margin/collateral. Leverage can
 |-------|---------|
 | `GET /market-backtest/account` | Load demo account, open positions, recent trades, and account metrics |
 | `GET /market-backtest/report` | Load closed-position win/loss report data for the report table and calendar |
+| `GET /market-backtest/report/export` | Download closed-position report data as CSV or JSON, including journal fields and snapshot URLs |
+| `POST /market-backtest/sessions` | End the current active session and start a new session for the current chart context |
+| `POST /market-backtest/sessions/{session}/end` | End an active session |
 | `POST /market-backtest/positions` | Place a market entry or pending conditional entry |
 | `POST /market-backtest/positions/{position}/trigger` | Trigger a pending conditional entry when replay price reaches the entry |
 | `POST /market-backtest/positions/{position}/cancel` | Cancel a pending conditional entry |
 | `POST /market-backtest/positions/{position}/close` | Close an open replay position at the current replay price |
+| `POST /market-backtest/positions/{position}/snapshot` | Upload an entry or exit chart snapshot image for a position |
+| `PUT /market-backtest/trades/{position}/journal` | Update setup tag, tags, entry/exit reasons, mistake, emotion, and journal notes on a closed position |
 | `POST /market-backtest/reset` | Reset the demo account back to the starting balance |
 
-`ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, pending entry cancel buttons, open position close buttons, and recent trades.
+`ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows the active session, New/End session actions, equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, pending entry cancel buttons, open position close buttons, account reset balance input, and recent trades.
 
 The Wallet flyout keeps its header visible and scrolls the account content internally. This keeps the full order ticket, pending entries, open positions, and recent trades reachable on smaller screens without pushing the panel outside the viewport.
 
@@ -337,17 +355,21 @@ The paper account remains internally quote-currency based, normally `USDT`. The 
 
 ### Trade Report
 
-`TradeReport.jsx` displays closed replay trades as an exchange-style history report. It is available from the sidebar at `/trade-report` through `resources/js/Pages/Market/TradeReportPage.jsx`.
+`TradeReportPage.jsx` displays reporting as two separate modules: `TradeCalendar.jsx` for daily calendar PnL and `TradeReport.jsx` for the PnL report table. It is available from the sidebar at `/trade-report`.
 
-The report uses `GET /market-backtest/report`, which reads closed `market_backtest_positions` for the authenticated user's active demo account. Closed positions are used instead of raw trade rows because each closed position contains the full entry, exit, margin, leverage, entry fee, exit fee, and realized PnL in one record.
+Both report modules use `GET /market-backtest/report`, which reads closed `market_backtest_positions` for the authenticated user's active demo account. Closed positions are used instead of raw trade rows because each closed position contains the full entry, exit, margin, leverage, entry fee, exit fee, and realized PnL in one record.
+
+Closed trades can be expanded inline from the report table to edit journal fields. The journal stores a primary setup tag, comma-separated freeform tags, entry reason, exit reason, mistake/improvement note, emotion, and general notes on the closed position. Saving calls `PUT /market-backtest/trades/{position}/journal` and updates the row without a full report reload.
+
+The report header includes CSV and JSON export actions. Exports call `GET /market-backtest/report/export` and include trade metrics, session IDs, journal fields, and entry/exit snapshot URLs.
 
 The report includes:
 
 | View | Purpose |
 |------|---------|
 | Summary cards | Net PnL, loss net PnL, win rate, wins, losses, and fees |
-| Calendar | Daily PnL plus daily win/loss counts by close date, with month arrows and a click-open month/year selector |
-| Closed-trades table | Symbol, side, entry, exit, leverage, margin, leveraged value, fees, PnL, PnL percent, and win/loss result |
+| Trade Calendar module | Daily PnL plus daily win/loss counts by close date, with month arrows and a click-open month/year selector |
+| PnL Report table | Symbol, side, entry, exit, leverage, margin, leveraged value, fees, PnL, PnL percent, snapshot links, journal summary/edit action, and win/loss result |
 
 The sidebar link is added in `resources/js/Components/Sidebar/SidebarAccordion.jsx` as a direct `Trade Report` navigation item. The report is intentionally separate from the chart page so the chart workspace stays focused on analysis and replay.
 

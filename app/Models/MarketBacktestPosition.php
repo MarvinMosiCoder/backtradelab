@@ -8,6 +8,7 @@ class MarketBacktestPosition extends Model
 {
     protected $fillable = [
         'market_backtest_account_id',
+        'market_backtest_session_id',
         'symbol',
         'side',
         'quantity',
@@ -23,6 +24,13 @@ class MarketBacktestPosition extends Model
         'stop_loss',
         'take_profit',
         'status',
+        'setup_tag',
+        'tags',
+        'entry_reason',
+        'exit_reason',
+        'mistake',
+        'emotion',
+        'journal_notes',
     ];
 
     protected $casts = [
@@ -36,6 +44,7 @@ class MarketBacktestPosition extends Model
         'exit_price' => 'decimal:8',
         'stop_loss' => 'decimal:8',
         'take_profit' => 'decimal:8',
+        'tags' => 'array',
     ];
 
     public function account()
@@ -43,8 +52,18 @@ class MarketBacktestPosition extends Model
         return $this->belongsTo(MarketBacktestAccount::class, 'market_backtest_account_id');
     }
 
+    public function session()
+    {
+        return $this->belongsTo(MarketBacktestSession::class, 'market_backtest_session_id');
+    }
+
     public function trades()
     {
         return $this->hasMany(MarketBacktestTrade::class);
+    }
+
+    public function snapshots()
+    {
+        return $this->hasMany(MarketBacktestSnapshot::class);
     }
 }

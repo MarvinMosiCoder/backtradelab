@@ -1,29 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
+  Download,
+  Pencil,
   RefreshCcw,
+  Save,
   TrendingDown,
   TrendingUp,
+  X,
 } from 'lucide-react';
 
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTH_LABELS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+const TRADES_PER_PAGE = 10;
 
 function formatMoney(value, digits = 2) {
   const number = Number(value);
@@ -90,16 +77,6 @@ function getTradeDate(trade) {
   return null;
 }
 
-function getDateKey(date) {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
 function formatTradeDate(trade) {
   const date = getTradeDate(trade);
   if (!date || Number.isNaN(date.getTime())) return '---';
@@ -110,24 +87,6 @@ function formatTradeDate(trade) {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-  });
-}
-
-function buildCalendarDays(monthDate) {
-  const year = monthDate.getFullYear();
-  const month = monthDate.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const start = new Date(year, month, 1 - firstDay.getDay());
-
-  return Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-
-    return {
-      date,
-      key: getDateKey(date),
-      isCurrentMonth: date.getMonth() === month,
-    };
   });
 }
 
@@ -163,16 +122,27 @@ function StatCard({ label, value, tone = 'neutral', icon: Icon }) {
   );
 }
 
+function normalizeTagText(value) {
+  return String(value ?? '')
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .join(', ');
+}
+
 export default function TradeReport({ refreshKey = 0 }) {
   const [report, setReport] = useState({ summary: {}, trades: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [showCalendarPicker, setShowCalendarPicker] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState(() => (
     getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
   const [phpRate, setPhpRate] = useState(() => getStoredValue('market-backtest-php-rate', '58'));
+  const [editingTradeId, setEditingTradeId] = useState(null);
+  const [journalDraft, setJournalDraft] = useState({});
+  const [journalSaving, setJournalSaving] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const loadReport = async () => {
     setLoading(true);
@@ -201,6 +171,10 @@ export default function TradeReport({ refreshKey = 0 }) {
   }, [refreshKey]);
 
   useEffect(() => {
+    setCurrentPage(1);
+  }, [refreshKey]);
+
+  useEffect(() => {
     try {
       localStorage.setItem('market-backtest-display-currency', displayCurrency);
     } catch {}
@@ -212,67 +186,25 @@ export default function TradeReport({ refreshKey = 0 }) {
     } catch {}
   }, [phpRate]);
 
-  const dailyStats = useMemo(() => {
-    const stats = {};
-
-    report.trades.forEach((trade) => {
-      const key = getDateKey(getTradeDate(trade));
-      if (!key) return;
-
-      if (!stats[key]) {
-        stats[key] = {
-          pnl: 0,
-          wins: 0,
-          losses: 0,
-          breakeven: 0,
-          trades: 0,
-        };
-      }
-
-      const day = stats[key];
-      const pnl = Number(trade.pnl ?? 0);
-
-      day.pnl += Number.isFinite(pnl) ? pnl : 0;
-      day.trades += 1;
-
-      if (pnl > 0) day.wins += 1;
-      else if (pnl < 0) day.losses += 1;
-      else day.breakeven += 1;
-    });
-
-    return stats;
-  }, [report.trades]);
-
-  const calendarDays = useMemo(() => buildCalendarDays(monthDate), [monthDate]);
-  const maxDailyAbsPnl = useMemo(() => {
-    return Math.max(
-      1,
-      ...Object.values(dailyStats).map((day) => Math.abs(Number(day.pnl ?? 0)))
-    );
-  }, [dailyStats]);
-
-  const monthLabel = monthDate.toLocaleDateString(undefined, {
-    month: 'long',
-    year: 'numeric',
-  });
-  const selectableYears = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const years = new Set([currentYear, monthDate.getFullYear()]);
-
-    report.trades.forEach((trade) => {
-      const date = getTradeDate(trade);
-      if (date && !Number.isNaN(date.getTime())) {
-        years.add(date.getFullYear());
-      }
-    });
-
-    const minYear = Math.min(currentYear - 5, ...years);
-    const maxYear = Math.max(currentYear + 1, ...years);
-
-    return Array.from({ length: maxYear - minYear + 1 }, (_, index) => maxYear - index);
-  }, [monthDate, report.trades]);
-
   const summary = report.summary ?? {};
+  const sortedTrades = useMemo(() => {
+    return [...report.trades].sort((a, b) => {
+      const aTime = Number(a.closedAtTime ?? 0);
+      const bTime = Number(b.closedAtTime ?? 0);
+
+      if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+        return bTime - aTime;
+      }
+
+      return new Date(b.updatedAt ?? b.createdAt ?? 0) - new Date(a.updatedAt ?? a.createdAt ?? 0);
+    });
+  }, [report.trades]);
+  const totalTrades = sortedTrades.length;
+  const totalPages = Math.max(Math.ceil(totalTrades / TRADES_PER_PAGE), 1);
+  const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
+  const pageStart = totalTrades ? (safeCurrentPage - 1) * TRADES_PER_PAGE : 0;
+  const pageEnd = Math.min(pageStart + TRADES_PER_PAGE, totalTrades);
+  const paginatedTrades = sortedTrades.slice(pageStart, pageEnd);
   const quoteCurrency = report.account?.quoteCurrency ?? 'USDT';
   const normalizedPhpRate = getPhpRate(phpRate);
   const formatReportMoney = (value, digits = 2) => formatDisplayMoney(
@@ -282,22 +214,85 @@ export default function TradeReport({ refreshKey = 0 }) {
     digits
   );
 
-  const moveMonth = (amount) => {
-    setMonthDate((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
+
+  const startJournalEdit = (trade) => {
+    setEditingTradeId(trade.id);
+    setJournalDraft({
+      setupTag: trade.setupTag ?? '',
+      tags: normalizeTagText((trade.tags ?? []).join(', ')),
+      entryReason: trade.entryReason ?? '',
+      exitReason: trade.exitReason ?? '',
+      mistake: trade.mistake ?? '',
+      emotion: trade.emotion ?? '',
+      journalNotes: trade.journalNotes ?? '',
+    });
   };
 
-  const goToCurrentMonth = () => {
-    const today = new Date();
-    setMonthDate(new Date(today.getFullYear(), today.getMonth(), 1));
-    setShowCalendarPicker(false);
+  const cancelJournalEdit = () => {
+    setEditingTradeId(null);
+    setJournalDraft({});
   };
 
-  const setCalendarMonth = (month) => {
-    setMonthDate((current) => new Date(current.getFullYear(), Number(month), 1));
+  const updateJournalDraft = (field, value) => {
+    setJournalDraft((current) => ({
+      ...current,
+      [field]: value,
+    }));
   };
 
-  const setCalendarYear = (year) => {
-    setMonthDate((current) => new Date(Number(year), current.getMonth(), 1));
+  const saveJournal = async (tradeId) => {
+    setJournalSaving(true);
+    setError('');
+
+    try {
+      const response = await axios.put(`/market-backtest/trades/${tradeId}/journal`, {
+        setup_tag: journalDraft.setupTag,
+        tags: String(journalDraft.tags ?? '')
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        entry_reason: journalDraft.entryReason,
+        exit_reason: journalDraft.exitReason,
+        mistake: journalDraft.mistake,
+        emotion: journalDraft.emotion,
+        journal_notes: journalDraft.journalNotes,
+      });
+      const updatedTrade = response.data?.trade;
+
+      if (updatedTrade) {
+        setReport((current) => ({
+          ...current,
+          trades: current.trades.map((trade) => (
+            trade.id === updatedTrade.id ? updatedTrade : trade
+          )),
+        }));
+      }
+
+      cancelJournalEdit();
+    } catch (err) {
+      setError(err.response?.data?.message ?? err.message ?? 'Failed to save journal');
+    } finally {
+      setJournalSaving(false);
+    }
+  };
+
+  const goToPage = (page) => {
+    setCurrentPage(Math.min(Math.max(page, 1), totalPages));
+    cancelJournalEdit();
+  };
+
+  const exportReport = (format) => {
+    const params = new URLSearchParams({
+      format,
+      limit: '5000',
+    });
+
+    window.location.href = `/market-backtest/report/export?${params.toString()}`;
   };
 
   return (
@@ -305,20 +300,37 @@ export default function TradeReport({ refreshKey = 0 }) {
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <CalendarDays size={16} />
             <span>Trade Win/Loss Report</span>
           </div>
           <p className="mt-1 text-xs text-slate-400">Closed replay trades, grouped like exchange history.</p>
         </div>
-        <button
-          type="button"
-          onClick={loadReport}
-          disabled={loading}
-          className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => exportReport('csv')}
+            className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+          >
+            <Download size={14} />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => exportReport('json')}
+            className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+          >
+            <Download size={14} />
+            JSON
+          </button>
+          <button
+            type="button"
+            onClick={loadReport}
+            disabled={loading}
+            className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+        </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="block">
             <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Currency</span>
@@ -369,114 +381,12 @@ export default function TradeReport({ refreshKey = 0 }) {
         <StatCard label="Fees" value={formatReportMoney(summary.fees)} />
       </div>
 
-      <div className="grid gap-4 px-4 pb-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.4fr)]">
-        <section className="rounded-lg border border-slate-800 bg-slate-900/70">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
-            <button
-              type="button"
-              onClick={() => moveMonth(-1)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-300 hover:bg-slate-800 hover:text-white"
-              title="Previous month"
-              aria-label="Previous month"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCalendarPicker((current) => !current)}
-              className="rounded-md px-2 py-1 text-sm font-semibold text-white hover:bg-slate-800"
-              title="Select month and year"
-            >
-              {monthLabel}
-            </button>
-            <button
-              type="button"
-              onClick={() => moveMonth(1)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-300 hover:bg-slate-800 hover:text-white"
-              title="Next month"
-              aria-label="Next month"
-            >
-              <ChevronRight size={16} />
-            </button>
-            {showCalendarPicker && (
-              <div className="grid w-full grid-cols-[minmax(0,1fr)_96px_auto] gap-2 pt-2">
-                <select
-                  value={monthDate.getMonth()}
-                  onChange={(event) => setCalendarMonth(event.target.value)}
-                  className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none"
-                >
-                  {MONTH_LABELS.map((month, index) => (
-                    <option key={month} value={index}>{month}</option>
-                  ))}
-                </select>
-                <select
-                  value={monthDate.getFullYear()}
-                  onChange={(event) => setCalendarYear(event.target.value)}
-                  className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none"
-                >
-                  {selectableYears.map((year) => (
-                    <option key={year} value={year}>{year}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={goToCurrentMonth}
-                  className="h-8 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
-                >
-                  Today
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="grid grid-cols-7 gap-px border-b border-slate-800 bg-slate-800 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            {DAY_LABELS.map((day) => (
-              <div key={day} className="bg-slate-900 px-1 py-2">{day}</div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7 gap-px bg-slate-800">
-            {calendarDays.map((item) => {
-              const day = dailyStats[item.key];
-              const pnl = Number(day?.pnl ?? 0);
-              const alpha = day ? Math.min(0.16 + (Math.abs(pnl) / maxDailyAbsPnl) * 0.42, 0.58) : 0;
-              const backgroundColor = !day
-                ? undefined
-                : pnl >= 0
-                  ? `rgba(16, 185, 129, ${alpha})`
-                  : `rgba(239, 68, 68, ${alpha})`;
-
-              return (
-                <div
-                  key={item.key}
-                  className={`min-h-[82px] bg-slate-950 p-2 ${item.isCurrentMonth ? '' : 'opacity-40'}`}
-                  style={{ backgroundColor }}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-1">
-                    <span className="text-xs font-semibold text-slate-300">{item.date.getDate()}</span>
-                    {day && <span className="text-[10px] text-slate-300">{day.trades}T</span>}
-                  </div>
-                  {day && (
-                    <div className="space-y-1">
-                      <div className={`text-xs font-semibold ${getPnlClass(pnl)}`}>
-                        {pnl > 0 ? '+' : ''}{formatReportMoney(pnl)}
-                      </div>
-                      <div className="text-[10px] text-slate-300">
-                        W {day.wins} / L {day.losses}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
+      <div className="px-4 pb-4">
         <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/70">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
             <div className="text-sm font-semibold">Closed Trades</div>
             <div className="text-xs text-slate-400">
-              {summary.totalTrades ?? 0} trades, {summary.breakeven ?? 0} breakeven
+              {totalTrades ? `${pageStart + 1}-${pageEnd} of ${totalTrades}` : '0 trades'}, {summary.breakeven ?? 0} breakeven
             </div>
           </div>
 
@@ -494,50 +404,195 @@ export default function TradeReport({ refreshKey = 0 }) {
                   <th className="px-3 py-2 text-right">Value</th>
                   <th className="px-3 py-2 text-right">Fee</th>
                   <th className="px-3 py-2 text-right">PnL</th>
+                  <th className="px-3 py-2">Snapshots</th>
+                  <th className="px-3 py-2">Journal</th>
                   <th className="px-3 py-2 text-right">Result</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {report.trades.length ? (
-                  report.trades.map((trade) => {
+                {paginatedTrades.length ? (
+                  paginatedTrades.map((trade) => {
                     const pnl = Number(trade.pnl ?? 0);
 
                     return (
-                      <tr key={trade.id} className="hover:bg-slate-800/60">
-                        <td className="whitespace-nowrap px-3 py-2 text-slate-300">{formatTradeDate(trade)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 font-semibold text-white">{trade.symbol}</td>
-                        <td className="whitespace-nowrap px-3 py-2">
-                          <span className={trade.side === 'long' ? 'text-emerald-300' : 'text-red-300'}>
-                            {String(trade.side ?? '').toUpperCase()}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.entryPrice)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.exitPrice)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatLeverage(trade.leverage)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.margin)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.notional)}</td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right text-slate-400">{formatReportMoney(trade.fee)}</td>
-                        <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold ${getPnlClass(pnl)}`}>
-                          {pnl > 0 ? '+' : ''}{formatReportMoney(pnl)}
-                          <span className="ml-1 text-[10px] text-slate-400">({formatPercent(trade.pnlPercent)})</span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-2 text-right">
-                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1 ${getResultClass(trade.result)}`}>
-                            {trade.result}
-                          </span>
-                        </td>
-                      </tr>
+                      <React.Fragment key={trade.id}>
+                        <tr className="hover:bg-slate-800/60">
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-300">{formatTradeDate(trade)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 font-semibold text-white">{trade.symbol}</td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            <span className={trade.side === 'long' ? 'text-emerald-300' : 'text-red-300'}>
+                              {String(trade.side ?? '').toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.entryPrice)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.exitPrice)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatLeverage(trade.leverage)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.margin)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.notional)}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-400">{formatReportMoney(trade.fee)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold ${getPnlClass(pnl)}`}>
+                            {pnl > 0 ? '+' : ''}{formatReportMoney(pnl)}
+                            <span className="ml-1 text-[10px] text-slate-400">({formatPercent(trade.pnlPercent)})</span>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2">
+                            <div className="flex gap-1">
+                              {trade.entrySnapshotUrl ? (
+                                <a
+                                  href={trade.entrySnapshotUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded bg-slate-800 px-2 py-1 text-[10px] font-semibold text-blue-200 hover:bg-slate-700"
+                                >
+                                  Entry
+                                </a>
+                              ) : (
+                                <span className="rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-600">Entry</span>
+                              )}
+                              {trade.exitSnapshotUrl ? (
+                                <a
+                                  href={trade.exitSnapshotUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded bg-slate-800 px-2 py-1 text-[10px] font-semibold text-blue-200 hover:bg-slate-700"
+                                >
+                                  Exit
+                                </a>
+                              ) : (
+                                <span className="rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-600">Exit</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="min-w-48 px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => editingTradeId === trade.id ? cancelJournalEdit() : startJournalEdit(trade)}
+                                className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-800 px-2 text-[11px] font-semibold text-white hover:bg-slate-700"
+                              >
+                                {editingTradeId === trade.id ? <X size={13} /> : <Pencil size={13} />}
+                                {editingTradeId === trade.id ? 'Close' : 'Edit'}
+                              </button>
+                              <div className="min-w-0">
+                                <div className="truncate text-[11px] font-semibold text-slate-200">
+                                  {trade.setupTag || 'No setup'}
+                                </div>
+                                <div className="truncate text-[10px] text-slate-500">
+                                  {(trade.tags ?? []).length ? trade.tags.join(', ') : 'No tags'}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1 ${getResultClass(trade.result)}`}>
+                              {trade.result}
+                            </span>
+                          </td>
+                        </tr>
+                        {editingTradeId === trade.id && (
+                          <tr className="bg-slate-950/70">
+                            <td colSpan={13} className="px-3 py-3">
+                              <div className="grid gap-3 md:grid-cols-3">
+                                <input
+                                  value={journalDraft.setupTag ?? ''}
+                                  onChange={(event) => updateJournalDraft('setupTag', event.target.value)}
+                                  className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-xs text-white outline-none"
+                                  placeholder="Setup tag"
+                                />
+                                <input
+                                  value={journalDraft.tags ?? ''}
+                                  onChange={(event) => updateJournalDraft('tags', event.target.value)}
+                                  className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-xs text-white outline-none"
+                                  placeholder="Tags, comma separated"
+                                />
+                                <input
+                                  value={journalDraft.emotion ?? ''}
+                                  onChange={(event) => updateJournalDraft('emotion', event.target.value)}
+                                  className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-xs text-white outline-none"
+                                  placeholder="Emotion"
+                                />
+                                <textarea
+                                  value={journalDraft.entryReason ?? ''}
+                                  onChange={(event) => updateJournalDraft('entryReason', event.target.value)}
+                                  className="min-h-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none"
+                                  placeholder="Entry reason"
+                                />
+                                <textarea
+                                  value={journalDraft.exitReason ?? ''}
+                                  onChange={(event) => updateJournalDraft('exitReason', event.target.value)}
+                                  className="min-h-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none"
+                                  placeholder="Exit reason"
+                                />
+                                <textarea
+                                  value={journalDraft.mistake ?? ''}
+                                  onChange={(event) => updateJournalDraft('mistake', event.target.value)}
+                                  className="min-h-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none"
+                                  placeholder="Mistake / improvement"
+                                />
+                                <textarea
+                                  value={journalDraft.journalNotes ?? ''}
+                                  onChange={(event) => updateJournalDraft('journalNotes', event.target.value)}
+                                  className="min-h-24 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none md:col-span-3"
+                                  placeholder="Journal notes"
+                                />
+                              </div>
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => saveJournal(trade.id)}
+                                  disabled={journalSaving}
+                                  className="inline-flex h-8 items-center gap-2 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                                >
+                                  <Save size={14} />
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelJournalEdit}
+                                  className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                                >
+                                  <X size={14} />
+                                  Cancel
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan={11} className="px-3 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={13} className="px-3 py-10 text-center text-sm text-slate-500">
                       No closed trades yet. Close a replay position to populate the report.
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 px-3 py-2">
+            <div className="text-xs text-slate-400">
+              Page {safeCurrentPage} of {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => goToPage(safeCurrentPage - 1)}
+                disabled={safeCurrentPage <= 1}
+                className="h-8 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => goToPage(safeCurrentPage + 1)}
+                disabled={safeCurrentPage >= totalPages}
+                className="h-8 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </section>
       </div>

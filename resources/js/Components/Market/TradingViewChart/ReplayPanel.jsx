@@ -651,6 +651,8 @@ export default function ReplayPanel({
   onDeleteToolPreset,
   onClearDrawings,
   onDeleteSelectedDrawing,
+  onStartBacktestSession,
+  onEndBacktestSession,
   symbol,
   executionPrice,
   backtestAccount,
@@ -672,6 +674,7 @@ export default function ReplayPanel({
   const [orderEntryPrice, setOrderEntryPrice] = useState('');
   const [orderStopLoss, setOrderStopLoss] = useState('');
   const [orderTakeProfit, setOrderTakeProfit] = useState('');
+  const [resetBalance, setResetBalance] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState(() => (
     getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
@@ -736,6 +739,12 @@ export default function ReplayPanel({
       localStorage.setItem('market-backtest-php-rate', phpRate);
     } catch {}
   }, [phpRate]);
+
+  useEffect(() => {
+    if (backtestAccount?.startingBalance != null) {
+      setResetBalance(String(Number(backtestAccount.startingBalance)));
+    }
+  }, [backtestAccount?.startingBalance]);
 
   const toggleGroup = (group) => {
     setActiveGroup((currentGroup) => (currentGroup === group ? null : group));
@@ -813,6 +822,22 @@ export default function ReplayPanel({
       stopLoss: getPositiveNumber(orderStopLoss),
       takeProfit: getPositiveNumber(orderTakeProfit),
     });
+  };
+  const resetBalanceValue = displayToQuoteAmount(resetBalance, displayCurrency, normalizedPhpRate);
+  const canResetAccount =
+    !isBacktestLoading &&
+    Number.isFinite(Number(resetBalanceValue)) &&
+    Number(resetBalanceValue) > 0;
+  const submitAccountReset = () => {
+    if (!canResetAccount) return;
+
+    const confirmed = window.confirm(
+      `Reset paper account to ${formatAccountMoney(resetBalanceValue)}? This deletes current positions and trade history.`
+    );
+
+    if (!confirmed) return;
+
+    onResetBacktestAccount(resetBalanceValue);
   };
 
   return (
@@ -981,6 +1006,39 @@ export default function ReplayPanel({
             onClose={() => setActiveGroup(null)}
             bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
           >
+            <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-500">Session</div>
+                  <div className="truncate text-xs font-semibold text-white">
+                    {backtestAccount?.activeSession?.name ?? 'No active session'}
+                  </div>
+                  {backtestAccount?.activeSession && (
+                    <div className="mt-0.5 text-[11px] text-gray-500">
+                      {backtestAccount.activeSession.symbol} {backtestAccount.activeSession.timeframe}
+                    </div>
+                  )}
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <ControlButton
+                    onClick={onStartBacktestSession}
+                    disabled={isBacktestLoading}
+                    className="h-7 px-2 text-[11px]"
+                  >
+                    New
+                  </ControlButton>
+                  <ControlButton
+                    onClick={onEndBacktestSession}
+                    disabled={isBacktestLoading || !backtestAccount?.activeSession}
+                    variant="warning"
+                    className="h-7 px-2 text-[11px]"
+                  >
+                    End
+                  </ControlButton>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
@@ -1258,17 +1316,33 @@ export default function ReplayPanel({
             </div>
 
             <div className="space-y-2 border-t border-slate-800 pt-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Recent Trades</div>
-                <button
-                  type="button"
-                  onClick={onResetBacktestAccount}
-                  disabled={isBacktestLoading}
-                  className="text-[11px] font-semibold text-red-300 hover:text-red-200 disabled:opacity-40"
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Account Reset</div>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <input
+                  value={resetBalance}
+                  onChange={(event) => setResetBalance(event.target.value)}
+                  inputMode="decimal"
+                  className={`h-8 min-w-0 rounded border bg-slate-900 px-2 text-xs text-white outline-none ${
+                    resetBalance && !canResetAccount ? 'border-red-500' : 'border-slate-600'
+                  }`}
+                  placeholder={`${displayCurrency} balance`}
+                />
+                <ControlButton
+                  icon={RotateCcw}
+                  onClick={submitAccountReset}
+                  disabled={!canResetAccount}
+                  variant="danger"
                 >
                   Reset
-                </button>
+                </ControlButton>
               </div>
+              <div className="text-[11px] text-gray-500">
+                Clears positions and trades, then sets starting cash.
+              </div>
+            </div>
+
+            <div className="space-y-2 border-t border-slate-800 pt-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Recent Trades</div>
               <div className="max-h-32 space-y-1 overflow-y-auto pr-1">
                 {backtestAccount?.trades?.length ? (
                   backtestAccount.trades.slice(0, 8).map((trade) => (

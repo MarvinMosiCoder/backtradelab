@@ -90,6 +90,67 @@ function getPositiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? number : null;
 }
 
+function loadImageFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/png', 0.92);
+  });
+}
+
+async function captureChartSnapshot(wrapper) {
+  if (!wrapper || typeof window === 'undefined') return null;
+
+  const bounds = wrapper.getBoundingClientRect();
+  const width = Math.max(Math.round(bounds.width), 1);
+  const height = Math.max(Math.round(bounds.height), 1);
+  const scale = Math.min(window.devicePixelRatio || 1, 2);
+  const output = document.createElement('canvas');
+  const context = output.getContext('2d');
+
+  if (!context) return null;
+
+  output.width = Math.round(width * scale);
+  output.height = Math.round(height * scale);
+  output.style.width = `${width}px`;
+  output.style.height = `${height}px`;
+  context.scale(scale, scale);
+  context.fillStyle = '#081631';
+  context.fillRect(0, 0, width, height);
+
+  const canvases = Array.from(wrapper.querySelectorAll('canvas'));
+  canvases.forEach((canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    context.drawImage(canvas, rect.left - bounds.left, rect.top - bounds.top, rect.width, rect.height);
+  });
+
+  const svgs = Array.from(wrapper.querySelectorAll('svg'));
+  for (const svg of svgs) {
+    const rect = svg.getBoundingClientRect();
+    const serialized = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+
+    try {
+      const image = await loadImageFromUrl(url);
+      context.drawImage(image, rect.left - bounds.left, rect.top - bounds.top, rect.width, rect.height);
+    } catch {
+      // Snapshot should still save the chart canvas if SVG overlay serialization fails.
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  return canvasToBlob(output);
+}
+
 export default function TradingViewReplayChart({
   initialSymbol = 'BTCUSDT',
   initialExchange = 'bingx',
@@ -343,6 +404,9 @@ export default function TradingViewReplayChart({
       const response = await axios.get('/market-backtest/account', {
         params: {
           symbol,
+          exchange,
+          category: marketCategory,
+          timeframe,
           ...(Number.isFinite(Number(price)) ? { price: Number(price) } : {}),
         },
         headers: { Accept: 'application/json' },
@@ -354,7 +418,7 @@ export default function TradingViewReplayChart({
     } finally {
       setIsBacktestLoading(false);
     }
-  }, [symbol]);
+  }, [exchange, marketCategory, symbol, timeframe]);
 
   useEffect(() => {
     if (!replayMode && currentPrice != null) {
@@ -2437,8 +2501,17 @@ export default function TradingViewReplayChart({
     setBacktestError('');
 
     try {
+      const previousPositionIds = new Set([
+        ...(backtestAccount?.openPositions ?? []).map((position) => position.id),
+        ...(backtestAccount?.pendingPositions ?? []).map((position) => position.id),
+      ]);
+      const snapshot = await captureChartSnapshot(wrapperRef.current);
       const response = await axios.post('/market-backtest/positions', {
         symbol,
+        session_id: backtestAccount?.activeSession?.id,
+        exchange,
+        category: marketCategory,
+        timeframe,
         side,
         order_type: orderType,
         notional,
@@ -2449,9 +2522,76 @@ export default function TradingViewReplayChart({
         ...(getPositiveNumber(takeProfit) != null ? { take_profit: getPositiveNumber(takeProfit) } : {}),
       });
 
-      setBacktestAccount(response.data?.account ?? null);
+      const nextAccount = response.data?.account ?? null;
+      setBacktestAccount(nextAccount);
+
+      const createdPosition = [
+        ...(nextAccount?.openPositions ?? []),
+        ...(nextAccount?.pendingPositions ?? []),
+      ].find((position) => !previousPositionIds.has(position.id));
+
+      if (createdPosition && snapshot) {
+        uploadBacktestSnapshot(createdPosition.id, 'entry', snapshot).catch(() => {});
+      }
     } catch (err) {
       setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to open position');
+    } finally {
+      setIsBacktestLoading(false);
+    }
+  };
+
+  const uploadBacktestSnapshot = async (positionId, type, snapshot) => {
+    if (!positionId || !snapshot) return;
+
+    const formData = new FormData();
+    formData.append('type', type);
+    formData.append('snapshot', snapshot, `${type}-snapshot.png`);
+
+    if (executionTime != null) {
+      formData.append('captured_at_time', executionTime);
+    }
+
+    await axios.post(`/market-backtest/positions/${positionId}/snapshot`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  };
+
+  const handleStartBacktestSession = async () => {
+    setIsBacktestLoading(true);
+    setBacktestError('');
+
+    try {
+      const response = await axios.post('/market-backtest/sessions', {
+        symbol,
+        exchange,
+        category: marketCategory,
+        timeframe,
+        started_at_time: executionTime,
+      });
+
+      setBacktestAccount(response.data?.account ?? null);
+    } catch (err) {
+      setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to start session');
+    } finally {
+      setIsBacktestLoading(false);
+    }
+  };
+
+  const handleEndBacktestSession = async () => {
+    const sessionId = backtestAccount?.activeSession?.id;
+    if (!sessionId) return;
+
+    setIsBacktestLoading(true);
+    setBacktestError('');
+
+    try {
+      const response = await axios.post(`/market-backtest/sessions/${sessionId}/end`, {
+        ended_at_time: executionTime,
+      });
+
+      setBacktestAccount(response.data?.account ?? null);
+    } catch (err) {
+      setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to end session');
     } finally {
       setIsBacktestLoading(false);
     }
@@ -2476,12 +2616,16 @@ export default function TradingViewReplayChart({
     }
 
     try {
+      const snapshot = await captureChartSnapshot(wrapperRef.current);
       const response = await axios.post(`/market-backtest/positions/${positionId}/trigger`, {
         price: triggerPrice,
         executed_at_time: entryTime,
       });
 
       setBacktestAccount(response.data?.account ?? null);
+      if (snapshot) {
+        uploadBacktestSnapshot(positionId, 'entry', snapshot).catch(() => {});
+      }
       return true;
     } catch (err) {
       setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to trigger pending entry');
@@ -2528,12 +2672,16 @@ export default function TradingViewReplayChart({
     }
 
     try {
+      const snapshot = await captureChartSnapshot(wrapperRef.current);
       const response = await axios.post(`/market-backtest/positions/${positionId}/close`, {
         price: exitPrice,
         executed_at_time: closeTime,
       });
 
       setBacktestAccount(response.data?.account ?? null);
+      if (snapshot) {
+        uploadBacktestSnapshot(positionId, 'exit', snapshot).catch(() => {});
+      }
       return true;
     } catch (err) {
       setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to close position');
@@ -2545,12 +2693,14 @@ export default function TradingViewReplayChart({
     }
   };
 
-  const handleResetBacktestAccount = async () => {
+  const handleResetBacktestAccount = async (startingBalance = null) => {
     setIsBacktestLoading(true);
     setBacktestError('');
 
     try {
-      const response = await axios.post('/market-backtest/reset');
+      const response = await axios.post('/market-backtest/reset', {
+        ...(getPositiveNumber(startingBalance) != null ? { starting_balance: getPositiveNumber(startingBalance) } : {}),
+      });
       setBacktestAccount(response.data?.account ?? null);
     } catch (err) {
       setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to reset backtest account');
@@ -2810,6 +2960,8 @@ export default function TradingViewReplayChart({
             onDeleteToolPreset={handleDeleteToolPreset}
             onClearDrawings={handleClearDrawings}
             onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
+            onStartBacktestSession={handleStartBacktestSession}
+            onEndBacktestSession={handleEndBacktestSession}
             onOpenBacktestPosition={handleOpenBacktestPosition}
             onCloseBacktestPosition={handleCloseBacktestPosition}
             onCancelBacktestPosition={handleCancelBacktestPosition}
