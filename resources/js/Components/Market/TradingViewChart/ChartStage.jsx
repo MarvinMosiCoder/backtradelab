@@ -36,6 +36,82 @@ function formatDuration(seconds) {
   return `${totalSeconds}s`;
 }
 
+const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const FIB_EXTENSION_LEVELS = [
+  0,
+  0.236,
+  0.382,
+  0.5,
+  0.618,
+  0.786,
+  1,
+  1.272,
+  1.414,
+  1.618,
+  2,
+  2.272,
+  2.414,
+  2.618,
+  3.618,
+  4.236,
+];
+
+const FIB_LEVEL_COLORS = {
+  0: '#787b86',
+  0.236: '#f23645',
+  0.382: '#ff9800',
+  0.5: '#ffeb3b',
+  0.618: '#4caf50',
+  0.786: '#089981',
+  1: '#2196f3',
+  1.272: '#2962ff',
+  1.414: '#673ab7',
+  1.618: '#9c27b0',
+  2: '#e91e63',
+  2.272: '#ff5252',
+  2.414: '#ff6d00',
+  2.618: '#00bcd4',
+  3.618: '#ab47bc',
+  4.236: '#7e57c2',
+};
+
+function isFibonacciDrawing(drawing) {
+  return ['fib-retracement', 'fib-extension'].includes(drawing?.type);
+}
+
+function formatFibLevel(level) {
+  return Number.isInteger(level) ? String(level) : String(level);
+}
+
+function getFibonacciLevels(drawing, overlayWidth) {
+  const levels = drawing.type === 'fib-extension'
+    ? FIB_EXTENSION_LEVELS
+    : FIB_RETRACEMENT_LEVELS;
+  const { p1, p2, p3 } = drawing.screen;
+  const anchor = drawing.type === 'fib-extension' ? (drawing.anchor ?? drawing.end) : drawing.start;
+  const anchorPoint = drawing.type === 'fib-extension' ? (p3 ?? p2) : p1;
+  const priceDelta = drawing.end.price - drawing.start.price;
+  const yDelta = p2.y - p1.y;
+  const leftX = Math.min(p1.x, p2.x, anchorPoint.x);
+  const rightX = drawing.type === 'fib-extension'
+    ? Math.max(anchorPoint.x, overlayWidth)
+    : Math.max(p1.x, p2.x);
+
+  return levels.map((level) => {
+    const price = anchor.price + (priceDelta * level);
+
+    return {
+      level,
+      price,
+      y: anchorPoint.y + (yDelta * level),
+      x1: leftX,
+      x2: rightX,
+      color: FIB_LEVEL_COLORS[level] ?? '#ffffff',
+      label: `${formatFibLevel(level)} ${formatPriceLabel(price)}`,
+    };
+  });
+}
+
 function getToolLabel(drawing) {
   const priceDelta = drawing.end.price - drawing.start.price;
   const percentDelta = drawing.start.price
@@ -210,6 +286,10 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
     if (!isHorizontalRayDrawing(selectedDrawing)) {
       resizeHandles.push(selectedDrawing.screen.p2);
     }
+
+    if (selectedDrawing.type === 'fib-extension' && selectedDrawing.screen.p3) {
+      resizeHandles.push(selectedDrawing.screen.p3);
+    }
   }
 
   if (isPositionDrawing(selectedDrawing)) {
@@ -259,6 +339,92 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
               x: (d.screen.p1.x + lineEnd.x) / 2,
               y: (d.screen.p1.y + lineEnd.y) / 2,
             };
+
+            if (isFibonacciDrawing(d)) {
+              const fibLevels = getFibonacciLevels(d, overlaySize.width);
+              const labelX = Math.min(
+                Math.max(Math.max(d.screen.p1.x, d.screen.p2.x, d.screen.p3?.x ?? 0) + 8, 8),
+                Math.max(overlaySize.width - 96, 8)
+              );
+
+              return (
+                <g key={d.id}>
+                  <line
+                    x1={d.screen.p1.x}
+                    y1={d.screen.p1.y}
+                    x2={d.screen.p2.x}
+                    y2={d.screen.p2.y}
+                    stroke={stroke}
+                    strokeWidth={Math.max(strokeWidth, 1)}
+                    strokeDasharray={d.id.startsWith('temp-') ? '5,5' : '4,4'}
+                    opacity="0.8"
+                  />
+                  {d.type === 'fib-extension' && d.screen.p3 && (
+                    <line
+                      x1={d.screen.p2.x}
+                      y1={d.screen.p2.y}
+                      x2={d.screen.p3.x}
+                      y2={d.screen.p3.y}
+                      stroke={stroke}
+                      strokeWidth={Math.max(strokeWidth, 1)}
+                      strokeDasharray="4,4"
+                      opacity="0.55"
+                    />
+                  )}
+                  {fibLevels.map((item) => (
+                    <g key={`${d.id}-${item.level}`}>
+                      <line
+                        x1={item.x1}
+                        y1={item.y}
+                        x2={item.x2}
+                        y2={item.y}
+                        stroke={item.color}
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={
+                          d.id.startsWith('temp-')
+                            ? '5,5'
+                            : isDashedLine
+                              ? '8,5'
+                              : undefined
+                        }
+                        opacity={item.level === 0 || item.level === 1 ? 0.95 : 0.72}
+                      />
+                      {!d.id.startsWith('temp-') && (
+                        <text
+                          x={labelX}
+                          y={item.y - 4}
+                          fill={item.color}
+                          fontSize="11"
+                          fontWeight="600"
+                          paintOrder="stroke"
+                          stroke="rgba(15, 23, 42, 0.95)"
+                          strokeWidth="4"
+                          strokeLinejoin="round"
+                        >
+                          {item.label}
+                        </text>
+                      )}
+                    </g>
+                  ))}
+                  {labelText && !d.id.startsWith('temp-') && (
+                    <text
+                      x={labelPosition.x}
+                      y={labelPosition.y}
+                      textAnchor={labelPosition.textAnchor}
+                      fill="#ffffff"
+                      fontSize="12"
+                      fontWeight="600"
+                      paintOrder="stroke"
+                      stroke="rgba(15, 23, 42, 0.95)"
+                      strokeWidth="4"
+                      strokeLinejoin="round"
+                    >
+                      {labelText}
+                    </text>
+                  )}
+                </g>
+              );
+            }
 
             return (
               <g key={d.id}>

@@ -234,11 +234,28 @@ function offsetPoint(point, deltaTime, deltaPrice, deltaLogical) {
 }
 
 export function isTwoPointDrawing(drawing) {
-  return ['line', 'horizontal-ray', 'rect', 'measure', 'forecast', 'long-position', 'short-position'].includes(drawing?.type);
+  return [
+    'line',
+    'horizontal-ray',
+    'fib-retracement',
+    'fib-extension',
+    'rect',
+    'measure',
+    'forecast',
+    'long-position',
+    'short-position',
+  ].includes(drawing?.type);
 }
 
 export function isLineLikeDrawing(drawing) {
-  return ['line', 'horizontal-ray', 'measure', 'forecast'].includes(drawing?.type);
+  return [
+    'line',
+    'horizontal-ray',
+    'fib-retracement',
+    'fib-extension',
+    'measure',
+    'forecast',
+  ].includes(drawing?.type);
 }
 
 export function isHorizontalRayDrawing(drawing) {
@@ -259,6 +276,10 @@ export function offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical) {
 
     if (drawing.stop) {
       nextDrawing.stop = offsetPoint(drawing.stop, deltaTime, deltaPrice, deltaLogical);
+    }
+
+    if (drawing.anchor) {
+      nextDrawing.anchor = offsetPoint(drawing.anchor, deltaTime, deltaPrice, deltaLogical);
     }
 
     return nextDrawing;

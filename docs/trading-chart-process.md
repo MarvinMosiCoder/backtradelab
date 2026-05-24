@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Market Analysis chart is a TradingView-style crypto chart built with React and `lightweight-charts`. It renders candlesticks and volume, supports replay mode, and includes local drawing tools for lines, boxes, long/short positions, forecasting, and text notes.
+The Market Analysis chart is a TradingView-style crypto chart built with React and `lightweight-charts`. It renders candlesticks and volume, supports replay mode, and includes local drawing tools for trend lines, Fibonacci retracement/extension, measurement, boxes, long/short positions, forecasting, and text notes.
 
 Chart symbols are stored in the database through `market_symbols`. Candle data comes from the Laravel API endpoint `/api/klines`, which fetches exchange kline data and returns normalized candles to the frontend.
 
@@ -293,9 +293,9 @@ axios.put('/market-tool-settings', {
 });
 ```
 
-When a drawing is completed, or when a selected drawing's color, width, label text, or label placement is changed, `TradingViewChart.jsx` updates the saved defaults for that tool type. If no drawing is selected, the contextual editor updates the active tool's defaults directly, so Line, Box, Forecast, Text, and position tools can each keep their own style. New tools of the same type inherit those saved settings, including line/box text placement and text-tool draft text. `localStorage` mirrors the settings as a fallback if the server request is unavailable.
+When a drawing is completed, or when a selected drawing's color, width, label text, or label placement is changed, `TradingViewChart.jsx` updates the saved defaults for that tool type. If no drawing is selected, the contextual editor updates the active tool's defaults directly, so line, Fibonacci, box, forecast, measure, text, and position tools can each keep their own style. New tools of the same type inherit those saved settings, including line/box/Fibonacci text placement and text-tool draft text. `localStorage` mirrors the settings as a fallback if the server request is unavailable.
 
-The same settings object also stores selectable presets by tool type under `settings.presets`. A selected text, box, line, forecast, long-position, or short-position drawing can be saved as a preset from the contextual editor in `ReplayPanel.jsx`. Example text presets can be `BOS`, `MSS`, `HH`, `HL`, `LH`, or `LL`. After saving, the preset appears when that tool type is active or selected. Clicking a preset applies its saved text, color, width, and label placement to the selected drawing, or makes it the default for the next drawing of that type. Each preset row also has a delete button that removes only that preset for the active tool type and persists the updated settings.
+The same settings object also stores selectable presets by tool type under `settings.presets`. A selected text, box, line, Fibonacci, forecast, measure, long-position, or short-position drawing can be saved as a preset from the contextual editor in `ReplayPanel.jsx`. Example text presets can be `BOS`, `MSS`, `HH`, `HL`, `LH`, or `LL`. After saving, the preset appears when that tool type is active or selected. Clicking a preset applies its saved text, color, width, and label placement to the selected drawing, or makes it the default for the next drawing of that type. Each preset row also has a delete button that removes only that preset for the active tool type and persists the updated settings.
 
 ---
 
@@ -432,14 +432,16 @@ The selected-price line effect depends on `timeframe` and `visibleCandles.length
 
 Drawing tools are available on the live chart and in replay mode. `TradingViewChart.jsx` renders `ChartStage.jsx` as the single chart workspace and overlays `ReplayPanel.jsx` as a compact left rail. Clicking the replay, tools, or backtest rail icons opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
 
-The rail currently has four main groups:
+The rail currently has four main flyout groups:
 
 | Group | Behavior |
 |-------|----------|
 | Replay | Start replay, back/play/forward, reset/go latest, follow, price picking, candle count, and playback speed |
-| Tools | Drawing tool selection plus clear-all action |
+| Tools | Grouped drawing tool selection plus clear-all action |
 | Backtest Account | Paper account metrics, long/short entry, close buttons, and recent trades using the live price or replay execution price |
 | Tool Editor | Compact top toolbar with dropdowns for color, width, line style, label/text, presets, and selected-drawing delete |
+
+The Tools flyout groups drawing tools as `Trend Lines`, `Finonacci`, `Forcasting`, `Geometic shape`, and `Annotation`.
 
 The Tool Editor opens automatically after a tool is clicked or a drawing is selected. It appears across the top of the chart beside the rail instead of as a large left flyout. The color, width, line style, label/text, and preset buttons each open a compact dropdown list. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type. The selected drawing delete action lives in this top toolbar; the tools flyout keeps the broader clear-all action.
 
@@ -447,15 +449,18 @@ The Tool Editor opens automatically after a tool is clicked or a drawing is sele
 |------|-----------|-------------|
 | Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, lineStyle, color }` |
 | Horizontal Ray | Click anchor, click to finish | `{ type: 'horizontal-ray', start, end, strokeWidth, lineStyle, color }` |
+| Fibonacci Retracement | Click start, click end | `{ type: 'fib-retracement', start, end, strokeWidth, lineStyle, color }` |
+| Trend-Based Fibonacci Extension | Click trend start, click trend end, click extension anchor | `{ type: 'fib-extension', start, end, anchor, strokeWidth, lineStyle, color }` |
 | Long Position | Click entry, click target/time | `{ type: 'long-position', start, end, strokeWidth, color }` |
 | Short Position | Click entry, click target/time | `{ type: 'short-position', start, end, strokeWidth, color }` |
 | Forecast | Click start, click end | `{ type: 'forecast', start, end, strokeWidth, color }` |
+| Measure | Click start, click end | `{ type: 'measure', start, end, strokeWidth, color }` |
 | Box | Click first corner, click opposite corner | `{ type: 'rect', start, end, strokeWidth, lineStyle, color }` |
 | Text | Click point, enter label | `{ type: 'text', point, text, color }` |
 
-After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool.
+After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool. Trend-based Fibonacci extension uses three clicks and resets after the extension anchor is placed.
 
-Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint.
+Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci drawings render TradingView-style ratio labels such as `0.382`, `0.618`, and `1.618`; each level uses a fixed level color while the guide/anchor line keeps the tool color.
 
 Drawings are stored per symbol:
 
@@ -489,7 +494,7 @@ export const DRAWING_COLORS = [
 ];
 ```
 
-The active color applies to the selected drawing or to the active tool defaults. Line, Horizontal Ray, Forecast, Box, Text, Long, and Short can each keep a separate saved color/default style. Box fill uses the same color with transparency, while long/short position tools use fixed green profit and red loss zones.
+The active color applies to the selected drawing or to the active tool defaults. Line, Horizontal Ray, Fibonacci, Forecast, Measure, Box, Text, Long, and Short can each keep a separate saved color/default style. Box fill uses the same color with transparency, Fibonacci level lines use fixed per-level colors, and long/short position tools use fixed green profit and red loss zones.
 
 ---
 
@@ -528,6 +533,8 @@ For `30m` and higher timeframes, existing intraday drawing timestamps are render
 
 When switching timeframe, drawing timestamps are projected through the full loaded candle set and then rendered onto the active replay series. This keeps shared drawings aligned even when the replay series only shows candles up to the current replay index. On `30m` and higher timeframes, intraday drawing timestamps snap to the containing candle bucket so lower-timeframe tools do not drift toward the side of the chart. Boxes use a minimum visible rectangle size so very short lower-timeframe boxes do not collapse into a 1px sliver on higher timeframes.
 
+During timeframe changes, loading and error states render as absolute overlays on top of the existing chart instead of taking normal layout space above it. This keeps the chart container and drawing overlay dimensions stable while candles reload, preventing temporary chart/overlay misalignment when moving from higher timeframes such as `1h` to lower timeframes such as `15m`. Drawing projection uses the timeframe of the candle data currently loaded on screen until the new candle data has arrived, so saved drawing timestamps are not temporarily recalculated against the wrong interval during the loading gap.
+
 ---
 
 ## Drawing Overlay
@@ -538,9 +545,12 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 |--------------|-------------|
 | Line | SVG `<line>` |
 | Horizontal Ray | SVG `<line>` from anchor to the chart's right edge |
+| Fibonacci Retracement | SVG guide line plus horizontal ratio levels with TradingView-style numeric labels and fixed per-level colors |
+| Trend-Based Fibonacci Extension | SVG trend line, extension anchor guide, and projected horizontal ratio levels with fixed per-level colors |
 | Long Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
 | Short Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
 | Forecast | Dashed SVG `<line>` with arrowhead and projection label |
+| Measure | Dashed SVG `<line>` with endpoint dots and delta label |
 | Box | SVG `<rect>` with color-based transparent fill |
 | Text | Plain absolutely positioned React text without a background box |
 | Resize handles | Small SVG `<rect>` handles |
@@ -574,7 +584,7 @@ Right price-scale wheel scrolling is handled separately from the chart's default
 
 | Drawing | Hit Test |
 |---------|----------|
-| Line, Horizontal Ray, Forecast | Distance to line segment |
+| Line, Horizontal Ray, Forecast, Measure, Fibonacci | Distance to line segment or Fibonacci level line |
 | Long Position, Short Position | Pointer inside the position zone |
 | Box | Pointer inside rectangle bounds |
 | Text | Pointer near the text label anchor |
@@ -599,7 +609,8 @@ When a drawing or resize handle is dragged, the wrapper intercepts the mouse eve
 
 | Drawing | Handles |
 |---------|---------|
-| Line, Forecast | Start endpoint, end endpoint |
+| Line, Forecast, Measure, Fibonacci Retracement | Start endpoint, end endpoint |
+| Trend-Based Fibonacci Extension | Trend start, trend end, extension anchor |
 | Horizontal Ray | Anchor endpoint |
 | Long Position, Short Position | Entry point, target/time point, stop/time point |
 | Box | Four corners and four side midpoints |
@@ -616,7 +627,7 @@ Resizing updates stored `time` and/or `price`, so resized drawings remain attach
 
 ### Stroke Width
 
-Selected line, long/short position, forecast, and box drawings show width controls in the top Tool Editor in `ReplayPanel.jsx`. When no drawing is selected, the same controls update the active tool's default width.
+Selected line, Fibonacci, measure, long/short position, forecast, and box drawings show width controls in the top Tool Editor in `ReplayPanel.jsx`. When no drawing is selected, the same controls update the active tool's default width.
 
 Available stroke widths:
 
@@ -624,11 +635,11 @@ Available stroke widths:
 [1, 2, 3, 4, 6, 8]
 ```
 
-New line, box, forecast, and position drawings default to the saved width for that tool type, falling back to `1px`. The selected `strokeWidth` is saved on the drawing object and persisted with the drawing.
+New line, Fibonacci, measure, box, forecast, and position drawings default to the saved width for that tool type, falling back to `1px`. The selected `strokeWidth` is saved on the drawing object and persisted with the drawing.
 
 ### Line Style
 
-Line, horizontal ray, and box drawings support a saved `lineStyle` value. The top Tool Editor shows a style dropdown with `Solid` and `Dashed`. New drawings default to the saved style for that tool type, falling back to `solid`. Forecast drawings keep their built-in dashed projection style.
+Line, horizontal ray, Fibonacci, and box drawings support a saved `lineStyle` value. The top Tool Editor shows a style dropdown with `Solid` and `Dashed`. New drawings default to the saved style for that tool type, falling back to `solid`. Forecast drawings keep their built-in dashed projection style.
 
 ### Drawing Labels
 
@@ -636,7 +647,7 @@ Selected line-like drawings and boxes show label controls in the top Tool Editor
 
 ### Color
 
-Line, forecast, box, text, and position drawings support a saved `color` value. The selected color is stored on the drawing object as `color` and persisted with the drawing. Long/short position drawings still keep fixed green and red zones for profit/loss readability.
+Line, Fibonacci, measure, forecast, box, text, and position drawings support a saved `color` value. The selected color is stored on the drawing object as `color` and persisted with the drawing. Fibonacci drawings use this color for the guide/anchor line while ratio levels use fixed level colors. Long/short position drawings still keep fixed green and red zones for profit/loss readability.
 
 ---
 
@@ -661,7 +672,7 @@ Keyboard shortcuts are ignored while typing in inputs or editable elements.
 | Mode | Activation | Behavior |
 |------|------------|----------|
 | Default | No drawing tool, no replay price pick | Native chart pan/zoom, select/move/resize drawings |
-| Drawing | Line, Long, Short, Forecast, Box, or Text selected | Place a new drawing |
+| Drawing | Line, Fibonacci, Measure, Long, Short, Forecast, Box, or Text selected | Place a new drawing |
 | Replay Price Pick | `Set Replay Price` armed | Next chart click picks replay candle and price |
 | Replay Playback | Press `Space` | Start replay if needed, then toggle play/pause |
 
@@ -733,7 +744,7 @@ The chart now includes:
 4. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
 5. A single live/replay chart with a compact left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
-7. Drawing tools for line, long/short position, forecast, box, and text on the live chart and in replay mode.
+7. Drawing tools for line, Fibonacci retracement/extension, measure, long/short position, forecast, box, and text on the live chart and in replay mode.
 8. Per-tool drawing colors, stroke widths, labels, presets, selection, moving, and resizing.
 9. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
 10. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.

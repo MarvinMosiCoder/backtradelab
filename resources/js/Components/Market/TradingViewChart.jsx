@@ -38,6 +38,51 @@ const DEFAULT_CANDLE_COLORS = {
   down: '#ef5350',
 };
 
+const TWO_POINT_TOOL_TYPES = [
+  'line',
+  'horizontal-ray',
+  'fib-retracement',
+  'fib-extension',
+  'rect',
+  'long-position',
+  'short-position',
+  'forecast',
+  'measure',
+];
+
+const PRESET_ENABLED_TOOL_TYPES = [
+  'line',
+  'horizontal-ray',
+  'fib-retracement',
+  'fib-extension',
+  'forecast',
+  'measure',
+  'rect',
+  'text',
+  'long-position',
+  'short-position',
+];
+
+const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const FIB_EXTENSION_LEVELS = [
+  0,
+  0.236,
+  0.382,
+  0.5,
+  0.618,
+  0.786,
+  1,
+  1.272,
+  1.414,
+  1.618,
+  2,
+  2.272,
+  2.414,
+  2.618,
+  3.618,
+  4.236,
+];
+
 function getPositiveNumber(value) {
   if (value === null || value === undefined || value === '') return null;
 
@@ -107,6 +152,7 @@ export default function TradingViewReplayChart({
   const [timeframe, setTimeframe] = useState(initialTimeframe);
 
   const [allCandles, setAllCandles] = useState([]);
+  const [loadedTimeframe, setLoadedTimeframe] = useState(initialTimeframe);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -121,7 +167,7 @@ export default function TradingViewReplayChart({
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const [tool, setTool] = useState(null); // 'line' | 'horizontal-ray' | 'rect' | 'long-position' | 'short-position' | 'forecast' | 'text' | null
+  const [tool, setTool] = useState(null);
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
   const [drawings, setDrawings] = useState([]);
   const [tempDrawing, setTempDrawing] = useState(null);
@@ -638,7 +684,7 @@ export default function TradingViewReplayChart({
   const getDrawingTimes = useCallback((items) => {
     return items.flatMap((drawing) => {
       if (isTwoPointDrawing(drawing)) {
-        return [drawing.start?.time, drawing.end?.time, drawing.stop?.time];
+        return [drawing.start?.time, drawing.end?.time, drawing.stop?.time, drawing.anchor?.time];
       }
 
       if (drawing.type === 'text') {
@@ -719,7 +765,7 @@ export default function TradingViewReplayChart({
         ? pointOrTime
         : { time: pointOrTime, price };
 
-    const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+    const intervalSeconds = TIMEFRAME_SECONDS[loadedTimeframe] ?? 60;
     const projectionCandles = allCandles.length ? allCandles : visibleCandles;
     const logicalFromTime = estimateDrawingLogicalFromTime(
       projectionCandles,
@@ -739,7 +785,7 @@ export default function TradingViewReplayChart({
 
     if (x == null || y == null) return null;
     return { x, y };
-  }, [allCandles, timeframe, visibleCandles]);
+  }, [allCandles, loadedTimeframe, visibleCandles]);
 
   const setReplayPointFromCoordinates = useCallback((x, y, moveCandle = true) => {
     const chart = chartRef.current;
@@ -783,6 +829,7 @@ export default function TradingViewReplayChart({
         const p1 = toScreen(drawing.start);
         const p2 = toScreen(drawing.end);
         if (!p1 || !p2) return null;
+        const p3 = drawing.anchor ? toScreen(drawing.anchor) : null;
 
         if (isHorizontalRayDrawing(drawing)) {
           return {
@@ -798,7 +845,7 @@ export default function TradingViewReplayChart({
           };
         }
 
-        return { ...drawing, screen: { p1, p2 } };
+        return { ...drawing, screen: { p1, p2, ...(p3 ? { p3 } : {}) } };
       }
 
       if (drawing.type === 'rect') {
@@ -836,6 +883,27 @@ export default function TradingViewReplayChart({
       if (isLineLikeDrawing(d)) {
         const { p1, p2, rayEnd } = d.screen;
         if (distanceToSegment(point, p1, rayEnd ?? p2) <= 8) return d.id;
+
+        if (d.type === 'fib-extension' && d.screen.p3 && distanceToSegment(point, p2, d.screen.p3) <= 8) {
+          return d.id;
+        }
+
+        if (['fib-retracement', 'fib-extension'].includes(d.type)) {
+          const levels = d.type === 'fib-extension' ? FIB_EXTENSION_LEVELS : FIB_RETRACEMENT_LEVELS;
+          const anchorPoint = d.type === 'fib-extension' ? (d.screen.p3 ?? p2) : p1;
+          const yDelta = p2.y - p1.y;
+          const leftX = Math.min(p1.x, p2.x, anchorPoint.x);
+          const rightX = d.type === 'fib-extension'
+            ? Math.max(anchorPoint.x, overlaySize.width)
+            : Math.max(p1.x, p2.x);
+          const hitFibLevel = levels.some((level) => {
+            const levelPointA = { x: leftX, y: anchorPoint.y + (yDelta * level) };
+            const levelPointB = { x: rightX, y: anchorPoint.y + (yDelta * level) };
+            return distanceToSegment(point, levelPointA, levelPointB) <= 6;
+          });
+
+          if (hitFibLevel) return d.id;
+        }
       }
 
       if (d.type === 'rect') {
@@ -872,7 +940,7 @@ export default function TradingViewReplayChart({
     }
 
     return null;
-  }, [renderedDrawings]);
+  }, [overlaySize.width, renderedDrawings]);
 
   const hitTestResizeHandle = useCallback((x, y) => {
     if (!selectedDrawingIdRef.current) return null;
@@ -887,6 +955,10 @@ export default function TradingViewReplayChart({
 
       if (!isHorizontalRayDrawing(selected)) {
         handles.push({ handle: 'end', point: selected.screen.p2 });
+      }
+
+      if (selected.type === 'fib-extension' && selected.screen.p3) {
+        handles.push({ handle: 'anchor', point: selected.screen.p3 });
       }
     }
 
@@ -1503,7 +1575,7 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current)) {
+      if (TWO_POINT_TOOL_TYPES.includes(toolRef.current)) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -1530,6 +1602,16 @@ export default function TradingViewReplayChart({
           const endPoint = currentTemp.type === 'horizontal-ray'
             ? { ...coords, price: currentTemp.start.price }
             : coords;
+
+          if (currentTemp.type === 'fib-extension' && !currentTemp.anchor) {
+            setTempDrawing({
+              ...currentTemp,
+              end: endPoint,
+              anchor: endPoint,
+            });
+            return;
+          }
+
           const completed = {
             id: `drawing-${Date.now()}`,
             type: currentTemp.type,
@@ -1542,6 +1624,11 @@ export default function TradingViewReplayChart({
             labelVertical: currentTemp.labelVertical ?? 'top',
             labelHorizontal: currentTemp.labelHorizontal ?? 'center',
           };
+
+          if (currentTemp.type === 'fib-extension') {
+            completed.end = currentTemp.end;
+            completed.anchor = coords;
+          }
 
           if (isPositionDrawing(completed)) {
             completed.stop = getDefaultPositionStop(completed.type, completed.start, completed.end);
@@ -1610,7 +1697,7 @@ export default function TradingViewReplayChart({
 
       const { x, y } = getRelativePoint(event);
 
-      if (['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'].includes(toolRef.current) && tempDrawingRef.current) {
+      if (TWO_POINT_TOOL_TYPES.includes(toolRef.current) && tempDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -1622,6 +1709,10 @@ export default function TradingViewReplayChart({
           const endPoint = prev.type === 'horizontal-ray'
             ? { ...coords, price: prev.start.price }
             : coords;
+
+          if (prev.type === 'fib-extension' && prev.anchor) {
+            return { ...prev, anchor: coords };
+          }
 
           return { ...prev, end: endPoint };
         });
@@ -1821,6 +1912,7 @@ export default function TradingViewReplayChart({
         if (fetchRequestIdRef.current !== requestId) return;
 
         setAllCandles(normalized);
+        setLoadedTimeframe(timeframe);
         let nextReplayIndex = Math.min(
           normalized.length - 1,
           Math.max(0, Math.round((normalized.length - 1) * replayProgress))
@@ -2171,7 +2263,7 @@ export default function TradingViewReplayChart({
 
   const handleSaveSelectedToolPreset = (presetName) => {
     const selected = drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current);
-    if (!selected || !['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'].includes(selected.type)) return;
+    if (!selected || !PRESET_ENABLED_TOOL_TYPES.includes(selected.type)) return;
 
     const settings = buildToolSettingsFromDrawing(selected);
     const fallbackName = (
@@ -2645,19 +2737,7 @@ export default function TradingViewReplayChart({
       />
 
       <div className={isFullscreen ? 'min-h-0 flex-1' : 'min-h-0'}>
-        <div className={`relative min-w-0 space-y-3 ${isFullscreen ? 'h-full' : ''}`}>
-          {loading && (
-            <div className="flex h-24 items-center justify-center rounded-lg bg-gray-900 text-white">
-              Loading...
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="flex h-24 items-center justify-center rounded-lg bg-gray-900 text-red-400">
-              {error}
-            </div>
-          )}
-
+        <div className={`relative min-w-0 ${isFullscreen ? 'h-full' : ''}`}>
           <ChartStage
             wrapperRef={wrapperRef}
             containerRef={containerRef}
@@ -2676,6 +2756,22 @@ export default function TradingViewReplayChart({
             onCancelText={handleCancelText}
             onToggleFullscreen={handleToggleFullscreen}
           />
+
+          {(loading || error) && (
+            <div
+              data-chart-ui="chart-status"
+              className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-[#081631]/70 text-sm font-medium backdrop-blur-[1px] ${
+                loading ? 'text-white' : 'text-red-400'
+              }`}
+            >
+              {loading ? (
+                <div
+                  className="h-9 w-9 animate-spin rounded-full border-2 border-slate-500 border-t-white"
+                  aria-label="Loading"
+                />
+              ) : error}
+            </div>
+          )}
 
           <ReplayPanel
             className="absolute left-3 top-3 z-30"

@@ -119,11 +119,22 @@ function TopMenuButton({ icon: Icon, children, active, disabled, onClick, classN
 const TOOL_BUTTONS = [
   { type: 'line', label: 'Line', icon: Slash },
   { type: 'horizontal-ray', label: 'H Ray', icon: MoveRight },
+  { type: 'fib-retracement', label: 'Fib Retrace', icon: Crosshair },
+  { type: 'fib-extension', label: 'Fib Extension', icon: ChartNoAxesCombined },
   { type: 'long-position', label: 'Long', icon: TrendingUp },
   { type: 'short-position', label: 'Short', icon: TrendingDown },
   { type: 'forecast', label: 'Forecast', icon: ChartNoAxesCombined },
+  { type: 'measure', label: 'Measure', icon: LocateFixed },
   { type: 'rect', label: 'Box', icon: BoxSelect },
   { type: 'text', label: 'Text', icon: Type },
+];
+
+const TOOL_GROUPS = [
+  { name: 'Trend Lines', tools: ['line', 'horizontal-ray'] },
+  { name: 'Finonacci', tools: ['fib-retracement', 'fib-extension'] },
+  { name: 'Forcasting', tools: ['long-position', 'short-position', 'forecast'] },
+  { name: 'Geometic shape', tools: ['measure', 'rect'] },
+  { name: 'Annotation', tools: ['text'] },
 ];
 
 const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
@@ -131,10 +142,10 @@ const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
   [toolButton.type]: toolButton.label,
 }), {});
 
-const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'rect', 'long-position', 'short-position', 'forecast'];
-const LINE_STYLE_TOOL_TYPES = ['line', 'horizontal-ray', 'rect'];
-const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect'];
-const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
+const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'rect', 'long-position', 'short-position', 'forecast', 'measure'];
+const LINE_STYLE_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'rect'];
+const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect'];
+const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
 
 function getToolLabel(type) {
   return TOOL_LABELS[type] ?? (
@@ -913,18 +924,38 @@ export default function ReplayPanel({
 
       {activeGroup === 'tools' && (
         <div className="pointer-events-auto">
-          <Flyout title="Tools" icon={MousePointer2} onClose={() => setActiveGroup(null)}>
-            <div className="grid grid-cols-2 gap-2">
-              {TOOL_BUTTONS.map(({ type, label, icon }) => (
-                <ControlButton
-                  key={type}
-                  icon={icon}
-                  onClick={() => handleToolChange(type)}
-                  active={tool === type}
-                >
-                  {label}
-                </ControlButton>
-              ))}
+          <Flyout
+            title="Tools"
+            icon={MousePointer2}
+            onClose={() => setActiveGroup(null)}
+            bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
+          >
+            <div className="space-y-3">
+              {TOOL_GROUPS.map((group) => {
+                const groupTools = group.tools
+                  .map((toolType) => TOOL_BUTTONS.find((item) => item.type === toolType))
+                  .filter(Boolean);
+
+                return (
+                  <div key={group.name} className="space-y-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                      {group.name}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {groupTools.map(({ type, label, icon }) => (
+                        <ControlButton
+                          key={type}
+                          icon={icon}
+                          onClick={() => handleToolChange(type)}
+                          active={tool === type}
+                        >
+                          {label}
+                        </ControlButton>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             <div className="border-t border-slate-800 pt-3">
