@@ -23,9 +23,21 @@ export default function ChartHeader({
   onTimeframeChange,
   onToggleReplayMode,
   onCandleColorChange,
+  chartTheme,
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
+  const isDark = chartTheme?.mode === 'dark';
+  const panelStyle = {
+    backgroundColor: chartTheme?.panel ?? (isDark ? '#242627' : '#ffffff'),
+    borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb'),
+  };
+  const fieldClass = `h-9 rounded-md border px-2 text-sm outline-none ${
+    isDark
+      ? 'border-gray-700 bg-black-table-color text-white'
+      : 'border-gray-200 bg-gray-50 text-gray-800'
+  }`;
+  const labelClass = isDark ? 'text-gray-300' : 'text-gray-600';
   const buildSymbolKey = (item) => `${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`;
   const categorySymbols = symbols.filter((item) => (item.category ?? 'spot') === marketCategory);
   const currentSymbolOption = { symbol, exchange: exchange ?? 'bybit', category: marketCategory ?? 'spot' };
@@ -76,15 +88,15 @@ export default function ChartHeader({
   };
 
   return (
-    <div className="relative z-40 rounded-lg bg-gray-800 p-3">
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(280px,1.2fr)_minmax(120px,0.5fr)_minmax(140px,0.5fr)_minmax(140px,0.55fr)_minmax(150px,0.55fr)_minmax(170px,0.6fr)]">
+    <div className="relative z-40 rounded-lg border p-3" style={panelStyle}>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(105px,0.45fr)_minmax(115px,0.45fr)_minmax(130px,0.55fr)_minmax(140px,0.55fr)_minmax(0,0.65fr)]">
         <div className="relative">
-          <label className="mb-1 block text-xs font-medium text-gray-300">Symbol</label>
+          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <select
               value={`${exchange ?? 'bybit'}:${marketCategory ?? 'spot'}:${symbol}`}
               onChange={(e) => onSymbolChange(e.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
+              className={`${fieldClass} min-w-0 flex-1`}
             >
               {symbolOptions.map((item) => (
                 <option
@@ -106,15 +118,15 @@ export default function ChartHeader({
             </button>
           </div>
           {isAddOpen && (
-            <div className="absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border border-gray-600 bg-gray-900 shadow-xl sm:right-auto sm:w-96">
-              <div className="flex items-center gap-2 border-b border-gray-700 px-2 py-2">
+            <div className={`absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border shadow-xl sm:right-auto sm:w-96 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
+              <div className={`flex items-center gap-2 border-b px-2 py-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <Search size={14} className="text-gray-400" />
                 <input
                   autoFocus
                   value={symbolSearch}
                   onChange={(event) => setSymbolSearch(event.target.value)}
                   placeholder="Search symbol"
-                  className="min-w-0 flex-1 bg-transparent text-xs uppercase text-white outline-none placeholder:text-gray-500"
+                  className={`min-w-0 flex-1 bg-transparent text-xs uppercase outline-none placeholder:text-gray-500 ${isDark ? 'text-white' : 'text-gray-800'}`}
                 />
                 <button
                   type="button"
@@ -133,10 +145,10 @@ export default function ChartHeader({
                   filteredAddSymbolOptions.map((item) => (
                     <div
                       key={buildSymbolKey(item)}
-                      className="flex items-center gap-2 border-b border-gray-800 px-2 py-1.5 last:border-b-0"
+                      className={`flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0 ${isDark ? 'border-gray-800' : 'border-gray-100'}`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-xs font-semibold text-white">
+                        <div className={`truncate text-xs font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
                           {item.symbol}
                           <span className="ml-1 text-[10px] font-medium text-emerald-300">
                             {String(item.exchangeLabel ?? item.exchange ?? '').toUpperCase()} {String(item.category ?? '').toUpperCase()}
@@ -175,14 +187,14 @@ export default function ChartHeader({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-300">Market</label>
+          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Market</label>
           <select
             value={marketCategory}
             onChange={(e) => {
               onCategoryChange(e.target.value);
               setSymbolSearch('');
             }}
-            className="h-9 w-full rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
+            className={`${fieldClass} w-full`}
           >
             <option value="linear">Futures</option>
             <option value="spot">Spot</option>
@@ -190,11 +202,11 @@ export default function ChartHeader({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-300">Timeframe</label>
+          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Timeframe</label>
           <select
             value={timeframe}
             onChange={(e) => onTimeframeChange(e.target.value)}
-            className="h-9 w-full rounded-md border border-gray-600 bg-gray-700 px-2 text-sm text-white outline-none"
+            className={`${fieldClass} w-full`}
           >
             {TIMEFRAMES.map((tf) => (
               <option key={tf.value} value={tf.value}>
@@ -205,7 +217,7 @@ export default function ChartHeader({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-300">Replay</label>
+          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Replay</label>
           <button
             type="button"
             onClick={onToggleReplayMode}
@@ -219,9 +231,9 @@ export default function ChartHeader({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-gray-300">Candles</label>
-          <div className="flex h-9 items-center gap-2 rounded-md border border-gray-600 bg-gray-700 px-2">
-            <label className="flex items-center gap-1 text-[10px] font-semibold text-gray-300" title="Bull candle color">
+          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Candles</label>
+          <div className={`${fieldClass} flex w-full items-center gap-2`}>
+            <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bull candle color">
               G
               <input
                 type="color"
@@ -233,7 +245,7 @@ export default function ChartHeader({
                 className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
               />
             </label>
-            <label className="flex items-center gap-1 text-[10px] font-semibold text-gray-300" title="Bear candle color">
+            <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bear candle color">
               R
               <input
                 type="color"
@@ -248,16 +260,16 @@ export default function ChartHeader({
           </div>
         </div>
 
-        <div className="flex items-end lg:justify-end">
-          <div className="min-h-9 text-white lg:text-right">
-            <div className="text-xs text-gray-400">
+        <div className="flex min-w-0 items-end lg:justify-end">
+          <div className={`min-h-9 min-w-0 max-w-full ${isDark ? 'text-white' : 'text-gray-800'} lg:text-right`}>
+            <div className="truncate text-xs text-gray-400">
               {replayMode ? 'Replay Price' : 'Current Price'}
             </div>
-            <div className="text-lg font-bold leading-tight text-green-500">
+            <div className="max-w-full truncate text-base font-bold leading-tight text-green-500 sm:text-lg">
               ${formatPrice(currentPrice)}
             </div>
             {replayMode && (
-              <div className="text-xs text-blue-400">
+              <div className="max-w-full truncate text-xs text-blue-400">
                 Selected: ${formatPrice(selectedReplayPrice)}
               </div>
             )}

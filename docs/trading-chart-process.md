@@ -68,7 +68,7 @@ External API
 | `resources/js/Components/Market/TradeReport.jsx` | PnL report module with summary cards, CSV/JSON export, closed-trades table, snapshots, and journal editing |
 | `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, searchable add-symbol picker, timeframe, replay toggle, and price display |
 | `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a compact top tool editor for drawing styles and presets |
-| `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
+| `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, app logo brand mark, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
 | `resources/js/Context/ThemeContext.jsx` | Provides the authenticated admin theme class used by the chart to choose dark or white chart colors |
@@ -431,11 +431,13 @@ The chart uses:
 
 The chart has visible time labels, a right price scale, and enabled native pan/zoom behavior.
 
-Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, chart wrapper background in `ChartStage.jsx`, chart loading overlay, and the background color used when entry/exit snapshots are captured.
+Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, and the background color used when entry/exit snapshots are captured.
+
+The Lightweight Charts TradingView attribution logo is disabled in chart layout options. `ChartStage.jsx` renders the configured application logo from `/applogo` in the bottom-left chart position as the BacktradeLab chart brand mark.
 
 | Admin Theme | Chart Background | Notes |
 |-------------|------------------|-------|
-| `bg-skin-black` | Dark `#081631` | Matches the existing dark chart look |
+| `bg-skin-black` | Dark `#151617` chart, `#242627` chart panels | Matches the sidebar black and authenticated admin navbar black |
 | Other theme classes | White `#ffffff` | Uses light grid, axis text, borders, and loading overlay |
 
 `Market.jsx` lets the chart content determine the page height. It should not reserve a fixed multi-viewport wrapper height around `TradingViewChart`, otherwise the market page shows a large blank area below the chart. The authenticated layout's `AppContent.jsx` content area is also dynamic rather than fixed to `600px`, so the chart panel can size naturally without overflowing a hardcoded container.

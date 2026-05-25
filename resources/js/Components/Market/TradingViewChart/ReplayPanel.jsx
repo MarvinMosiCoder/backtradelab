@@ -60,7 +60,27 @@ function ControlButton({
   );
 }
 
-function RailButton({ icon: Icon, active, disabled, title, onClick }) {
+function getPanelStyle(chartTheme) {
+  const isDark = chartTheme?.mode === 'dark';
+  const panel = chartTheme?.panel ?? (isDark ? '#242627' : '#ffffff');
+  const border = chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb');
+
+  return {
+    backgroundColor: panel,
+    borderColor: border,
+  };
+}
+
+function getControlStyle(chartTheme) {
+  const isDark = chartTheme?.mode === 'dark';
+
+  return {
+    backgroundColor: chartTheme?.panelControl ?? (isDark ? '#151617' : '#f8fafc'),
+    borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb'),
+  };
+}
+
+function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }) {
   return (
     <button
       type="button"
@@ -68,18 +88,22 @@ function RailButton({ icon: Icon, active, disabled, title, onClick }) {
       disabled={disabled}
       title={title}
       aria-label={title}
-      className={`flex h-10 w-10 items-center justify-center rounded-md text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
-        active ? 'bg-blue-600' : 'bg-slate-900/95 hover:bg-slate-700'
+      className={`flex h-10 w-10 items-center justify-center rounded-md border text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
+        active ? 'border-blue-500 bg-blue-600' : 'hover:brightness-125'
       }`}
+      style={active ? undefined : getControlStyle(chartTheme)}
     >
       <Icon size={18} />
     </button>
   );
 }
 
-function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y-3' }) {
+function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y-3', chartTheme }) {
   return (
-    <div className="ml-2 w-[min(300px,calc(100vw-5.5rem))] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur">
+    <div
+      className="ml-2 w-[min(300px,calc(100vw-5.5rem))] rounded-lg border p-3 text-white shadow-2xl backdrop-blur"
+      style={getPanelStyle(chartTheme)}
+    >
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-300">
           {Icon && <Icon size={15} />}
@@ -186,6 +210,7 @@ function TopToolEditorBar({
   onDuplicateSelectedDrawing,
   onDeleteSelectedDrawing,
   onSavePreset,
+  chartTheme,
 }) {
   const toggleMenu = (menu) => {
     setOpenMenu((currentMenu) => (currentMenu === menu ? null : menu));
@@ -195,7 +220,10 @@ function TopToolEditorBar({
     'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur';
 
   return (
-    <div className="pointer-events-auto ml-2 max-w-[calc(100vw-5.5rem)] rounded-lg border border-slate-700 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur">
+    <div
+      className="pointer-events-auto ml-2 max-w-[calc(100vw-5.5rem)] rounded-lg border p-1.5 shadow-2xl backdrop-blur"
+      style={getPanelStyle(chartTheme)}
+    >
       <div className="flex flex-wrap items-center gap-1.5">
         <div className="flex h-8 items-center gap-2 rounded-md bg-slate-900 px-2.5 text-xs font-semibold text-gray-200">
           <Palette size={14} />
@@ -676,6 +704,7 @@ export default function ReplayPanel({
   onCloseBacktestPosition,
   onCancelBacktestPosition,
   onResetBacktestAccount,
+  chartTheme,
   className = '',
 }) {
   const [activeGroup, setActiveGroup] = useState(null);
@@ -856,24 +885,30 @@ export default function ReplayPanel({
 
   return (
     <div className={`pointer-events-none flex items-start ${className}`}>
-      <div className="pointer-events-auto flex flex-col gap-2 rounded-lg border border-slate-700 bg-slate-950/95 p-1.5 shadow-2xl backdrop-blur">
+      <div
+        className="pointer-events-auto flex flex-col gap-2 rounded-lg border p-1.5 shadow-2xl backdrop-blur"
+        style={getPanelStyle(chartTheme)}
+      >
         <RailButton
           icon={Play}
           active={activeGroup === 'replay' || replayMode || isPlaying}
           title={replayMode ? 'Replay Controls' : 'Start Replay'}
           onClick={() => toggleGroup('replay')}
+          chartTheme={chartTheme}
         />
         <RailButton
           icon={ActiveToolIcon}
           active={activeGroup === 'tools' || Boolean(tool)}
           title="Drawing Tools"
           onClick={() => toggleGroup('tools')}
+          chartTheme={chartTheme}
         />
         <RailButton
           icon={Wallet}
           active={activeGroup === 'backtest'}
           title="Backtest Account"
           onClick={() => toggleGroup('backtest')}
+          chartTheme={chartTheme}
         />
         <RailButton
           icon={Palette}
@@ -881,12 +916,13 @@ export default function ReplayPanel({
           disabled={!hasToolEditor}
           title="Tool Style and Presets"
           onClick={() => toggleGroup('tool-editor')}
+          chartTheme={chartTheme}
         />
       </div>
 
       {activeGroup === 'replay' && (
         <div className="pointer-events-auto">
-          <Flyout title="Replay" icon={Play} onClose={() => setActiveGroup(null)}>
+          <Flyout title="Replay" icon={Play} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
             {!replayMode && (
               <ControlButton icon={Play} onClick={onTogglePlay} variant="primary" className="w-full">
                 Start Replay
@@ -968,6 +1004,7 @@ export default function ReplayPanel({
             icon={MousePointer2}
             onClose={() => setActiveGroup(null)}
             bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
+            chartTheme={chartTheme}
           >
             <div className="space-y-3">
               {TOOL_GROUPS.map((group) => {
@@ -1019,6 +1056,7 @@ export default function ReplayPanel({
             icon={Wallet}
             onClose={() => setActiveGroup(null)}
             bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
+            chartTheme={chartTheme}
           >
             <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -1409,12 +1447,13 @@ export default function ReplayPanel({
           onDuplicateSelectedDrawing={onDuplicateSelectedDrawing}
           onDeleteSelectedDrawing={onDeleteSelectedDrawing}
           onSavePreset={handleSavePreset}
+          chartTheme={chartTheme}
         />
       )}
 
       {activeGroup === 'tool-editor' && !hasToolEditor && (
         <div className="pointer-events-auto">
-          <Flyout title="Tool Editor" icon={Palette} onClose={() => setActiveGroup(null)}>
+          <Flyout title="Tool Editor" icon={Palette} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
             <span className="text-[11px] text-gray-500">
               Select a drawing or choose a tool to edit its style and presets.
             </span>

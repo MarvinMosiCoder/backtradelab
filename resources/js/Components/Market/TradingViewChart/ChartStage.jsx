@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Maximize2, Minimize2, Save, X } from 'lucide-react';
+import getAppLogo from '../../SystemSettings/ApplicationLogo';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL } from './constants';
 import {
   colorToRgba,
@@ -266,7 +267,7 @@ function PositionPriceBadge({ item, overlayWidth, overlayHeight }) {
       fontSize="11"
       fontWeight="700"
       paintOrder="stroke"
-      stroke="rgba(8, 22, 49, 0.95)"
+      stroke="rgba(21, 22, 23, 0.95)"
       strokeWidth="3"
       strokeLinejoin="round"
     >
@@ -275,7 +276,7 @@ function PositionPriceBadge({ item, overlayWidth, overlayHeight }) {
   );
 }
 
-function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
+function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, chartTheme }) {
   const selectedDrawing = renderedDrawings.find((d) => d.id === selectedDrawingId);
 
   const resizeHandles = [];
@@ -630,7 +631,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize }) {
             y={point.y - 5}
             width={10}
             height={10}
-            fill="#081631"
+            fill={chartTheme?.background ?? '#151617'}
             stroke="#fbbf24"
             strokeWidth={2}
             rx={2}
@@ -720,6 +721,39 @@ function TextInputPopover({
   );
 }
 
+function ChartBrandLogo({ chartTheme }) {
+  const [appLogo, setAppLogo] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+
+    getAppLogo().then((logo) => {
+      if (!cancelled) {
+        setAppLogo(logo);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!appLogo) return null;
+
+  return (
+    <div
+      className="pointer-events-none absolute bottom-10 left-[3px] z-10 flex h-7 w-12 items-center justify-center opacity-75"
+      aria-hidden="true"
+    >
+      <img
+        src={appLogo}
+        alt=""
+        className="max-h-6 max-w-10 object-contain"
+        draggable="false"
+      />
+    </div>
+  );
+}
+
 export default function ChartStage({
   wrapperRef,
   containerRef,
@@ -746,7 +780,7 @@ export default function ChartStage({
         isFullscreen ? 'flex-1' : ''
       }`}
       style={{
-        backgroundColor: chartTheme?.background ?? '#081631',
+        backgroundColor: chartTheme?.background ?? '#151617',
         height: isFullscreen ? '100%' : `${CHART_HEIGHT}px`,
         cursor: isSpacePressed
           ? 'grab'
@@ -756,6 +790,8 @@ export default function ChartStage({
       }}
     >
       <div ref={containerRef} className="absolute inset-0 z-0" />
+
+      <ChartBrandLogo chartTheme={chartTheme} />
 
       <button
         type="button"
@@ -771,6 +807,7 @@ export default function ChartStage({
         renderedDrawings={renderedDrawings}
         selectedDrawingId={selectedDrawingId}
         overlaySize={overlaySize}
+        chartTheme={chartTheme}
       />
 
       <TextInputPopover

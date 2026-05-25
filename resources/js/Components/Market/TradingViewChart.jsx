@@ -42,15 +42,19 @@ const DEFAULT_CANDLE_COLORS = {
 const CHART_THEMES = {
   dark: {
     mode: 'dark',
-    background: '#081631',
+    background: '#151617',
+    panel: '#242627',
+    panelControl: '#151617',
     text: '#d1d4dc',
-    grid: '#12233f',
-    border: '#2b3b59',
-    overlay: 'rgba(8, 22, 49, 0.7)',
+    grid: '#242627',
+    border: '#31363F',
+    overlay: 'rgba(21, 22, 23, 0.72)',
   },
   light: {
     mode: 'light',
     background: '#ffffff',
+    panel: '#ffffff',
+    panelControl: '#f8fafc',
     text: '#334155',
     grid: '#e2e8f0',
     border: '#cbd5e1',
@@ -2970,6 +2974,7 @@ export default function TradingViewReplayChart({
         onTimeframeChange={setTimeframe}
         onToggleReplayMode={toggleReplayMode}
         onCandleColorChange={setCandleColors}
+        chartTheme={chartTheme}
       />
 
       <div className={isFullscreen ? 'min-h-0 flex-1' : 'min-h-0'}>
@@ -3059,6 +3064,7 @@ export default function TradingViewReplayChart({
             onCloseBacktestPosition={handleCloseBacktestPosition}
             onCancelBacktestPosition={handleCancelBacktestPosition}
             onResetBacktestAccount={handleResetBacktestAccount}
+            chartTheme={chartTheme}
           />
         </div>
       </div>
