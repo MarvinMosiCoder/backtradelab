@@ -1,113 +1,65 @@
-import React, { useState, useEffect } from 'react';
-import { usePage, router, Link } from '@inertiajs/react';
+import React, { useEffect, useState } from 'react';
+import { Link, router, usePage } from '@inertiajs/react';
+import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react';
 import { useAuth } from '../../Context/AuthContext';
-import getAppName from '../../Components/SystemSettings/ApplicationName';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
-import LoginDetails from '../../Components/SystemSettings/LoginDetails';
-
-import Slider from 'react-slick';
-import "slick-carousel/slick/slick.css";
-import "slick-carousel/slick/slick-theme.css";
-import '../../../css/swiper.css';
 
 const LoginLoaderOverlay = () => {
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-white">
-      <div className="flex items-center gap-3">
-        <span className="h-3 w-3 rounded-full bg-sky-700 dot-1" />
-        <span className="h-3 w-3 rounded-full bg-sky-800 dot-2" />
-        <span className="h-3 w-3 rounded-full bg-sky-700 dot-3" />
-      </div>
-    </div>
-  );
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950">
+            <div className="flex items-center gap-3">
+                <span className="h-3 w-3 rounded-full bg-sky-500 dot-1" />
+                <span className="h-3 w-3 rounded-full bg-sky-400 dot-2" />
+                <span className="h-3 w-3 rounded-full bg-sky-500 dot-3" />
+            </div>
+        </div>
+    );
 };
 
 const LoginPage = () => {
-    const { errors:initialErrors, auth  } = usePage().props;
+    const { errors: initialErrors } = usePage().props;
     const [errors, setErrors] = useState(initialErrors || {});
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [currentTime, setCurrentTime] = useState(new Date());
-    const { updateAuth } = useAuth();
-    const [appname, setAppname] = useState('');
-    const [loginBgColor, setLoginBgColor] = useState('');
-    const [lfc, setLfc] = useState('');
-    const [lbi, setLbi] = useState('');
     const [applogo, setApplogo] = useState('');
+    const [theme, setTheme] = useState('dark');
+    const isDark = theme === 'dark';
+    const { updateAuth } = useAuth();
 
-    const sliderSettings = {
-        dots: false,
-        arrows: false,
-        infinite: true,
-        slidesToShow: 1,
-        slidesToScroll: 1,
-        autoplay: true,
-        speed: 1000,
-        autoplaySpeed: 10000
-    };
-    
-    useEffect(()=>{
-        getAppName().then(appName => {
-            setAppname(appName);
-        });
-        getAppLogo().then(appLogo => {
-            setApplogo(appLogo);
-        });
-        LoginDetails().then(detail => {
-            setLoginBgColor(detail.login_bg_color);
-            setLfc(detail.login_font_color);
-            setLbi(detail.login_bg_image);
- 
-        });
-    },[LoginDetails]);
-   
     useEffect(() => {
-        const interval = setInterval(() => {
-            setCurrentTime(new Date());
-        }, 1000);
-        return () => clearInterval(interval);
+        getAppLogo().then((appLogo) => setApplogo(appLogo));
+
+        try {
+            const storedTheme = localStorage.getItem('backtradelab-theme');
+            if (storedTheme === 'dark' || storedTheme === 'white') {
+                setTheme(storedTheme);
+            }
+        } catch {}
     }, []);
 
     useEffect(() => {
         if (Object.keys(errors).length > 0) {
-            const timer = setTimeout(() => {
-                setErrors({});
-            }, 5000); // Clear errors after 5 seconds
-
+            const timer = setTimeout(() => setErrors({}), 5000);
             return () => clearTimeout(timer);
         }
     }, [errors]);
 
-    const formatTime = (date) => {
-        return date.toLocaleTimeString('en-US', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
-        });
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
+    const handleSubmit = (event) => {
+        event.preventDefault();
         setLoading(true);
+
         router.post(
             'login-save',
+            { email, password },
             {
-                email,
-                password,
-            },
-            {
-                 onSuccess: (page) => {
-                    const newAuthState = page.props.auth;
-                    updateAuth(newAuthState);
+                onSuccess: (page) => {
+                    updateAuth(page.props.auth);
                 },
                 onError: (newErrors) => {
-                    if (newErrors.email) {
-                        setEmail('');
-                    }
-                    if (newErrors.password) {
-                        setPassword('');
-                    }
+                    if (newErrors.email) setEmail('');
+                    if (newErrors.password) setPassword('');
                     setErrors(newErrors);
                 },
                 onFinish: () => setLoading(false),
@@ -115,159 +67,105 @@ const LoginPage = () => {
         );
     };
 
-    const [showPassword, setShowPassword] = useState(false);
-
-    const togglePasswordVisibility = () => {
-        setShowPassword(!showPassword);
-    };
-
     return (
         <>
-        {loading && <LoginLoaderOverlay />}
-        <div className="flex h-full w-full justify-center items-center min-h-screen">
-            <div className={`h-lvh w-[40%] hidden justify-center items-center ${loginBgColor ?? 'bg-skin-blue'} md:block`}>
-                { 
-                 (applogo) ? 
-                    (
-                        <Slider className="h-[740px]" {...sliderSettings}>
-                            <div className="flex justify-center items-center mt-26">
-                                <img
-                                    src={applogo ?? `/images/settings/vram-logo/vram-logo.webp`}
-                                    className={`rounded-3xl p-5 h-[400px] w-[400px] mt-[190px] ml-[130px]`}
-                                />
-                            </div>
-                            <div className="flex justify-center items-center  mt-25">
-                                <img
-                                    src={lbi ?? `/images/settings/vram-logo/eat-sleep-code.png`}
-                                    className={`rounded-3xl p-5 mt-[170px]`}
-                                />
-                            </div>                               
-                        </Slider>
-                    ):(
-                        <div className="flex justify-center items-center h-full">
-                            <div className="h-[400px] w-[400px] rounded-3xl bg-gray-200 animate-pulse" />
-                        </div>
-                    ) 
-                }
-            </div>
-            <div className={`h-lvh md:w-[60%] w-[100%]  bg-slate-100 p-2 flex items-center justify-center`}>
-                <div className={`w-full lg:w-[45%] bg-white p-5 rounded-lg lg:bg-slate-100`}>
-                    <div className="flex flex-row gap-2 item-center justify-center mb-7">
-                        {
-                            applogo ? (
-                                <img
-                                    src={applogo}
-                                    className={`h-[50px] w-[50px]`}
-                                /> 
+            {loading && <LoginLoaderOverlay />}
+            <div className={`min-h-screen px-4 py-6 ${isDark ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-950'}`}>
+                <div className="mx-auto flex max-w-6xl items-center justify-between">
+                    <Link href="/" className={`inline-flex items-center gap-2 text-sm font-semibold ${isDark ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-950'}`}>
+                        <ArrowLeft size={16} />
+                        Back to home
+                    </Link>
+                    <div className="flex items-center gap-3">
+                        <div className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border ${isDark ? 'border-sky-400/40 bg-slate-900' : 'border-sky-200 bg-white'}`}>
+                            {applogo ? (
+                                <img src={applogo} className="h-full w-full object-contain p-1" alt="BacktradeLab logo" />
                             ) : (
-                                <div className="flex justify-center items-center h-full">
-                                    <div className="h-[50px] w-[50px] rounded-md bg-gray-200 animate-pulse" />
-                                </div>
-                            )
-                        }
-                        
-                        <div className="h-[50px] w-[1.5px] bg-black"></div>
-                        <p className="text-black font-poppins font-bold text-[20px] mt-3 text-center">
-                            {appname}
-                        </p>
-                    </div>
-                    <div className="font-poppins font-semibold text-[20px] mb-3">
-                        Log In
-                    </div>
-                    <form onSubmit={handleSubmit}>
-                        {/* EMAIL */}
-                        <div className="flex flex-col mb-4 w-full">
-                            <label className="font-poppins font-semibold">
-                                Email
-                            </label>
-                            <div className="border-2 border-black rounded-[10px] overflow-hidden flex items-center">
-                                <div className="border-r-2 h-full p-[10px] border-black">
-                                    <img
-                                        src="/images/login-page/email-icon.png"
-                                        className="w-[22px] h-[22px]"
-                                    />
-                                </div>
-                                <input
-                                    className="flex-1 mx-2 outline-none bg-white lg:bg-slate-100"
-                                    type="email"
-                                    value={email}
-                                    placeholder="Enter Email"
-                                    onChange={(e) =>
-                                        setEmail(e.target.value)
-                                    }
-                                />
-                            </div>
-                            {errors.email && (
-                                <span className="text-red-600">
-                                    <i className="fa fa-warning"></i>  {errors.email}
-                                </span>
+                                <span className="text-xs font-bold text-sky-300">BT</span>
                             )}
                         </div>
-                        {/* PASSWORD */}
-                        <div className="flex flex-col mb-2 relative w-full">
-                            <label className="font-poppins font-semibold">
-                                Password
-                            </label>
-                            <div className="border-2 border-black rounded-[10px] overflow-hidden flex items-center">
-                                <div className="border-r-2 h-full p-[10px] border-black">
-                                    <img
-                                        src="/images/login-page/password-icon.png"
-                                        className="w-[22px] h-[22px]"
-                                    />
-                                </div>
-                                
-                                <input
-                                    className="flex-1 mx-2 outline-none bg-white lg:bg-slate-100"
-                                    type={`${showPassword ? 'text' : 'password'}`}
-                                    value={password}
-                                    placeholder="Enter Password"
-                                    onChange={(e) =>
-                                        setPassword(e.target.value)
-                                    }
-                                />
-                                <div className="h-full p-[10px] border-black"
-                                     onClick={togglePasswordVisibility}
-                                >
-                                   <i className={`text-gray-800 ${showPassword ? 'fa fa-eye-slash' : 'fa fa-eye'}`}></i>
-                                </div>
-                            </div>
-
-                            {errors.password && (
-                                <span className="text-red-600 mt-1">
-                                    <i className="fa fa-warning"></i> {errors.password}
-                                </span>
-                            )}
-                            {errors.message && (
-                                <span className="text-red-600 mt-1">
-                                    <i className="fa fa-warning"></i> {errors.message}
-                                </span>
-                            )}
-                        </div>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className={`${lfc ?? 'bg-skin-blue'} w-full text-white font-poppins p-[12px] font-bold rounded-[10px] mt-5 hover:opacity-70`}
-                        >
-                            {loading ? (
-                                "Logging in, Please wait..."
-                            ) : (
-                                "Login"
-                            )}
-                        </button>
-                    </form>
-
-                    <div className="font-poppins flex space-x-1 text-sm justify-center mt-8">
-                        <p>Forgot Password?</p>{" "}
-                        <Link
-                            href="reset_password"
-                            className="text-red-500 font-bold"
-                        >
-                            Click here
-                        </Link>
+                        <span className="font-poppins text-sm font-bold">BacktradeLab</span>
                     </div>
                 </div>
+
+                <main className="mx-auto flex min-h-[calc(100vh-84px)] max-w-md items-center">
+                    <section className={`w-full rounded-md border p-5 shadow-2xl ${isDark ? 'border-white/10 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+                        <div className="mb-6">
+                            <h1 className={`font-poppins text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-950'}`}>Sign in</h1>
+                            <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                                Access your replay charts, paper trades, snapshots, and reports.
+                            </p>
+                        </div>
+
+                        <form onSubmit={handleSubmit}>
+                            <label className="mb-4 block">
+                                <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</span>
+                                <div className={`flex h-11 items-center rounded-md border focus-within:border-sky-400 ${isDark ? 'border-slate-700 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
+                                    <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                                        <Mail size={17} />
+                                    </div>
+                                    <input
+                                        className={`min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-slate-500 ${isDark ? 'text-white' : 'text-slate-950'}`}
+                                        type="email"
+                                        value={email}
+                                        placeholder="Enter email"
+                                        onChange={(event) => setEmail(event.target.value)}
+                                    />
+                                </div>
+                                {errors.email && (
+                                    <span className="mt-1 block text-sm text-red-400">{errors.email}</span>
+                                )}
+                            </label>
+
+                            <label className="mb-2 block">
+                                <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</span>
+                                <div className={`flex h-11 items-center rounded-md border focus-within:border-sky-400 ${isDark ? 'border-slate-700 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
+                                    <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                                        <Lock size={17} />
+                                    </div>
+                                    <input
+                                        className={`min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-slate-500 ${isDark ? 'text-white' : 'text-slate-950'}`}
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={password}
+                                        placeholder="Enter password"
+                                        onChange={(event) => setPassword(event.target.value)}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword((current) => !current)}
+                                        className={`flex h-full w-11 items-center justify-center ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-950'}`}
+                                        title={showPassword ? 'Hide password' : 'Show password'}
+                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                    >
+                                        {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                                    </button>
+                                </div>
+                                {errors.password && (
+                                    <span className="mt-1 block text-sm text-red-400">{errors.password}</span>
+                                )}
+                                {errors.message && (
+                                    <span className="mt-1 block text-sm text-red-400">{errors.message}</span>
+                                )}
+                            </label>
+
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="mt-5 h-11 w-full rounded-md bg-sky-600 px-4 font-poppins text-sm font-bold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                                {loading ? 'Logging in, please wait...' : 'Sign in'}
+                            </button>
+                        </form>
+
+                        <div className={`mt-6 flex justify-center gap-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                            <span>Forgot Password?</span>
+                            <Link href="reset_password" className="font-bold text-sky-300 hover:text-sky-200">
+                                Click here
+                            </Link>
+                        </div>
+                    </section>
+                </main>
             </div>
-        </div>
         </>
     );
 };

@@ -9,7 +9,7 @@ const Market = () => {
             <Head title="Market Analysis" />
             <div className="space-y-4">
                 <ContentPanel marginBottom={2}>
-                    <div className="p-4" style={{ height: '200vh' }}>
+                    <div className="p-4">
                         <TradingViewChart />
                     </div>
                 </ContentPanel>

@@ -7,6 +7,7 @@ import {
   CrosshairMode,
   LineStyle,
 } from 'lightweight-charts';
+import { useTheme } from '../../Context/ThemeContext';
 import ChartHeader from './TradingViewChart/ChartHeader';
 import ChartStage from './TradingViewChart/ChartStage';
 import ReplayPanel from './TradingViewChart/ReplayPanel';
@@ -37,6 +38,29 @@ const DEFAULT_CANDLE_COLORS = {
   up: '#26a69a',
   down: '#ef5350',
 };
+
+const CHART_THEMES = {
+  dark: {
+    mode: 'dark',
+    background: '#081631',
+    text: '#d1d4dc',
+    grid: '#12233f',
+    border: '#2b3b59',
+    overlay: 'rgba(8, 22, 49, 0.7)',
+  },
+  light: {
+    mode: 'light',
+    background: '#ffffff',
+    text: '#334155',
+    grid: '#e2e8f0',
+    border: '#cbd5e1',
+    overlay: 'rgba(255, 255, 255, 0.76)',
+  },
+};
+
+function resolveChartTheme(adminTheme) {
+  return adminTheme === 'bg-skin-black' ? CHART_THEMES.dark : CHART_THEMES.light;
+}
 
 const TWO_POINT_TOOL_TYPES = [
   'line',
@@ -105,7 +129,7 @@ function canvasToBlob(canvas) {
   });
 }
 
-async function captureChartSnapshot(wrapper) {
+async function captureChartSnapshot(wrapper, backgroundColor = CHART_THEMES.dark.background) {
   if (!wrapper || typeof window === 'undefined') return null;
 
   const bounds = wrapper.getBoundingClientRect();
@@ -122,7 +146,7 @@ async function captureChartSnapshot(wrapper) {
   output.style.width = `${width}px`;
   output.style.height = `${height}px`;
   context.scale(scale, scale);
-  context.fillStyle = '#081631';
+  context.fillStyle = backgroundColor;
   context.fillRect(0, 0, width, height);
 
   const canvases = Array.from(wrapper.querySelectorAll('canvas'));
@@ -158,6 +182,8 @@ export default function TradingViewReplayChart({
   initialTimeframe = '15m',
   onBacktestAccountChange = null,
 }) {
+  const { theme: adminTheme } = useTheme();
+  const chartTheme = useMemo(() => resolveChartTheme(adminTheme), [adminTheme]);
   const wrapperRef = useRef(null);
   const fullscreenRef = useRef(null);
   const containerRef = useRef(null);
@@ -1068,26 +1094,26 @@ export default function TradingViewReplayChart({
       width: containerRef.current.clientWidth || 800,
       height: containerRef.current.clientHeight || 0,
       layout: {
-        background: { color: '#081631' },
-        textColor: '#d1d4dc',
+        background: { color: chartTheme.background },
+        textColor: chartTheme.text,
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: '#12233f' },
-        horzLines: { color: '#12233f' },
+        vertLines: { color: chartTheme.grid },
+        horzLines: { color: chartTheme.grid },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
       },
       rightPriceScale: {
-        borderColor: '#2b3b59',
+        borderColor: chartTheme.border,
         scaleMargins: {
           top: 0.1,
           bottom: 0.2,
         },
       },
       timeScale: {
-        borderColor: '#2b3b59',
+        borderColor: chartTheme.border,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
@@ -1291,6 +1317,30 @@ export default function TradingViewReplayChart({
       volumeSeriesRef.current = null;
     };
   }, [scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    chart.applyOptions({
+      layout: {
+        background: { color: chartTheme.background },
+        textColor: chartTheme.text,
+        attributionLogo: false,
+      },
+      grid: {
+        vertLines: { color: chartTheme.grid },
+        horzLines: { color: chartTheme.grid },
+      },
+      rightPriceScale: {
+        borderColor: chartTheme.border,
+      },
+      timeScale: {
+        borderColor: chartTheme.border,
+      },
+    });
+    scheduleOverlayRender();
+  }, [chartTheme, scheduleOverlayRender]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -2541,7 +2591,7 @@ export default function TradingViewReplayChart({
         ...(backtestAccount?.openPositions ?? []).map((position) => position.id),
         ...(backtestAccount?.pendingPositions ?? []).map((position) => position.id),
       ]);
-      const snapshot = await captureChartSnapshot(wrapperRef.current);
+      const snapshot = await captureChartSnapshot(wrapperRef.current, chartTheme.background);
       const response = await axios.post('/market-backtest/positions', {
         symbol,
         session_id: backtestAccount?.activeSession?.id,
@@ -2652,7 +2702,7 @@ export default function TradingViewReplayChart({
     }
 
     try {
-      const snapshot = await captureChartSnapshot(wrapperRef.current);
+      const snapshot = await captureChartSnapshot(wrapperRef.current, chartTheme.background);
       const response = await axios.post(`/market-backtest/positions/${positionId}/trigger`, {
         price: triggerPrice,
         executed_at_time: entryTime,
@@ -2708,7 +2758,7 @@ export default function TradingViewReplayChart({
     }
 
     try {
-      const snapshot = await captureChartSnapshot(wrapperRef.current);
+      const snapshot = await captureChartSnapshot(wrapperRef.current, chartTheme.background);
       const response = await axios.post(`/market-backtest/positions/${positionId}/close`, {
         price: exitPrice,
         executed_at_time: closeTime,
@@ -2932,6 +2982,7 @@ export default function TradingViewReplayChart({
             isSpacePressed={isSpacePressed}
             isReplayPricePickActive={isReplayPricePickActive}
             tool={tool}
+            chartTheme={chartTheme}
             overlaySize={overlaySize}
             renderedDrawings={renderedDrawings}
             selectedDrawingId={selectedDrawingId}
@@ -2946,9 +2997,14 @@ export default function TradingViewReplayChart({
           {(loading || error) && (
             <div
               data-chart-ui="chart-status"
-              className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-[#081631]/70 text-sm font-medium backdrop-blur-[1px] ${
-                loading ? 'text-white' : 'text-red-400'
+              className={`pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-lg text-sm font-medium backdrop-blur-[1px] ${
+                loading
+                  ? chartTheme.mode === 'dark'
+                    ? 'text-white'
+                    : 'text-slate-700'
+                  : 'text-red-400'
               }`}
+              style={{ backgroundColor: chartTheme.overlay }}
             >
               {loading ? (
                 <div

@@ -55,7 +55,13 @@ External API
 
 | File | Purpose |
 |------|---------|
-| `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart |
+| `resources/js/Pages/Public/Home.jsx` | Public front page for `/`, with dark/white localStorage theme toggle, navbar search, marketing hero, and sign-in dropdown |
+| `resources/js/Pages/Auth/Login.jsx` | Dedicated `/login` sign-in form that reads the saved public theme preference |
+| `resources/js/Layouts/layout/AppContent.jsx` | Authenticated content shell with a dynamic content area so large pages like the chart can size and scroll naturally |
+| `resources/js/Pages/Dashboard/Dashboard.jsx` | Superadmin dashboard cards, or chart-first trader dashboard for non-superadmin users |
+| `resources/js/Layouts/layout/AppSidebar.jsx` | Authenticated sidebar shell that only renders `AdminSidebar` when the current privilege is superadmin |
+| `resources/js/Layouts/layout/AppNavbar.jsx` | Authenticated navbar with normal user quick links for Chart, PnL, and saved symbol selection |
+| `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart without reserving extra viewport-height space below it |
 | `resources/js/Pages/Market/TradeReportPage.jsx` | Trade reporting page that renders the standalone calendar module and PnL report table module |
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
 | `resources/js/Components/Market/TradeCalendar.jsx` | Standalone trade calendar module showing daily PnL and win/loss counts by close date |
@@ -65,11 +71,12 @@ External API
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
+| `resources/js/Context/ThemeContext.jsx` | Provides the authenticated admin theme class used by the chart to choose dark or white chart colors |
 | `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
 | `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
 | `app/Http/Controllers/MarketBacktestController.php` | Loads paper account/session state, starts/ends backtest sessions, places market/conditional replay entries, updates trade journal notes/tags, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
 | `routes/api.php` | Defines `/api/market-symbols`, `/api/market-symbol-options`, and `/api/klines` |
-| `routes/web.php` | Defines authenticated `/market-drawings`, `/market-tool-settings`, and `/market-backtest/*` routes |
+| `routes/web.php` | Defines public `/`, `/login`, authenticated `/market-drawings`, `/market-tool-settings`, and `/market-backtest/*` routes |
 | `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Binance/OKX/Bybit/BingX/MEXC symbol options, and fetches/normalizes candle data |
 | `app/Models/MarketSymbol.php` | Eloquent model for symbols saved in the database |
 | `app/Models/MarketDrawing.php` | Eloquent model for per-user saved chart drawings |
@@ -92,7 +99,21 @@ External API
 
 ## Data Flow
 
-### 1. Symbol List
+### 1. Public Entry and Theme
+
+The unauthenticated root route `/` renders `resources/js/Pages/Public/Home.jsx`. Authenticated users who visit `/` are redirected to `dashboard`. The public page is a website-style hero page with a dark navbar, logo/title on the left, search plus `Products`, `Community`, `Market`, and `More` navigation in the middle, and a login dropdown on the right.
+
+The dedicated login form lives at `/login` and renders `resources/js/Pages/Auth/Login.jsx`. The public page links to `/login` from the hero CTA and the login dropdown. The Inertia page resolver in `resources/js/app.jsx` excludes both `Auth/*` and `Public/*` pages from the authenticated app sidebar layout.
+
+The public theme preference is browser-only for now. `Home.jsx` stores the selected mode in:
+
+```javascript
+localStorage.setItem('backtradelab-theme', 'dark' | 'white');
+```
+
+`Home.jsx` toggles the value from the login dropdown. `Login.jsx` reads the same `backtradelab-theme` key on load so the sign-in page follows the visitor's selected dark or white theme. This theme preference is not saved to the database yet.
+
+### 2. Symbol List
 
 `TradingViewChart.jsx` loads saved symbols on mount:
 
@@ -175,7 +196,7 @@ The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then store
 
 After a symbol is saved, `TradingViewChart.jsx` inserts it into the saved-symbol list, selects it as the active chart symbol, and the candle request reloads for that symbol.
 
-### 2. Frontend Candle Request
+### 3. Frontend Candle Request
 
 `TradingViewChart.jsx` fetches candles whenever `symbol` or `timeframe` changes.
 
@@ -214,7 +235,7 @@ The UI timeframe is mapped to the selected exchange interval in `MarketDataContr
 | `1w` | `W` |
 | `1M` | `M` |
 
-### 3. Backend Processing
+### 4. Backend Processing
 
 `MarketDataController.php` has four chart-related actions:
 
@@ -240,7 +261,7 @@ The UI timeframe is mapped to the selected exchange interval in `MarketDataContr
 }
 ```
 
-### 4. Frontend Normalization
+### 5. Frontend Normalization
 
 The frontend also normalizes the response with `normalizeApiCandles()` so it can tolerate either object-style or array-style candle payloads.
 
@@ -259,7 +280,7 @@ const visibleCandles = useMemo(() => {
 }, [allCandles, replayMode, replayIndex]);
 ```
 
-### 5. Per-User Drawing Storage
+### 6. Per-User Drawing Storage
 
 Chart drawings are stored per authenticated user and symbol in the `market_drawings` table. The table uses `adm_user_id` and `symbol` as a unique pair, and stores the drawing list as JSON.
 
@@ -282,7 +303,7 @@ axios.put('/market-drawings', {
 
 `localStorage` remains as a browser fallback and migration source. If the database has no saved drawing record for the current user and symbol, existing local drawings are loaded and uploaded to the server. The backend returns an `exists` flag so an intentionally empty drawing list is preserved after the user clears their tools. After the first server save, the database is the primary source, so the same user can see their tools on another device after logging in.
 
-### 6. Reusable Tool Defaults
+### 7. Reusable Tool Defaults
 
 Reusable tool defaults are stored per authenticated user in `market_tool_settings`. These defaults are separate from symbol drawings so they can be used across symbols and timeframes.
 
@@ -306,7 +327,7 @@ The same settings object also stores selectable presets by tool type under `sett
 
 ---
 
-### 7. Paper Backtest Account
+### 8. Paper Backtest Account
 
 Each authenticated user can use a database-backed demo account while replaying candles. `MarketBacktestController.php` creates a default `Demo Account` with `10,000 USDT` the first time the replay account panel is opened.
 
@@ -371,7 +392,23 @@ The report includes:
 | Trade Calendar module | Daily PnL plus daily win/loss counts by close date, with month arrows and a click-open month/year selector |
 | PnL Report table | Symbol, side, entry, exit, leverage, margin, leveraged value, fees, PnL, PnL percent, snapshot links, journal summary/edit action, and win/loss result |
 
-The sidebar link is added in `resources/js/Components/Sidebar/SidebarAccordion.jsx` as a direct `Trade Report` navigation item. The report is intentionally separate from the chart page so the chart workspace stays focused on analysis and replay.
+The user sidebar and trader navbar both expose Trade Report/PnL navigation for non-superadmin trading users. The report is intentionally separate from the chart page so the chart workspace stays focused on analysis and replay.
+
+### Trader Dashboard UI
+
+Non-superadmin users get a chart-first dashboard. `Dashboard.jsx` checks `auth.sessions.admin_is_superadmin`; superadmin users keep the existing dashboard card layout, while normal users render `TradingViewChart` directly on `/dashboard`.
+
+`AppSidebar.jsx` already keeps the superadmin sidebar hidden for normal users by rendering `AdminSidebar` only when `auth.sessions.admin_privileges == 1`. Normal users keep their user sidebar access, such as Dashboard, Chart, and Trade Report/PnL, based on their assigned menu privileges.
+
+`AppNavbar.jsx` adds a compact trader control strip for non-superadmin users with:
+
+| Control | Behavior |
+|---------|----------|
+| Chart | Opens `/dashboard` |
+| PnL | Opens `/trade-report` |
+| Symbols | Loads saved symbols from `/api/market-symbols`, shows the symbol with exchange/category details, stores the selected symbol in `localStorage` as `backtradelab-active-symbol`, and reloads the dashboard chart with that symbol/exchange/category |
+
+The selected symbol is passed into `TradingViewChart` as its initial symbol, exchange, and market category. The chart component is keyed by the selected symbol tuple so changing the navbar symbol remounts the chart with the new market context.
 
 ---
 
@@ -392,7 +429,16 @@ The chart uses:
 | `CandlestickSeries` | Price candles |
 | `HistogramSeries` | Volume bars |
 
-The chart has dark styling, visible time labels, a right price scale, and enabled native pan/zoom behavior.
+The chart has visible time labels, a right price scale, and enabled native pan/zoom behavior.
+
+Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, chart wrapper background in `ChartStage.jsx`, chart loading overlay, and the background color used when entry/exit snapshots are captured.
+
+| Admin Theme | Chart Background | Notes |
+|-------------|------------------|-------|
+| `bg-skin-black` | Dark `#081631` | Matches the existing dark chart look |
+| Other theme classes | White `#ffffff` | Uses light grid, axis text, borders, and loading overlay |
+
+`Market.jsx` lets the chart content determine the page height. It should not reserve a fixed multi-viewport wrapper height around `TradingViewChart`, otherwise the market page shows a large blank area below the chart. The authenticated layout's `AppContent.jsx` content area is also dynamic rather than fixed to `600px`, so the chart panel can size naturally without overflowing a hardcoded container.
 
 Volume bars are derived from visible candles:
 
@@ -732,7 +778,8 @@ Backend errors are returned as JSON responses from `MarketDataController.php`.
 | `useRef` | Keep chart instances and latest drawing/tool state available to event handlers |
 | `requestAnimationFrame` | Throttle overlay re-render requests during chart viewport movement |
 | `ResizeObserver` | Keep chart and overlay dimensions synchronized |
-| `localStorage` | Mirror drawings/tool settings for fallback and legacy migration |
+| Theme palette updates | Apply the admin dark/white chart palette without recreating the chart instance |
+| `localStorage` | Mirror drawings/tool settings for fallback and legacy migration; store public `backtradelab-theme` and trader `backtradelab-active-symbol` |
 | Database | Persist the user's available market symbols, drawings, reusable tool defaults, and paper backtest records |
 
 ---
@@ -765,16 +812,21 @@ Current known build warnings are unrelated to the chart changes:
 
 The chart now includes:
 
-1. Lightweight Charts candlestick and volume rendering.
-2. Database-backed market symbols through `/api/market-symbols`.
-3. Laravel/exchange candle data flow through `/api/klines`.
-4. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
-5. A single live/replay chart with a compact left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
-6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
-7. Drawing tools for line, Fibonacci retracement/extension, measure, long/short position, forecast, box, and text on the live chart and in replay mode.
-8. Per-tool drawing colors, stroke widths, labels, presets, selection, duplicating, moving, and resizing.
-9. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
-10. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
-11. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
-12. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
-13. Fullscreen chart mode.
+1. Public `/` front page with navbar search, product/community/market/more links, hero content, login dropdown, and browser-local dark/white theme preference.
+2. Dedicated `/login` sign-in form that follows the saved public theme.
+3. Chart-first `/dashboard` for non-superadmin trader users, with superadmin keeping the existing dashboard cards.
+4. Trader navbar quick links for Chart, PnL, and saved symbol selection.
+5. Lightweight Charts candlestick and volume rendering.
+6. Database-backed market symbols through `/api/market-symbols`.
+7. Laravel/exchange candle data flow through `/api/klines`.
+8. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
+9. A single live/replay chart with a compact left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
+10. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
+11. Drawing tools for line, Fibonacci retracement/extension, measure, long/short position, forecast, box, and text on the live chart and in replay mode.
+12. Per-tool drawing colors, stroke widths, labels, presets, selection, duplicating, moving, and resizing.
+13. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
+14. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
+15. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
+16. Admin-theme-aligned chart background, grid, axis text, borders, loading overlay, and snapshot background.
+17. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
+18. Fullscreen chart mode.

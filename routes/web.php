@@ -34,7 +34,13 @@ use Inertia\Inertia;
 |
 */
 
-Route::get('/', [LoginController::class, 'index']);
+Route::get('/', function () {
+    if (auth()->check()) {
+        return redirect()->intended('dashboard');
+    }
+
+    return Inertia::render('Public/Home');
+})->name('home');
 Route::get('login', [LoginController::class, 'index'])->name('login');
 Route::get('/reset_password', [ResetPasswordController::class, 'getIndex'])->name('reset_password');
 Route::post('/send_resetpass_email', [ResetPasswordController::class, 'sendResetPasswordInstructions']);

@@ -6,7 +6,7 @@
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&display=swap" rel="stylesheet">
-        <link rel="icon" href="/images/settings/favicon-logo/favicon-logo.webp?v=2" type="image/gif" sizes="16x16">
+        <link rel="icon" href="/images/settings/favicon-logo/favicon-logo.png?v=2" type="image/gif" sizes="16x16">
         <meta name="csrf-token" content="{{ csrf_token() }}">
         {{-- SWEET ALERT 2 --}}
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

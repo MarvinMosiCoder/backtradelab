@@ -19,7 +19,7 @@ const AppContent = ({ children }) => {
         <>
             <div id="app-content" className={`h-full ${theme === 'bg-skin-black' ? 'bg-black-screen-color' : 'bg-gray-100'} p-4 z-10`}>
                 <BreadCrumbs data={auth} title={title}></BreadCrumbs>
-                <div id="content-area" className="relative h-[600px]">
+                <div id="content-area" className="relative min-h-0">
                     <ToastProvider>
                         {children}
                     </ToastProvider>  

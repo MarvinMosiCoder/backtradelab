@@ -728,6 +728,7 @@ export default function ChartStage({
   isSpacePressed,
   isReplayPricePickActive,
   tool,
+  chartTheme,
   overlaySize,
   renderedDrawings,
   selectedDrawingId,
@@ -741,10 +742,11 @@ export default function ChartStage({
   return (
     <div
       ref={wrapperRef}
-      className={`relative min-h-0 overflow-hidden rounded-lg bg-[#081631] ${
+      className={`relative min-h-0 overflow-hidden rounded-lg ${
         isFullscreen ? 'flex-1' : ''
       }`}
       style={{
+        backgroundColor: chartTheme?.background ?? '#081631',
         height: isFullscreen ? '100%' : `${CHART_HEIGHT}px`,
         cursor: isSpacePressed
           ? 'grab'

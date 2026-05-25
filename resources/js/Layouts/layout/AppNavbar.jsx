@@ -28,7 +28,21 @@ const AppNavbar = () => {
     const [appname, setAppname] = useState('');
     const [applogo, setApplogo] = useState('');
     const [showModalTheme, setShowModalTheme] = useState(false);
+    const [marketSymbols, setMarketSymbols] = useState([]);
+    const [activeNavbarSymbol, setActiveNavbarSymbol] = useState(() => {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+
+        try {
+            const storedSymbol = JSON.parse(localStorage.getItem('backtradelab-active-symbol') || 'null');
+            return storedSymbol?.symbol ? storedSymbol : null;
+        } catch {
+            return null;
+        }
+    });
     const swalColor = useThemeSwalColor(theme);
+    const isSuperAdmin = Boolean(auth?.sessions?.admin_is_superadmin);
     useEffect(() => {
         getAppName().then(appName => {
             setAppname(appName);
@@ -45,6 +59,31 @@ const AppNavbar = () => {
     useEffect(() => {
         setUnreadnNotifications(auth.unread_notifications || false);
     }, [auth.unread_notifications]);
+
+    useEffect(() => {
+        if (isSuperAdmin) return;
+
+        let cancelled = false;
+
+        fetch('/api/market-symbols', {
+            headers: { Accept: 'application/json' },
+        })
+            .then((response) => response.ok ? response.json() : Promise.reject(response))
+            .then((result) => {
+                if (!cancelled) {
+                    setMarketSymbols(Array.isArray(result.symbols) ? result.symbols : []);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setMarketSymbols([]);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isSuperAdmin]);
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -131,6 +170,29 @@ const AppNavbar = () => {
         setShowNotifications(false);
         setShowMenu(false);
     }
+
+    const getSymbolKey = (symbol) => {
+        if (!symbol?.symbol) return '';
+
+        return `${symbol.exchange ?? 'bybit'}:${symbol.category ?? 'spot'}:${symbol.symbol}`;
+    };
+
+    const handleNavbarSymbolChange = (event) => {
+        const selectedSymbol = event.target.selectedOptions?.[0]?.dataset?.symbol;
+        if (!selectedSymbol) return;
+
+        try {
+            const symbol = JSON.parse(selectedSymbol);
+            setActiveNavbarSymbol(symbol);
+            localStorage.setItem('backtradelab-active-symbol', JSON.stringify(symbol));
+            window.dispatchEvent(new CustomEvent('backtradelab-active-symbol-change', {
+                detail: symbol,
+            }));
+            router.visit('/dashboard');
+        } catch {
+            setActiveNavbarSymbol(null);
+        }
+    };
 
     // Get the initial for the color mapping
     const initials = getInitials(auth.user.name);
@@ -274,6 +336,56 @@ const AppNavbar = () => {
                     </div>
                 </Link>
                
+                {!isSuperAdmin && (
+                    <div className={`mr-3 hidden items-center gap-2 rounded-md border px-2 py-1.5 lg:flex ${
+                        theme === 'bg-skin-black'
+                            ? 'border-gray-700 bg-black-table-color text-gray-300'
+                            : 'border-gray-200 bg-white text-gray-700'
+                    }`}>
+                        <Link
+                            href="/dashboard"
+                            className={`rounded px-2 py-1 text-xs font-semibold ${
+                                theme === 'bg-skin-black' ? 'hover:bg-skin-black-light' : 'hover:bg-gray-100'
+                            }`}
+                        >
+                            Chart
+                        </Link>
+                        <Link
+                            href="/trade-report"
+                            className={`rounded px-2 py-1 text-xs font-semibold ${
+                                theme === 'bg-skin-black' ? 'hover:bg-skin-black-light' : 'hover:bg-gray-100'
+                            }`}
+                        >
+                            PnL
+                        </Link>
+                        <select
+                            className={`h-8 max-w-[190px] rounded border px-2 text-xs outline-none ${
+                                theme === 'bg-skin-black'
+                                    ? 'border-gray-700 bg-skin-black text-gray-200'
+                                    : 'border-gray-200 bg-gray-50 text-gray-700'
+                            }`}
+                            value={getSymbolKey(activeNavbarSymbol)}
+                            onChange={handleNavbarSymbolChange}
+                            title="Saved symbols"
+                        >
+                            <option value="">Symbols</option>
+                            {marketSymbols.map((item) => (
+                                <option
+                                    key={`${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`}
+                                    value={getSymbolKey(item)}
+                                    data-symbol={JSON.stringify({
+                                        symbol: item.symbol,
+                                        exchange: item.exchange ?? 'bybit',
+                                        category: item.category ?? 'spot',
+                                    })}
+                                >
+                                    {item.symbol} {String(item.exchange ?? '').toUpperCase()} {String(item.category ?? '').toUpperCase()}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
                 <div className="flex items-center gap-4 pl-[16px] py-10">
                     <div className={`flex items-center justify-center space-x-2 
                             ${theme === 'bg-skin-white' ? `bg-skin-white-light` : calendarDateTimeColor} 
