@@ -49,6 +49,7 @@ const CHART_THEMES = {
     grid: '#242627',
     border: '#31363F',
     overlay: 'rgba(21, 22, 23, 0.72)',
+    selectedPriceLine: '#e5e7eb',
   },
   light: {
     mode: 'light',
@@ -59,6 +60,7 @@ const CHART_THEMES = {
     grid: '#e2e8f0',
     border: '#cbd5e1',
     overlay: 'rgba(255, 255, 255, 0.76)',
+    selectedPriceLine: '#334155',
   },
 };
 
@@ -1448,7 +1450,7 @@ export default function TradingViewReplayChart({
     if (replayMode && selectedReplayPrice != null) {
       selectedPriceLineRef.current = candleSeries.createPriceLine({
         price: selectedReplayPrice,
-        color: '#60a5fa',
+        color: chartTheme.selectedPriceLine,
         lineWidth: 1,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
@@ -1466,6 +1468,7 @@ export default function TradingViewReplayChart({
     replayMode,
     selectedPriceAutoscaleInfoProvider,
     selectedReplayPrice,
+    chartTheme,
     timeframe,
     visibleCandles.length,
   ]);

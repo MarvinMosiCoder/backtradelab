@@ -27,17 +27,20 @@ import {
 import { DRAWING_COLORS, DRAWING_WIDTHS, PLAYBACK_SPEEDS } from './constants';
 
 const controlBaseClass =
-  'inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-40';
+  'inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40';
 
-function controlVariantClass(variant, isActive) {
-  if (variant === 'primary') return 'bg-blue-600 hover:bg-blue-700';
-  if (variant === 'danger') return 'bg-red-600 hover:bg-red-500';
-  if (variant === 'success') return 'bg-emerald-600 hover:bg-emerald-700';
-  if (variant === 'warning') return 'bg-amber-600 hover:bg-amber-700';
+function controlVariantClass(variant, isActive, chartTheme) {
+  const isDark = chartTheme?.mode !== 'light';
+  if (variant === 'primary') return 'bg-skin-black-light text-white hover:bg-skin-black';
+  if (variant === 'danger') return 'bg-red-600 text-white hover:bg-red-500';
+  if (variant === 'success') return 'bg-emerald-600 text-white hover:bg-emerald-700';
+  if (variant === 'warning') return 'bg-amber-600 text-white hover:bg-amber-700';
 
   return isActive
-    ? 'bg-blue-600 hover:bg-blue-700'
-    : 'bg-gray-700 hover:bg-gray-600';
+    ? 'bg-skin-black-light text-white hover:bg-skin-black'
+    : isDark
+      ? 'bg-gray-700 text-white hover:bg-gray-600'
+      : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100';
 }
 
 function ControlButton({
@@ -46,12 +49,13 @@ function ControlButton({
   active = false,
   variant = 'neutral',
   className = '',
+  chartTheme,
   ...props
 }) {
   return (
     <button
       type="button"
-      className={`${controlBaseClass} ${controlVariantClass(variant, active)} ${className}`}
+      className={`${controlBaseClass} ${controlVariantClass(variant, active, chartTheme)} ${className}`}
       {...props}
     >
       {Icon && <Icon size={14} className="shrink-0" />}
@@ -91,7 +95,7 @@ function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }
       title={title}
       aria-label={title}
       className={`flex h-10 w-10 items-center justify-center rounded-md border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
-        active ? 'border-blue-500 bg-blue-600 text-white' : `${inactiveTextClass} hover:brightness-95`
+        active ? 'border-skin-black-light bg-skin-black-light text-white' : `${inactiveTextClass} hover:brightness-95`
       }`}
       style={active ? undefined : getControlStyle(chartTheme)}
     >
@@ -134,14 +138,18 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
   );
 }
 
-function TopMenuButton({ icon: Icon, children, active, disabled, onClick, className = '' }) {
+function TopMenuButton({ icon: Icon, children, active, disabled, onClick, className = '', chartTheme }) {
+  const inactiveClass = chartTheme?.mode === 'light'
+    ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+    : 'bg-slate-800 text-white hover:bg-slate-700';
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-40 ${
-        active ? 'bg-blue-600' : 'bg-slate-800 hover:bg-slate-700'
+      className={`inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        active ? 'bg-skin-black-light text-white' : inactiveClass
       } ${className}`}
     >
       {Icon && <Icon size={14} className="shrink-0" />}
@@ -226,8 +234,24 @@ function TopToolEditorBar({
     setOpenMenu((currentMenu) => (currentMenu === menu ? null : menu));
   };
 
-  const menuPanelClass =
-    'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur';
+  const isDark = chartTheme?.mode !== 'light';
+  const menuPanelClass = isDark
+    ? 'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur'
+    : 'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl backdrop-blur';
+  const editorBadgeClass = isDark
+    ? 'bg-slate-900 text-gray-200'
+    : 'border border-slate-200 bg-slate-50 text-slate-700';
+  const editorLabelClass = isDark ? 'text-gray-400' : 'text-slate-600';
+  const editorFieldClass = isDark
+    ? 'border-slate-600 bg-slate-900 text-white placeholder:text-gray-500'
+    : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400';
+  const editorOptionClass = (active) => (
+    active
+      ? 'border-skin-black-light bg-skin-black-light text-white'
+      : isDark
+        ? 'border-gray-600 bg-gray-700 text-white hover:bg-gray-600'
+        : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+  );
 
   return (
     <div
@@ -235,7 +259,7 @@ function TopToolEditorBar({
       style={getPanelStyle(chartTheme)}
     >
       <div className="flex flex-wrap items-center gap-1.5">
-        <div className="flex h-8 items-center gap-2 rounded-md bg-slate-900 px-2.5 text-xs font-semibold text-gray-200">
+        <div className={`flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-semibold ${editorBadgeClass}`}>
           <Palette size={14} />
           <span>{editorLabel || 'Tool'}</span>
         </div>
@@ -245,6 +269,7 @@ function TopToolEditorBar({
             active={openMenu === 'color'}
             onClick={() => toggleMenu('color')}
             className="w-24 justify-start"
+            chartTheme={chartTheme}
           >
             <span
               className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/50"
@@ -254,7 +279,7 @@ function TopToolEditorBar({
           </TopMenuButton>
           {openMenu === 'color' && (
             <div className={menuPanelClass}>
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Color</div>
+              <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Color</div>
               <div className="grid grid-cols-7 gap-1.5">
                 {DRAWING_COLORS.map((color) => {
                   const isActive = activeColor?.toLowerCase() === color.toLowerCase();
@@ -268,7 +293,7 @@ function TopToolEditorBar({
                         setOpenMenu(null);
                       }}
                       className={`h-7 w-7 rounded-full border ${
-                        isActive ? 'border-white ring-2 ring-blue-400' : 'border-gray-500'
+                        isActive ? 'border-white ring-2 ring-skin-black-light' : 'border-gray-500'
                       }`}
                       style={{ backgroundColor: color }}
                       title={color}
@@ -283,12 +308,12 @@ function TopToolEditorBar({
 
         {canEditWidth && (
           <div className="relative">
-            <TopMenuButton active={openMenu === 'width'} onClick={() => toggleMenu('width')}>
+            <TopMenuButton active={openMenu === 'width'} onClick={() => toggleMenu('width')} chartTheme={chartTheme}>
               {activeStrokeWidth}px
             </TopMenuButton>
             {openMenu === 'width' && (
               <div className={menuPanelClass}>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Line Width</div>
+                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Line Width</div>
                 <div className="grid grid-cols-6 gap-2">
                   {DRAWING_WIDTHS.map((width) => (
                     <button
@@ -298,11 +323,7 @@ function TopToolEditorBar({
                         onDrawingWidthChange(width);
                         setOpenMenu(null);
                       }}
-                      className={`flex h-8 items-center justify-center rounded border text-[11px] text-white ${
-                        activeStrokeWidth === width
-                          ? 'border-blue-400 bg-blue-600'
-                          : 'border-gray-600 bg-gray-700 hover:bg-gray-600'
-                      }`}
+                      className={`flex h-8 items-center justify-center rounded border text-[11px] ${editorOptionClass(activeStrokeWidth === width)}`}
                       title={`${width}px`}
                     >
                       <span
@@ -319,12 +340,12 @@ function TopToolEditorBar({
 
         {canEditLineStyle && (
           <div className="relative">
-            <TopMenuButton active={openMenu === 'style'} onClick={() => toggleMenu('style')}>
+            <TopMenuButton active={openMenu === 'style'} onClick={() => toggleMenu('style')} chartTheme={chartTheme}>
               {activeLineStyle === 'dashed' ? 'Dashed' : 'Solid'}
             </TopMenuButton>
             {openMenu === 'style' && (
               <div className={menuPanelClass}>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Line Style</div>
+                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Line Style</div>
                 <div className="grid grid-cols-2 gap-2">
                   {[
                     { value: 'solid', label: 'Solid', dash: false },
@@ -337,11 +358,7 @@ function TopToolEditorBar({
                         onDrawingLineStyleChange(style.value);
                         setOpenMenu(null);
                       }}
-                      className={`flex h-9 items-center justify-center gap-2 rounded border px-2 text-xs font-medium text-white ${
-                        activeLineStyle === style.value
-                          ? 'border-blue-400 bg-blue-600'
-                          : 'border-gray-600 bg-gray-700 hover:bg-gray-600'
-                      }`}
+                      className={`flex h-9 items-center justify-center gap-2 rounded border px-2 text-xs font-medium ${editorOptionClass(activeLineStyle === style.value)}`}
                     >
                       <span
                         className="h-px w-8 bg-white"
@@ -362,23 +379,23 @@ function TopToolEditorBar({
 
         {canEditLabel && (
           <div className="relative">
-            <TopMenuButton active={openMenu === 'label'} onClick={() => toggleMenu('label')}>
+            <TopMenuButton active={openMenu === 'label'} onClick={() => toggleMenu('label')} chartTheme={chartTheme}>
               Label
             </TopMenuButton>
             {openMenu === 'label' && (
               <div className={menuPanelClass}>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Label</div>
+                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Label</div>
                 <input
                   value={activeLabelText}
                   onChange={(event) => onDrawingLabelChange({ labelText: event.target.value })}
                   placeholder={editorType === 'rect' ? 'Box text' : 'Line text'}
-                  className="mb-2 h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+                  className={`mb-2 h-8 w-full rounded border px-2 text-xs outline-none ${editorFieldClass}`}
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <select
                     value={activeLabelVertical}
                     onChange={(event) => onDrawingLabelChange({ labelVertical: event.target.value })}
-                    className="h-8 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                    className={`h-8 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
                     title="Vertical label position"
                   >
                     <option value="top">Top</option>
@@ -388,7 +405,7 @@ function TopToolEditorBar({
                   <select
                     value={activeLabelHorizontal}
                     onChange={(event) => onDrawingLabelChange({ labelHorizontal: event.target.value })}
-                    className="h-8 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                    className={`h-8 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
                     title="Horizontal label position"
                   >
                     <option value="left">Left</option>
@@ -403,12 +420,12 @@ function TopToolEditorBar({
 
         {canEditText && (
           <div className="relative">
-            <TopMenuButton active={openMenu === 'text'} onClick={() => toggleMenu('text')}>
+            <TopMenuButton active={openMenu === 'text'} onClick={() => toggleMenu('text')} chartTheme={chartTheme}>
               Text
             </TopMenuButton>
             {openMenu === 'text' && (
               <div className={menuPanelClass}>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Text</div>
+                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Text</div>
                 <input
                   value={activeText}
                   onChange={(event) => onDrawingLabelChange({
@@ -416,7 +433,7 @@ function TopToolEditorBar({
                     labelText: event.target.value,
                   })}
                   placeholder="Text note"
-                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+                  className={`h-8 w-full rounded border px-2 text-xs outline-none ${editorFieldClass}`}
                 />
               </div>
             )}
@@ -425,12 +442,12 @@ function TopToolEditorBar({
 
         {canUsePresets && (
           <div className="relative">
-            <TopMenuButton active={openMenu === 'presets'} onClick={() => toggleMenu('presets')}>
+            <TopMenuButton active={openMenu === 'presets'} onClick={() => toggleMenu('presets')} chartTheme={chartTheme}>
               Presets
             </TopMenuButton>
             {openMenu === 'presets' && (
               <div className={menuPanelClass}>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Presets</div>
+                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Presets</div>
                 <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
                   {presetItems.map((preset) => (
                     <div
@@ -445,6 +462,7 @@ function TopToolEditorBar({
                         }}
                         title={`Use ${preset.name}`}
                         className="max-w-full justify-start"
+                        chartTheme={chartTheme}
                       >
                         {preset.name}
                       </ControlButton>
@@ -461,25 +479,26 @@ function TopToolEditorBar({
                   ))}
 
                   {!presetItems.length && (
-                    <span className="text-[11px] text-gray-500">No saved presets</span>
+                    <span className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>No saved presets</span>
                   )}
                 </div>
 
                 {selectedDrawing && (
-                  <div className="mt-3 border-t border-slate-800 pt-3">
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Save Preset</div>
+                  <div className={`mt-3 border-t pt-3 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                    <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Save Preset</div>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                       <input
                         value={presetNameDraft}
                         onChange={(event) => setPresetNameDraft(event.target.value)}
                         placeholder={`${editorLabel} preset name`}
-                        className="h-8 min-w-0 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+                        className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
                       />
                       <ControlButton
                         icon={Save}
                         onClick={onSavePreset}
                         variant="success"
                         disabled={!presetNameDraft.trim()}
+                        chartTheme={chartTheme}
                       >
                         Save
                       </ControlButton>
@@ -496,7 +515,9 @@ function TopToolEditorBar({
             <button
               type="button"
               onClick={onDuplicateSelectedDrawing}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-800 text-slate-100 transition hover:bg-slate-700 hover:text-white"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition ${
+                isDark ? 'bg-slate-800 text-slate-100 hover:bg-slate-700 hover:text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+              }`}
               title="Duplicate selected drawing"
               aria-label="Duplicate selected drawing"
             >
@@ -892,6 +913,27 @@ export default function ReplayPanel({
 
     onResetBacktestAccount(resetBalanceValue);
   };
+  const isDarkTheme = chartTheme?.mode === 'dark';
+  const sectionBorderClass = isDarkTheme ? 'border-slate-800' : 'border-slate-200';
+  const mutedTextClass = isDarkTheme ? 'text-gray-500' : 'text-slate-500';
+  const labelTextClass = isDarkTheme ? 'text-gray-400' : 'text-slate-600';
+  const valueTextClass = isDarkTheme ? 'text-white' : 'text-slate-900';
+  const cardSurfaceClass = isDarkTheme
+    ? 'border-skin-black-light bg-black-table-color'
+    : 'border-slate-200 bg-slate-50';
+  const fieldClass = isDarkTheme
+    ? 'border-skin-black-light bg-black-table-color text-white placeholder:text-gray-500 focus:border-gray-500'
+    : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400';
+  const invalidFieldClass = isDarkTheme
+    ? 'border-red-500 bg-black-table-color text-white placeholder:text-gray-500'
+    : 'border-red-500 bg-white text-slate-900 placeholder:text-slate-400';
+  const neutralToggleClass = (active) => (
+    active
+      ? 'bg-skin-black-light text-white'
+      : isDarkTheme
+        ? 'bg-gray-700 text-white hover:bg-gray-600'
+        : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+  );
 
   return (
     <div className={`pointer-events-none flex items-start ${className}`}>
@@ -934,29 +976,30 @@ export default function ReplayPanel({
         <div className="pointer-events-auto">
           <Flyout title="Replay" icon={Play} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
             {!replayMode && (
-              <ControlButton icon={Play} onClick={onTogglePlay} variant="primary" className="w-full">
+              <ControlButton icon={Play} onClick={onTogglePlay} variant="primary" className="w-full" chartTheme={chartTheme}>
                 Start Replay
               </ControlButton>
             )}
 
             <div className="grid grid-cols-3 gap-2">
-              <ControlButton icon={SkipBack} onClick={onStepBackward} className="px-0" title="Back">
+              <ControlButton icon={SkipBack} onClick={onStepBackward} className="px-0" title="Back" chartTheme={chartTheme}>
                 <span className="sr-only">Back</span>
               </ControlButton>
               <ControlButton
                 icon={isPlaying ? Pause : Play}
                 onClick={onTogglePlay}
                 variant="primary"
+                chartTheme={chartTheme}
               >
                 {isPlaying ? 'Pause' : 'Play'}
               </ControlButton>
-              <ControlButton icon={SkipForward} onClick={onStepForward} className="px-0" title="Forward">
+              <ControlButton icon={SkipForward} onClick={onStepForward} className="px-0" title="Forward" chartTheme={chartTheme}>
                 <span className="sr-only">Forward</span>
               </ControlButton>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <ControlButton icon={RotateCcw} onClick={onResetReplay} variant="danger">
+              <ControlButton icon={RotateCcw} onClick={onResetReplay} variant="danger" chartTheme={chartTheme}>
                 {replayMode ? 'Reset' : 'Go Latest'}
               </ControlButton>
               <ControlButton
@@ -964,6 +1007,7 @@ export default function ReplayPanel({
                 onClick={onFollowReplay}
                 active={followReplay}
                 variant={followReplay ? 'success' : 'neutral'}
+                chartTheme={chartTheme}
               >
                 {replayMode && followReplay ? 'Following' : 'Follow'}
               </ControlButton>
@@ -975,18 +1019,19 @@ export default function ReplayPanel({
               active={isReplayPricePickActive}
               variant={isReplayPricePickActive ? 'warning' : 'neutral'}
               className="w-full"
+              chartTheme={chartTheme}
             >
               {isReplayPricePickActive ? 'Pick Price' : 'Set Replay Price'}
             </ControlButton>
 
-            <div className="flex h-8 items-center justify-center rounded-md border border-gray-700 px-2 text-xs text-gray-300">
+            <div className={`flex h-8 items-center justify-center rounded-md border px-2 text-xs ${isDarkTheme ? 'border-gray-700 text-gray-300' : 'border-slate-300 text-slate-600'}`}>
               {replayMode
                 ? `Candle ${Math.min(replayIndex + 1, candleCount)} / ${candleCount}`
                 : `Live candles ${candleCount}`}
             </div>
 
-            <div className="space-y-2 border-t border-slate-800 pt-3">
-              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
+              <div className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>
                 <Gauge size={13} />
                 <span>Speed</span>
               </div>
@@ -997,6 +1042,7 @@ export default function ReplayPanel({
                     onClick={() => onPlaybackSpeedChange(speed.value)}
                     active={playbackSpeed === speed.value}
                     className="h-7 px-2 text-[11px]"
+                    chartTheme={chartTheme}
                   >
                     {speed.label}
                   </ControlButton>
@@ -1024,7 +1070,7 @@ export default function ReplayPanel({
 
                 return (
                   <div key={group.name} className="space-y-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>
                       {group.name}
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -1034,6 +1080,7 @@ export default function ReplayPanel({
                           icon={icon}
                           onClick={() => handleToolChange(type)}
                           active={tool === type}
+                          chartTheme={chartTheme}
                         >
                           {label}
                         </ControlButton>
@@ -1044,13 +1091,14 @@ export default function ReplayPanel({
               })}
             </div>
 
-            <div className="border-t border-slate-800 pt-3">
+            <div className={`border-t pt-3 ${sectionBorderClass}`}>
               <ControlButton
                 icon={Trash2}
                 onClick={onClearDrawings}
                 disabled={!drawings.length}
                 variant="danger"
                 className="w-full"
+                chartTheme={chartTheme}
               >
                 Clear
               </ControlButton>
@@ -1068,15 +1116,15 @@ export default function ReplayPanel({
             bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
             chartTheme={chartTheme}
           >
-            <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
+            <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[10px] uppercase tracking-wide text-gray-500">Session</div>
-                  <div className="truncate text-xs font-semibold text-white">
+                  <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Session</div>
+                  <div className={`truncate text-xs font-semibold ${valueTextClass}`}>
                     {backtestAccount?.activeSession?.name ?? 'No active session'}
                   </div>
                   {backtestAccount?.activeSession && (
-                    <div className="mt-0.5 text-[11px] text-gray-500">
+                    <div className={`mt-0.5 text-[11px] ${mutedTextClass}`}>
                       {backtestAccount.activeSession.symbol} {backtestAccount.activeSession.timeframe}
                     </div>
                   )}
@@ -1086,14 +1134,16 @@ export default function ReplayPanel({
                     onClick={onStartBacktestSession}
                     disabled={isBacktestLoading}
                     className="h-7 px-2 text-[11px]"
+                    chartTheme={chartTheme}
                   >
                     New
                   </ControlButton>
                   <ControlButton
                     onClick={onEndBacktestSession}
                     disabled={isBacktestLoading || !backtestAccount?.activeSession}
-                    variant="warning"
+                    variant="primary"
                     className="h-7 px-2 text-[11px]"
+                    chartTheme={chartTheme}
                   >
                     End
                   </ControlButton>
@@ -1103,20 +1153,20 @@ export default function ReplayPanel({
 
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
+                <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
                   Currency
                 </span>
                 <select
                   value={displayCurrency}
                   onChange={(event) => handleDisplayCurrencyChange(event.target.value)}
-                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                  className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
                 >
                   <option value="USDT">{quoteCurrency}</option>
                   <option value="PHP">PHP</option>
                 </select>
               </label>
               <label className="block">
-                <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
+                <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
                   PHP / {quoteCurrency}
                 </span>
                 <input
@@ -1124,33 +1174,33 @@ export default function ReplayPanel({
                   onChange={(event) => setPhpRate(event.target.value)}
                   inputMode="decimal"
                   disabled={displayCurrency !== 'PHP'}
-                  className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none disabled:opacity-40"
+                  className={`h-8 w-full rounded border px-2 text-xs outline-none disabled:opacity-40 ${fieldClass}`}
                 />
               </label>
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
-                <div className="text-[10px] uppercase tracking-wide text-gray-500">Equity</div>
-                <div className="text-sm font-semibold text-white">
+              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
+                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Equity</div>
+                <div className={`text-sm font-semibold ${valueTextClass}`}>
                   {formatAccountMoney(backtestMetrics.equity)}
                 </div>
               </div>
-              <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
-                <div className="text-[10px] uppercase tracking-wide text-gray-500">Cash</div>
-                <div className="text-sm font-semibold text-white">
+              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
+                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Cash</div>
+                <div className={`text-sm font-semibold ${valueTextClass}`}>
                   {formatAccountMoney(backtestMetrics.cashBalance)}
                 </div>
               </div>
-              <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
-                <div className="text-[10px] uppercase tracking-wide text-gray-500">Open PnL</div>
+              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
+                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Open PnL</div>
                 <div className={`text-sm font-semibold ${backtestMetrics.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {formatAccountMoney(backtestMetrics.unrealizedPnl)}
                 </div>
               </div>
-              <div className="rounded-md border border-slate-800 bg-slate-900 p-2">
-                <div className="text-[10px] uppercase tracking-wide text-gray-500">Price</div>
-                <div className="text-sm font-semibold text-white">
+              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
+                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Price</div>
+                <div className={`text-sm font-semibold ${valueTextClass}`}>
                   {formatMoney(executionPrice)}
                 </div>
               </div>
@@ -1162,24 +1212,20 @@ export default function ReplayPanel({
               </div>
             )}
 
-            <div className="space-y-2 border-t border-slate-800 pt-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Enter Position</div>
+            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
+              <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Enter Position</div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setOrderType('market')}
-                  className={`h-8 rounded-md text-xs font-semibold text-white ${
-                    orderType === 'market' ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
-                  }`}
+                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(orderType === 'market')}`}
                 >
                   Market
                 </button>
                 <button
                   type="button"
                   onClick={() => setOrderType('conditional')}
-                  className={`h-8 rounded-md text-xs font-semibold text-white ${
-                    isConditionalOrder ? 'bg-amber-600' : 'bg-gray-700 hover:bg-gray-600'
-                  }`}
+                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(isConditionalOrder)}`}
                 >
                   Conditional
                 </button>
@@ -1188,8 +1234,8 @@ export default function ReplayPanel({
                 <button
                   type="button"
                   onClick={() => setOrderSide('long')}
-                  className={`h-8 rounded-md text-xs font-semibold text-white ${
-                    orderSide === 'long' ? 'bg-emerald-600' : 'bg-gray-700 hover:bg-gray-600'
+                  className={`h-8 rounded-md text-xs font-semibold ${
+                    orderSide === 'long' ? 'bg-emerald-600 text-white' : neutralToggleClass(false)
                   }`}
                 >
                   Long
@@ -1197,8 +1243,8 @@ export default function ReplayPanel({
                 <button
                   type="button"
                   onClick={() => setOrderSide('short')}
-                  className={`h-8 rounded-md text-xs font-semibold text-white ${
-                    orderSide === 'short' ? 'bg-red-600' : 'bg-gray-700 hover:bg-gray-600'
+                  className={`h-8 rounded-md text-xs font-semibold ${
+                    orderSide === 'short' ? 'bg-red-600 text-white' : neutralToggleClass(false)
                   }`}
                 >
                   Short
@@ -1209,15 +1255,15 @@ export default function ReplayPanel({
                   value={orderNotional}
                   onChange={(event) => setOrderNotional(event.target.value)}
                   inputMode="decimal"
-                  className="h-8 min-w-0 rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none"
+                  className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${fieldClass}`}
                   placeholder={`${displayCurrency} margin`}
                 />
                 <input
                   value={orderLeverage}
                   onChange={(event) => setOrderLeverage(event.target.value)}
                   inputMode="decimal"
-                  className={`h-8 min-w-0 rounded border bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500 ${
-                    isLeverageValid ? 'border-slate-600' : 'border-red-500'
+                  className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${
+                    isLeverageValid ? fieldClass : invalidFieldClass
                   }`}
                   placeholder="Lev"
                   title="Leverage, 1x to 125x"
@@ -1227,16 +1273,17 @@ export default function ReplayPanel({
                   onClick={submitBacktestOrder}
                   disabled={!canSubmitOrder}
                   variant={orderSide === 'long' ? 'success' : 'danger'}
+                  chartTheme={chartTheme}
                 >
                   {isConditionalOrder ? 'Place' : 'Enter'}
                 </ControlButton>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-400">
+              <div className={`grid grid-cols-3 gap-2 text-[11px] ${labelTextClass}`}>
                 <span>Margin {orderPlan?.margin ? formatAccountMoney(orderPlan.margin) : '---'}</span>
                 <span>Value {orderPlan?.positionNotional ? formatAccountMoney(orderPlan.positionNotional) : '---'}</span>
                 <span>Lev {isLeverageValid ? formatLeverage(leverageValue) : '---'}</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-400">
+              <div className={`grid grid-cols-2 gap-2 text-[11px] ${labelTextClass}`}>
                 <span>Entry fee {orderPlan?.entryFee ? formatAccountMoney(orderPlan.entryFee) : '---'}</span>
                 <span>Need {orderPlan?.requiredCash ? formatAccountMoney(orderPlan.requiredCash) : '---'}</span>
               </div>
@@ -1247,66 +1294,66 @@ export default function ReplayPanel({
               )}
               <div className="grid grid-cols-3 gap-2">
                 <label className="block">
-                  <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
+                  <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
                     {isConditionalOrder ? 'Trigger' : 'Entry'}
                   </span>
                   <input
                     value={orderEntryPrice}
                     onChange={(event) => setOrderEntryPrice(event.target.value)}
                     inputMode="decimal"
-                    className="h-8 w-full rounded border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500"
+                    className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
                     placeholder={isConditionalOrder ? 'Required' : formatMoney(executionPrice)}
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
+                  <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
                     SL
                   </span>
                   <input
                     value={orderStopLoss}
                     onChange={(event) => setOrderStopLoss(event.target.value)}
                     inputMode="decimal"
-                    className={`h-8 w-full rounded border bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500 ${
-                      orderPlan?.isStopValid === false ? 'border-red-500' : 'border-slate-600'
+                    className={`h-8 w-full rounded border px-2 text-xs outline-none ${
+                      orderPlan?.isStopValid === false ? invalidFieldClass : fieldClass
                     }`}
                     placeholder="Stop"
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-[10px] uppercase tracking-wide text-gray-500">
+                  <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
                     TP
                   </span>
                   <input
                     value={orderTakeProfit}
                     onChange={(event) => setOrderTakeProfit(event.target.value)}
                     inputMode="decimal"
-                    className={`h-8 w-full rounded border bg-slate-900 px-2 text-xs text-white outline-none placeholder:text-gray-500 ${
-                      orderPlan?.isTargetValid === false ? 'border-red-500' : 'border-slate-600'
+                    className={`h-8 w-full rounded border px-2 text-xs outline-none ${
+                      orderPlan?.isTargetValid === false ? invalidFieldClass : fieldClass
                     }`}
                     placeholder="Target"
                   />
                 </label>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-[11px] text-gray-400">
+              <div className={`grid grid-cols-3 gap-2 text-[11px] ${labelTextClass}`}>
                 <span>Risk {orderPlan?.riskAmount ? formatAccountMoney(orderPlan.riskAmount) : '---'}</span>
                 <span>Reward {orderPlan?.rewardAmount ? formatAccountMoney(orderPlan.rewardAmount) : '---'}</span>
                 <span>R/R {orderPlan?.rr ? orderPlan.rr.toFixed(2) : '---'}</span>
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-slate-800 pt-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Pending Entries</div>
+            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
+              <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Pending Entries</div>
               <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
                 {backtestAccount?.pendingPositions?.length ? (
                   backtestAccount.pendingPositions.map((position) => (
-                    <div key={position.id} className="rounded-md border border-slate-800 bg-slate-900 p-2">
+                    <div key={position.id} className={`rounded-md border p-2 ${cardSurfaceClass}`}>
                       <div className="mb-1 flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-white">
+                        <span className={`text-xs font-semibold ${valueTextClass}`}>
                           {position.symbol} {position.side.toUpperCase()}
                         </span>
                         <span className="text-xs text-amber-300">Waiting</span>
                       </div>
-                      <div className="mb-2 grid grid-cols-2 gap-1 text-[11px] text-gray-400">
+                      <div className={`mb-2 grid grid-cols-2 gap-1 text-[11px] ${labelTextClass}`}>
                         <span>Trigger {formatMoney(position.entryPrice)}</span>
                         <span>Margin {formatAccountMoney(position.margin)}</span>
                         <span>Value {formatAccountMoney(position.notional ?? Number(position.margin) * Number(position.leverage ?? 1))}</span>
@@ -1318,21 +1365,22 @@ export default function ReplayPanel({
                         icon={X}
                         onClick={() => onCancelBacktestPosition(position.id)}
                         disabled={isBacktestLoading}
-                        variant="warning"
+                        variant="primary"
                         className="w-full"
+                        chartTheme={chartTheme}
                       >
                         Cancel
                       </ControlButton>
                     </div>
                   ))
                 ) : (
-                  <span className="text-[11px] text-gray-500">No pending entries</span>
+                  <span className={`text-[11px] ${mutedTextClass}`}>No pending entries</span>
                 )}
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-slate-800 pt-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Open Positions</div>
+            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
+              <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Open Positions</div>
               <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
                 {backtestAccount?.openPositions?.length ? (
                   backtestAccount.openPositions.map((position) => {
@@ -1342,16 +1390,16 @@ export default function ReplayPanel({
                     }, symbol, executionPrice).unrealizedPnl;
 
                     return (
-                      <div key={position.id} className="rounded-md border border-slate-800 bg-slate-900 p-2">
+                      <div key={position.id} className={`rounded-md border p-2 ${cardSurfaceClass}`}>
                         <div className="mb-1 flex items-center justify-between gap-2">
-                          <span className="text-xs font-semibold text-white">
+                          <span className={`text-xs font-semibold ${valueTextClass}`}>
                             {position.symbol} {position.side.toUpperCase()}
                           </span>
                           <span className={livePnl >= 0 ? 'text-xs text-emerald-400' : 'text-xs text-red-400'}>
                             {formatAccountMoney(livePnl)}
                           </span>
                         </div>
-                        <div className="mb-2 grid grid-cols-2 gap-1 text-[11px] text-gray-400">
+                        <div className={`mb-2 grid grid-cols-2 gap-1 text-[11px] ${labelTextClass}`}>
                           <span>Entry {formatMoney(position.entryPrice)}</span>
                           <span>Margin {formatAccountMoney(position.margin)}</span>
                           <span>Value {formatAccountMoney(position.notional ?? Number(position.margin) * Number(position.leverage ?? 1))}</span>
@@ -1363,8 +1411,9 @@ export default function ReplayPanel({
                           icon={X}
                           onClick={() => onCloseBacktestPosition(position.id)}
                           disabled={!canTrade}
-                          variant="warning"
+                          variant="primary"
                           className="w-full"
+                          chartTheme={chartTheme}
                         >
                           Close
                         </ControlButton>
@@ -1372,20 +1421,20 @@ export default function ReplayPanel({
                     );
                   })
                 ) : (
-                  <span className="text-[11px] text-gray-500">No open positions</span>
+                  <span className={`text-[11px] ${mutedTextClass}`}>No open positions</span>
                 )}
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-slate-800 pt-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Account Reset</div>
+            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
+              <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Account Reset</div>
               <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                 <input
                   value={resetBalance}
                   onChange={(event) => setResetBalance(event.target.value)}
                   inputMode="decimal"
-                  className={`h-8 min-w-0 rounded border bg-slate-900 px-2 text-xs text-white outline-none ${
-                    resetBalance && !canResetAccount ? 'border-red-500' : 'border-slate-600'
+                  className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${
+                    resetBalance && !canResetAccount ? invalidFieldClass : fieldClass
                   }`}
                   placeholder={`${displayCurrency} balance`}
                 />
@@ -1394,22 +1443,23 @@ export default function ReplayPanel({
                   onClick={submitAccountReset}
                   disabled={!canResetAccount}
                   variant="danger"
+                  chartTheme={chartTheme}
                 >
                   Reset
                 </ControlButton>
               </div>
-              <div className="text-[11px] text-gray-500">
+              <div className={`text-[11px] ${mutedTextClass}`}>
                 Clears positions and trades, then sets starting cash.
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-slate-800 pt-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">Recent Trades</div>
+            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
+              <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Recent Trades</div>
               <div className="max-h-32 space-y-1 overflow-y-auto pr-1">
                 {backtestAccount?.trades?.length ? (
                   backtestAccount.trades.slice(0, 8).map((trade) => (
-                    <div key={trade.id} className="flex items-center justify-between gap-2 rounded bg-slate-900 px-2 py-1 text-[11px]">
-                      <span className="truncate text-gray-300">
+                    <div key={trade.id} className={`flex items-center justify-between gap-2 rounded px-2 py-1 text-[11px] ${isDarkTheme ? 'bg-black-table-color' : 'bg-slate-50'}`}>
+                      <span className={`truncate ${isDarkTheme ? 'text-gray-300' : 'text-slate-700'}`}>
                         {trade.action.toUpperCase()} {trade.side.toUpperCase()} {trade.symbol}
                       </span>
                       <span className={Number(trade.pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
@@ -1418,7 +1468,7 @@ export default function ReplayPanel({
                     </div>
                   ))
                 ) : (
-                  <span className="text-[11px] text-gray-500">No trades yet</span>
+                  <span className={`text-[11px] ${mutedTextClass}`}>No trades yet</span>
                 )}
               </div>
             </div>

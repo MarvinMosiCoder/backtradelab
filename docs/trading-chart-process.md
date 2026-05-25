@@ -431,7 +431,7 @@ The chart uses:
 
 The chart has visible time labels, a right price scale, and enabled native pan/zoom behavior.
 
-Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, and the background color used when entry/exit snapshots are captured.
+Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, and the background color used when entry/exit snapshots are captured. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, and backtest account fields so the controls remain readable in both dark and white themes.
 
 The Lightweight Charts TradingView attribution logo is disabled in chart layout options. `ChartStage.jsx` renders the configured application logo from `/applogo` in the bottom-left chart position as the BacktradeLab chart brand mark.
 
@@ -515,6 +515,8 @@ The Tools flyout groups drawing tools as `Trend Lines`, `Finonacci`, `Forcasting
 
 The Tool Editor opens automatically after a tool is clicked or a drawing is selected. It appears across the top of the chart beside the rail instead of as a large left flyout. The color, width, line style, label/text, and preset buttons each open a compact dropdown list. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type. The selected drawing duplicate and delete actions live in this top toolbar; the tools flyout keeps the broader clear-all action.
 
+Replay, Tools, Tool Editor, and Backtest Account controls share the chart theme. Neutral active controls use the application `skin-black` accent instead of the older blue tone. White theme controls use light surfaces with dark text and subtle borders; dark theme controls use the BacktradeLab black table/control surfaces. Semantic trading actions keep their meaning colors, such as green for long/success actions and red for short/destructive actions.
+
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
 | Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, lineStyle, color }` |
@@ -561,6 +563,7 @@ export const DRAWING_COLORS = [
   '#a78bfa',
   '#f97316',
   '#f8fafc',
+  '#000000',
 ];
 ```
 

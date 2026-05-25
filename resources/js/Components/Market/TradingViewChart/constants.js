@@ -78,6 +78,7 @@ export const DRAWING_COLORS = [
   '#a78bfa',
   '#f97316',
   '#f8fafc',
+  '#000000',
 ];
 
 export const CHART_HEIGHT = 720;
