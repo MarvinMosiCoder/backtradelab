@@ -81,6 +81,8 @@ function getControlStyle(chartTheme) {
 }
 
 function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }) {
+  const inactiveTextClass = chartTheme?.mode === 'dark' ? 'text-white' : 'text-slate-700';
+
   return (
     <button
       type="button"
@@ -88,8 +90,8 @@ function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }
       disabled={disabled}
       title={title}
       aria-label={title}
-      className={`flex h-10 w-10 items-center justify-center rounded-md border text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
-        active ? 'border-blue-500 bg-blue-600' : 'hover:brightness-125'
+      className={`flex h-10 w-10 items-center justify-center rounded-md border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
+        active ? 'border-blue-500 bg-blue-600 text-white' : `${inactiveTextClass} hover:brightness-95`
       }`}
       style={active ? undefined : getControlStyle(chartTheme)}
     >
@@ -99,20 +101,28 @@ function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }
 }
 
 function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y-3', chartTheme }) {
+  const isDark = chartTheme?.mode === 'dark';
+  const titleClass = isDark ? 'text-gray-300' : 'text-slate-700';
+  const closeClass = isDark
+    ? 'text-gray-400 hover:bg-slate-800 hover:text-white'
+    : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900';
+
   return (
     <div
-      className="ml-2 w-[min(300px,calc(100vw-5.5rem))] rounded-lg border p-3 text-white shadow-2xl backdrop-blur"
+      className={`ml-2 w-[min(300px,calc(100vw-5.5rem))] rounded-lg border p-3 shadow-2xl backdrop-blur ${
+        isDark ? 'text-white' : 'text-slate-800'
+      }`}
       style={getPanelStyle(chartTheme)}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-300">
+        <div className={`flex min-w-0 items-center gap-2 text-xs font-semibold uppercase tracking-wide ${titleClass}`}>
           {Icon && <Icon size={15} />}
           <span className="truncate">{title}</span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-slate-800 hover:text-white"
+          className={`flex h-7 w-7 items-center justify-center rounded-md ${closeClass}`}
           title="Close"
           aria-label="Close"
         >
