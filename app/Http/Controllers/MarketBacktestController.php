@@ -9,7 +9,6 @@ use App\Models\MarketBacktestSnapshot;
 use App\Models\MarketBacktestTrade;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class MarketBacktestController extends Controller
@@ -30,9 +29,7 @@ class MarketBacktestController extends Controller
         $account = $this->getOrCreateAccount($request);
         $symbol = isset($validated['symbol']) ? strtoupper($validated['symbol']) : null;
         $price = isset($validated['price']) ? (float) $validated['price'] : null;
-        $session = $symbol
-            ? $this->getOrCreateActiveSession($request, $account, $validated)
-            : $this->getActiveSession($request, $account);
+        $session = $this->getActiveSession($request, $account);
 
         return response()->json([
             'success' => true,
@@ -332,7 +329,7 @@ class MarketBacktestController extends Controller
             ->firstOrFail();
 
         $path = $request->file('snapshot')->store('market-backtest-snapshots', 'public');
-        $url = Storage::disk('public')->url($path);
+        $url = $this->buildPublicStorageUrl($path);
 
         $snapshot = MarketBacktestSnapshot::query()->create([
             'market_backtest_account_id' => $account->id,
@@ -349,7 +346,7 @@ class MarketBacktestController extends Controller
             'snapshot' => [
                 'id' => $snapshot->id,
                 'type' => $snapshot->type,
-                'url' => $snapshot->url,
+                'url' => $this->buildPublicStorageUrl($snapshot->path),
                 'capturedAtTime' => $snapshot->captured_at_time,
             ],
         ]);
@@ -754,8 +751,8 @@ class MarketBacktestController extends Controller
             'mistake' => $position->mistake,
             'emotion' => $position->emotion,
             'journalNotes' => $position->journal_notes,
-            'entrySnapshotUrl' => $entrySnapshot?->url,
-            'exitSnapshotUrl' => $exitSnapshot?->url,
+            'entrySnapshotUrl' => $this->getSnapshotUrl($entrySnapshot),
+            'exitSnapshotUrl' => $this->getSnapshotUrl($exitSnapshot),
             'openedAtTime' => $position->opened_at_time,
             'closedAtTime' => $position->closed_at_time,
             'createdAt' => optional($position->created_at)->toIso8601String(),
@@ -778,6 +775,24 @@ class MarketBacktestController extends Controller
             ->orderByDesc('updated_at')
             ->limit($limit)
             ->get();
+    }
+
+    private function getSnapshotUrl(?MarketBacktestSnapshot $snapshot): ?string
+    {
+        if (!$snapshot) {
+            return null;
+        }
+
+        if ($snapshot->path) {
+            return $this->buildPublicStorageUrl($snapshot->path);
+        }
+
+        return $snapshot->url;
+    }
+
+    private function buildPublicStorageUrl(string $path): string
+    {
+        return url('storage/' . ltrim($path, '/'));
     }
 
     private function getOrCreateAccount(Request $request, bool $lock = false): MarketBacktestAccount

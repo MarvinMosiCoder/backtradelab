@@ -318,11 +318,11 @@ axios.get('/market-backtest/account', {
 });
 ```
 
-The account response includes `account.activeSession` when a session is active. If the account is opened with symbol/timeframe context and no active session exists, the backend creates one using a default name such as `BTCUSDT 15m Session`. The Wallet flyout also exposes `New` and `End` actions. Starting a new session ends any active session for the account, then creates a fresh active session for the current symbol, exchange, market category, and timeframe.
+The account response includes `account.activeSession` when a session is active. Loading the account does not create a session by itself; the Wallet flyout exposes `New` and `End` actions for explicit session control. Starting a new session ends any active session for the account, then creates a fresh active session for the current symbol, exchange, market category, and timeframe. If a trade is submitted while no active session exists, the backend can still create a session for that trade context.
 
 New positions and their open/close trade rows store `market_backtest_session_id`. The Wallet flyout filters open positions, pending entries, and recent trades to the active session when one exists, so each session behaves like a focused backtest run while the underlying paper account balance remains shared.
 
-When a market entry is placed, a pending entry is placed, a pending entry triggers, or an open position closes, the chart attempts to capture the visible chart canvas and SVG drawing overlay as a PNG. Snapshots are uploaded to the public disk under `market-backtest-snapshots` and linked to the position as `entry` or `exit` snapshots. The Trade Report shows entry/exit snapshot links when they are available. The public storage link must exist for snapshot URLs to resolve in the browser.
+When a market entry is placed, a pending entry is placed, a pending entry triggers, or an open position closes, the chart attempts to capture the visible chart canvas and SVG drawing overlay as a PNG. Snapshots are uploaded to the public disk under `market-backtest-snapshots` and linked to the position as `entry` or `exit` snapshots. The Trade Report shows entry/exit snapshot links when they are available. Snapshot URLs are generated from the app base URL plus `/storage/{path}`. The public storage link must exist for snapshot URLs to resolve in the browser.
 
 Replay orders can be placed as Market or Conditional entries. Market entries fill immediately at the current replay execution price, or at the optional manual entry override. Conditional entries require a trigger price and are stored as pending positions until a replay candle trades through that level. The ticket accepts margin, leverage, optional stop loss, and optional take profit levels. For long positions, SL must be below entry and TP must be above entry; for short positions, SL must be above entry and TP must be below entry. The panel shows estimated leveraged value, risk, reward, and R/R before entry.
 
@@ -461,11 +461,11 @@ The rail currently has four main flyout groups:
 | Replay | Start replay, back/play/forward, reset/go latest, follow, price picking, candle count, and playback speed |
 | Tools | Grouped drawing tool selection plus clear-all action |
 | Backtest Account | Paper account metrics, long/short entry, close buttons, and recent trades using the live price or replay execution price |
-| Tool Editor | Compact top toolbar with dropdowns for color, width, line style, label/text, presets, and selected-drawing delete |
+| Tool Editor | Compact top toolbar with dropdowns for color, width, line style, label/text, presets, selected-drawing duplicate, and selected-drawing delete |
 
 The Tools flyout groups drawing tools as `Trend Lines`, `Finonacci`, `Forcasting`, `Geometic shape`, and `Annotation`.
 
-The Tool Editor opens automatically after a tool is clicked or a drawing is selected. It appears across the top of the chart beside the rail instead of as a large left flyout. The color, width, line style, label/text, and preset buttons each open a compact dropdown list. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type. The selected drawing delete action lives in this top toolbar; the tools flyout keeps the broader clear-all action.
+The Tool Editor opens automatically after a tool is clicked or a drawing is selected. It appears across the top of the chart beside the rail instead of as a large left flyout. The color, width, line style, label/text, and preset buttons each open a compact dropdown list. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type. The selected drawing duplicate and delete actions live in this top toolbar; the tools flyout keeps the broader clear-all action.
 
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
@@ -625,6 +625,10 @@ const deltaPrice = coords.price - startMouse.price;
 
 When a drawing or resize handle is dragged, the wrapper intercepts the mouse event in capture phase, stops propagation, and temporarily disables chart `handleScroll`/`handleScale`. This prevents the chart from panning while the drawing itself is being moved.
 
+### Duplicating
+
+Selected drawings can be duplicated from the top Tool Editor copy button or with `Ctrl+D` / `Cmd+D`. The duplicate keeps the original drawing type, coordinates, color, width, line style, label/text, position stop, and Fibonacci anchor data, then receives a new drawing ID. It is nudged one candle forward and one visible price step upward with `offsetDrawing()`, selected immediately, and saved through the same drawing persistence path as manual edits.
+
 ### Resizing
 
 `hitTestResizeHandle()` checks selected drawing handles before normal drawing hit tests.
@@ -680,6 +684,7 @@ Line, Fibonacci, measure, forecast, box, text, and position drawings support a s
 | `Escape` | Cancel temp drawing, close text input, clear active resize/drag, exit price pick |
 | `Delete` | Delete selected drawing |
 | `Backspace` | Delete selected drawing |
+| `Ctrl` / `Cmd` + `D` | Duplicate selected drawing |
 | `Space` | Start replay if needed, then toggle play/pause |
 | `ArrowLeft` / `ArrowRight` | Move selected drawing one candle backward/forward |
 | `ArrowUp` / `ArrowDown` | Move selected drawing up/down by a small visible price step |
@@ -767,7 +772,7 @@ The chart now includes:
 5. A single live/replay chart with a compact left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
 6. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
 7. Drawing tools for line, Fibonacci retracement/extension, measure, long/short position, forecast, box, and text on the live chart and in replay mode.
-8. Per-tool drawing colors, stroke widths, labels, presets, selection, moving, and resizing.
+8. Per-tool drawing colors, stroke widths, labels, presets, selection, duplicating, moving, and resizing.
 9. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
 10. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
 11. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.

@@ -399,6 +399,7 @@ export default function TradingViewReplayChart({
   const loadBacktestAccount = useCallback(async (price = null) => {
     setIsBacktestLoading(true);
     setBacktestError('');
+    const accountPrice = Number(price);
 
     try {
       const response = await axios.get('/market-backtest/account', {
@@ -407,7 +408,7 @@ export default function TradingViewReplayChart({
           exchange,
           category: marketCategory,
           timeframe,
-          ...(Number.isFinite(Number(price)) ? { price: Number(price) } : {}),
+          ...(Number.isFinite(accountPrice) && accountPrice > 0 ? { price: accountPrice } : {}),
         },
         headers: { Accept: 'application/json' },
       });
@@ -1504,6 +1505,35 @@ export default function TradingViewReplayChart({
     return true;
   }, [getKeyboardPriceStep, saveDrawings, timeframe]);
 
+  const handleDuplicateSelectedDrawing = useCallback(() => {
+    const selectedId = selectedDrawingIdRef.current;
+    if (!selectedId) return false;
+
+    const selected = drawingsRef.current.find((drawing) => drawing.id === selectedId);
+    if (!selected) return false;
+
+    const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+    const priceStep = getKeyboardPriceStep();
+    const duplicate = offsetDrawing(
+      {
+        ...structuredClone(selected),
+        id: `drawing-${Date.now()}`,
+      },
+      intervalSeconds,
+      priceStep,
+      1
+    );
+    const next = [...drawingsRef.current, duplicate];
+
+    saveDrawings(next);
+    setSelectedDrawingId(duplicate.id);
+    setTool(null);
+    setTempDrawing(null);
+    setTextInput(null);
+
+    return true;
+  }, [getKeyboardPriceStep, saveDrawings, timeframe]);
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       const target = event.target;
@@ -1545,6 +1575,12 @@ export default function TradingViewReplayChart({
         }
       }
 
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
+        if (handleDuplicateSelectedDrawing()) {
+          event.preventDefault();
+        }
+      }
+
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingIdRef.current) {
         event.preventDefault();
         const next = drawingsRef.current.filter((d) => d.id !== selectedDrawingIdRef.current);
@@ -1578,7 +1614,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [allCandles, handleNudgeSelectedDrawing, replayIndex, replayMode, saveDrawings]);
+  }, [allCandles, handleDuplicateSelectedDrawing, handleNudgeSelectedDrawing, replayIndex, replayMode, saveDrawings]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -2959,6 +2995,7 @@ export default function TradingViewReplayChart({
             onApplyToolPreset={handleApplyToolPreset}
             onDeleteToolPreset={handleDeleteToolPreset}
             onClearDrawings={handleClearDrawings}
+            onDuplicateSelectedDrawing={handleDuplicateSelectedDrawing}
             onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
             onStartBacktestSession={handleStartBacktestSession}
             onEndBacktestSession={handleEndBacktestSession}

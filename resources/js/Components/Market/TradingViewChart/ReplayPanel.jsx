@@ -3,6 +3,7 @@ import {
   BoxSelect,
   ChevronDown,
   ChartNoAxesCombined,
+  Copy,
   Crosshair,
   Gauge,
   LocateFixed,
@@ -182,6 +183,7 @@ function TopToolEditorBar({
   onDrawingLabelChange,
   onApplyToolPreset,
   onDeleteToolPreset,
+  onDuplicateSelectedDrawing,
   onDeleteSelectedDrawing,
   onSavePreset,
 }) {
@@ -452,15 +454,26 @@ function TopToolEditorBar({
         )}
 
         {selectedDrawing && (
-          <button
-            type="button"
-            onClick={onDeleteSelectedDrawing}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-red-950/80 text-red-200 transition hover:bg-red-900 hover:text-white"
-            title="Delete selected drawing"
-            aria-label="Delete selected drawing"
-          >
-            <Trash2 size={14} />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={onDuplicateSelectedDrawing}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-slate-800 text-slate-100 transition hover:bg-slate-700 hover:text-white"
+              title="Duplicate selected drawing"
+              aria-label="Duplicate selected drawing"
+            >
+              <Copy size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={onDeleteSelectedDrawing}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-red-950/80 text-red-200 transition hover:bg-red-900 hover:text-white"
+              title="Delete selected drawing"
+              aria-label="Delete selected drawing"
+            >
+              <Trash2 size={14} />
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -650,6 +663,7 @@ export default function ReplayPanel({
   onApplyToolPreset,
   onDeleteToolPreset,
   onClearDrawings,
+  onDuplicateSelectedDrawing,
   onDeleteSelectedDrawing,
   onStartBacktestSession,
   onEndBacktestSession,
@@ -1392,6 +1406,7 @@ export default function ReplayPanel({
           onDrawingLabelChange={onDrawingLabelChange}
           onApplyToolPreset={onApplyToolPreset}
           onDeleteToolPreset={onDeleteToolPreset}
+          onDuplicateSelectedDrawing={onDuplicateSelectedDrawing}
           onDeleteSelectedDrawing={onDeleteSelectedDrawing}
           onSavePreset={handleSavePreset}
         />
