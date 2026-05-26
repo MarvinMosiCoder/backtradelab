@@ -536,7 +536,7 @@ The rail currently has four main flyout groups:
 | Backtest Account | Paper account metrics, long/short entry, close buttons, and recent trades using the live price or replay execution price |
 | Tool Editor | Compact top toolbar with dropdowns for color, width, line style, label/text, presets, selected-drawing duplicate, and selected-drawing delete |
 
-The Tools flyout groups drawing tools as `Trend Lines`, `Finonacci`, `Forcasting`, `Geometic shape`, and `Annotation`.
+The Tools flyout groups drawing tools as `Trend Lines`, `Fibonacci`, `Forecasting`, `Geometric Shape`, and `Annotation`.
 
 The Tool Editor opens automatically after a tool is clicked or a drawing is selected. It appears across the top of the chart beside the rail instead of as a large left flyout. The color, width, line style, label/text, and preset buttons each open a compact dropdown list. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type. The selected drawing duplicate and delete actions live in this top toolbar; the tools flyout keeps the broader clear-all action.
 
@@ -557,7 +557,7 @@ Replay, Tools, Tool Editor, and Backtest Account controls share the chart theme.
 
 After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool. Trend-based Fibonacci extension uses three clicks and resets after the extension anchor is placed.
 
-Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci drawings render TradingView-style ratio labels such as `0.382`, `0.618`, and `1.618`; each level uses a fixed level color while the guide/anchor line keeps the tool color.
+Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci retracement and trend-based extension drawings render TradingView-style horizontal levels projected to the right side of the chart, with right-aligned ratio and price labels such as `0.382`, `0.618`, and `1.618`; each level uses a fixed level color while the guide/anchor line keeps the tool color.
 
 Drawings are stored per symbol:
 

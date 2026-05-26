@@ -180,9 +180,9 @@ const TOOL_BUTTONS = [
 
 const TOOL_GROUPS = [
   { name: 'Trend Lines', tools: ['line', 'horizontal-ray'] },
-  { name: 'Finonacci', tools: ['fib-retracement', 'fib-extension'] },
-  { name: 'Forcasting', tools: ['long-position', 'short-position', 'forecast'] },
-  { name: 'Geometic shape', tools: ['measure', 'rect'] },
+  { name: 'Fibonacci', tools: ['fib-retracement', 'fib-extension'] },
+  { name: 'Forecasting', tools: ['long-position', 'short-position', 'forecast'] },
+  { name: 'Geometric Shape', tools: ['measure', 'rect'] },
   { name: 'Annotation', tools: ['text'] },
 ];
 

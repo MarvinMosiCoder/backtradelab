@@ -76,12 +76,30 @@ const FIB_LEVEL_COLORS = {
   4.236: '#7e57c2',
 };
 
+const FIB_LABEL_WIDTH = 118;
+
 function isFibonacciDrawing(drawing) {
   return ['fib-retracement', 'fib-extension'].includes(drawing?.type);
 }
 
 function formatFibLevel(level) {
-  return Number.isInteger(level) ? String(level) : String(level);
+  return Number.isInteger(level) ? String(level) : Number(level).toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function getFibonacciRange(drawing, overlayWidth) {
+  const { p1, p2, p3 } = drawing.screen;
+  const anchorPoint = drawing.type === 'fib-extension' ? (p3 ?? p2) : p1;
+  const points = drawing.type === 'fib-extension' && p3 ? [p1, p2, p3] : [p1, p2];
+  const leftX = Math.max(0, Math.min(...points.map((point) => point.x)));
+  const rightX = Math.max(...points.map((point) => point.x), overlayWidth);
+  const labelX = Math.max(Math.min(rightX - 8, overlayWidth - 8), FIB_LABEL_WIDTH);
+
+  return {
+    anchorPoint,
+    leftX,
+    rightX,
+    labelX,
+  };
 }
 
 function getFibonacciLevels(drawing, overlayWidth) {
@@ -90,13 +108,9 @@ function getFibonacciLevels(drawing, overlayWidth) {
     : FIB_RETRACEMENT_LEVELS;
   const { p1, p2, p3 } = drawing.screen;
   const anchor = drawing.type === 'fib-extension' ? (drawing.anchor ?? drawing.end) : drawing.start;
-  const anchorPoint = drawing.type === 'fib-extension' ? (p3 ?? p2) : p1;
+  const { anchorPoint, leftX, rightX, labelX } = getFibonacciRange(drawing, overlayWidth);
   const priceDelta = drawing.end.price - drawing.start.price;
   const yDelta = p2.y - p1.y;
-  const leftX = Math.min(p1.x, p2.x, anchorPoint.x);
-  const rightX = drawing.type === 'fib-extension'
-    ? Math.max(anchorPoint.x, overlayWidth)
-    : Math.max(p1.x, p2.x);
 
   return levels.map((level) => {
     const price = anchor.price + (priceDelta * level);
@@ -107,8 +121,9 @@ function getFibonacciLevels(drawing, overlayWidth) {
       y: anchorPoint.y + (yDelta * level),
       x1: leftX,
       x2: rightX,
+      labelX,
       color: FIB_LEVEL_COLORS[level] ?? '#ffffff',
-      label: `${formatFibLevel(level)} ${formatPriceLabel(price)}`,
+      label: `${formatFibLevel(level)} (${formatPriceLabel(price)})`,
     };
   });
 }
@@ -343,10 +358,6 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
 
             if (isFibonacciDrawing(d)) {
               const fibLevels = getFibonacciLevels(d, overlaySize.width);
-              const labelX = Math.min(
-                Math.max(Math.max(d.screen.p1.x, d.screen.p2.x, d.screen.p3?.x ?? 0) + 8, 8),
-                Math.max(overlaySize.width - 96, 8)
-              );
 
               return (
                 <g key={d.id}>
@@ -392,8 +403,9 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                       />
                       {!d.id.startsWith('temp-') && (
                         <text
-                          x={labelX}
-                          y={item.y - 4}
+                          x={item.labelX}
+                          y={item.y - 5}
+                          textAnchor="end"
                           fill={item.color}
                           fontSize="11"
                           fontWeight="600"

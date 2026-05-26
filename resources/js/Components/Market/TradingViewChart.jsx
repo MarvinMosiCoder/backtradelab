@@ -113,6 +113,22 @@ const FIB_EXTENSION_LEVELS = [
   4.236,
 ];
 
+function getRenderedFibonacciLevels(drawing, overlayWidth) {
+  const levels = drawing.type === 'fib-extension' ? FIB_EXTENSION_LEVELS : FIB_RETRACEMENT_LEVELS;
+  const { p1, p2, p3 } = drawing.screen;
+  const anchorPoint = drawing.type === 'fib-extension' ? (p3 ?? p2) : p1;
+  const points = drawing.type === 'fib-extension' && p3 ? [p1, p2, p3] : [p1, p2];
+  const leftX = Math.max(0, Math.min(...points.map((point) => point.x)));
+  const rightX = Math.max(...points.map((point) => point.x), overlayWidth);
+  const yDelta = p2.y - p1.y;
+
+  return levels.map((level) => ({
+    x1: leftX,
+    x2: rightX,
+    y: anchorPoint.y + (yDelta * level),
+  }));
+}
+
 function getPositiveNumber(value) {
   if (value === null || value === undefined || value === '') return null;
 
@@ -986,16 +1002,9 @@ export default function TradingViewReplayChart({
         }
 
         if (['fib-retracement', 'fib-extension'].includes(d.type)) {
-          const levels = d.type === 'fib-extension' ? FIB_EXTENSION_LEVELS : FIB_RETRACEMENT_LEVELS;
-          const anchorPoint = d.type === 'fib-extension' ? (d.screen.p3 ?? p2) : p1;
-          const yDelta = p2.y - p1.y;
-          const leftX = Math.min(p1.x, p2.x, anchorPoint.x);
-          const rightX = d.type === 'fib-extension'
-            ? Math.max(anchorPoint.x, overlaySize.width)
-            : Math.max(p1.x, p2.x);
-          const hitFibLevel = levels.some((level) => {
-            const levelPointA = { x: leftX, y: anchorPoint.y + (yDelta * level) };
-            const levelPointB = { x: rightX, y: anchorPoint.y + (yDelta * level) };
+          const hitFibLevel = getRenderedFibonacciLevels(d, overlaySize.width).some((level) => {
+            const levelPointA = { x: level.x1, y: level.y };
+            const levelPointB = { x: level.x2, y: level.y };
             return distanceToSegment(point, levelPointA, levelPointB) <= 6;
           });
 
