@@ -2953,7 +2953,7 @@ export default function TradingViewReplayChart({
       ref={fullscreenRef}
       className={
         isFullscreen
-          ? 'flex h-screen flex-col gap-3 overflow-hidden bg-slate-950 p-4'
+          ? 'flex h-screen flex-col gap-3 overflow-hidden bg-black-screen-color p-4'
           : 'space-y-4'
       }
     >

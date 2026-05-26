@@ -31,15 +31,21 @@ const controlBaseClass =
 
 function controlVariantClass(variant, isActive, chartTheme) {
   const isDark = chartTheme?.mode !== 'light';
-  if (variant === 'primary') return 'bg-skin-black-light text-white hover:bg-skin-black';
+  if (variant === 'primary') {
+    return isDark
+      ? 'bg-white text-skin-black hover:bg-gray-200'
+      : 'bg-skin-black text-white hover:bg-skin-black-light';
+  }
   if (variant === 'danger') return 'bg-red-600 text-white hover:bg-red-500';
   if (variant === 'success') return 'bg-emerald-600 text-white hover:bg-emerald-700';
   if (variant === 'warning') return 'bg-amber-600 text-white hover:bg-amber-700';
 
   return isActive
-    ? 'bg-skin-black-light text-white hover:bg-skin-black'
+    ? isDark
+      ? 'bg-white text-skin-black hover:bg-gray-200'
+      : 'bg-skin-black text-white hover:bg-skin-black-light'
     : isDark
-      ? 'bg-gray-700 text-white hover:bg-gray-600'
+      ? 'border border-gray-700 bg-black-table-color text-gray-200 hover:bg-skin-black-light hover:text-white'
       : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100';
 }
 
@@ -95,7 +101,7 @@ function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }
       title={title}
       aria-label={title}
       className={`flex h-10 w-10 items-center justify-center rounded-md border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
-        active ? 'border-skin-black-light bg-skin-black-light text-white' : `${inactiveTextClass} hover:brightness-95`
+        active ? 'border-white bg-white text-skin-black' : `${inactiveTextClass} hover:brightness-95`
       }`}
       style={active ? undefined : getControlStyle(chartTheme)}
     >
@@ -108,7 +114,7 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
   const isDark = chartTheme?.mode === 'dark';
   const titleClass = isDark ? 'text-gray-300' : 'text-slate-700';
   const closeClass = isDark
-    ? 'text-gray-400 hover:bg-slate-800 hover:text-white'
+    ? 'text-gray-400 hover:bg-skin-black-light hover:text-white'
     : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900';
 
   return (
@@ -141,7 +147,7 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
 function TopMenuButton({ icon: Icon, children, active, disabled, onClick, className = '', chartTheme }) {
   const inactiveClass = chartTheme?.mode === 'light'
     ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-    : 'bg-slate-800 text-white hover:bg-slate-700';
+    : 'bg-black-table-color text-white hover:bg-skin-black-light';
 
   return (
     <button
@@ -149,7 +155,7 @@ function TopMenuButton({ icon: Icon, children, active, disabled, onClick, classN
       onClick={onClick}
       disabled={disabled}
       className={`inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
-        active ? 'bg-skin-black-light text-white' : inactiveClass
+        active ? (chartTheme?.mode === 'light' ? 'bg-skin-black text-white' : 'bg-white text-skin-black') : inactiveClass
       } ${className}`}
     >
       {Icon && <Icon size={14} className="shrink-0" />}
@@ -236,20 +242,22 @@ function TopToolEditorBar({
 
   const isDark = chartTheme?.mode !== 'light';
   const menuPanelClass = isDark
-    ? 'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-700 bg-slate-950/95 p-3 text-white shadow-2xl backdrop-blur'
+    ? 'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-gray-700 bg-skin-black/95 p-3 text-white shadow-2xl backdrop-blur'
     : 'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl backdrop-blur';
   const editorBadgeClass = isDark
-    ? 'bg-slate-900 text-gray-200'
+    ? 'bg-black-table-color text-gray-200'
     : 'border border-slate-200 bg-slate-50 text-slate-700';
   const editorLabelClass = isDark ? 'text-gray-400' : 'text-slate-600';
   const editorFieldClass = isDark
-    ? 'border-slate-600 bg-slate-900 text-white placeholder:text-gray-500'
+    ? 'border-gray-700 bg-black-table-color text-white placeholder:text-gray-500'
     : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400';
   const editorOptionClass = (active) => (
     active
-      ? 'border-skin-black-light bg-skin-black-light text-white'
+      ? isDark
+        ? 'border-white bg-white text-skin-black'
+        : 'border-skin-black bg-skin-black text-white'
       : isDark
-        ? 'border-gray-600 bg-gray-700 text-white hover:bg-gray-600'
+        ? 'border-gray-700 bg-black-table-color text-white hover:bg-skin-black-light'
         : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
   );
 
@@ -293,7 +301,7 @@ function TopToolEditorBar({
                         setOpenMenu(null);
                       }}
                       className={`h-7 w-7 rounded-full border ${
-                        isActive ? 'border-white ring-2 ring-skin-black-light' : 'border-gray-500'
+                        isActive ? 'border-white ring-2 ring-white' : 'border-gray-500'
                       }`}
                       style={{ backgroundColor: color }}
                       title={color}
@@ -484,7 +492,7 @@ function TopToolEditorBar({
                 </div>
 
                 {selectedDrawing && (
-                  <div className={`mt-3 border-t pt-3 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                  <div className={`mt-3 border-t pt-3 ${isDark ? 'border-gray-800' : 'border-slate-200'}`}>
                     <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Save Preset</div>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                       <input
@@ -516,7 +524,7 @@ function TopToolEditorBar({
               type="button"
               onClick={onDuplicateSelectedDrawing}
               className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition ${
-                isDark ? 'bg-slate-800 text-slate-100 hover:bg-slate-700 hover:text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                isDark ? 'bg-black-table-color text-slate-100 hover:bg-skin-black-light hover:text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
               }`}
               title="Duplicate selected drawing"
               aria-label="Duplicate selected drawing"
@@ -914,24 +922,26 @@ export default function ReplayPanel({
     onResetBacktestAccount(resetBalanceValue);
   };
   const isDarkTheme = chartTheme?.mode === 'dark';
-  const sectionBorderClass = isDarkTheme ? 'border-slate-800' : 'border-slate-200';
+  const sectionBorderClass = isDarkTheme ? 'border-gray-800' : 'border-slate-200';
   const mutedTextClass = isDarkTheme ? 'text-gray-500' : 'text-slate-500';
   const labelTextClass = isDarkTheme ? 'text-gray-400' : 'text-slate-600';
   const valueTextClass = isDarkTheme ? 'text-white' : 'text-slate-900';
   const cardSurfaceClass = isDarkTheme
-    ? 'border-skin-black-light bg-black-table-color'
+    ? 'border-gray-700 bg-black-table-color'
     : 'border-slate-200 bg-slate-50';
   const fieldClass = isDarkTheme
-    ? 'border-skin-black-light bg-black-table-color text-white placeholder:text-gray-500 focus:border-gray-500'
+    ? 'border-gray-700 bg-black-table-color text-white placeholder:text-gray-500 focus:border-gray-500'
     : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400';
   const invalidFieldClass = isDarkTheme
     ? 'border-red-500 bg-black-table-color text-white placeholder:text-gray-500'
     : 'border-red-500 bg-white text-slate-900 placeholder:text-slate-400';
   const neutralToggleClass = (active) => (
     active
-      ? 'bg-skin-black-light text-white'
+      ? isDarkTheme
+        ? 'bg-white text-skin-black'
+        : 'bg-skin-black text-white'
       : isDarkTheme
-        ? 'bg-gray-700 text-white hover:bg-gray-600'
+        ? 'border border-gray-700 bg-black-table-color text-gray-200 hover:bg-skin-black-light hover:text-white'
         : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
   );
 
@@ -1024,7 +1034,7 @@ export default function ReplayPanel({
               {isReplayPricePickActive ? 'Pick Price' : 'Set Replay Price'}
             </ControlButton>
 
-            <div className={`flex h-8 items-center justify-center rounded-md border px-2 text-xs ${isDarkTheme ? 'border-gray-700 text-gray-300' : 'border-slate-300 text-slate-600'}`}>
+            <div className={`flex h-8 items-center justify-center rounded-md border px-2 text-xs ${isDarkTheme ? 'border-gray-700 bg-black-table-color text-gray-300' : 'border-slate-300 text-slate-600'}`}>
               {replayMode
                 ? `Candle ${Math.min(replayIndex + 1, candleCount)} / ${candleCount}`
                 : `Live candles ${candleCount}`}
@@ -1069,7 +1079,7 @@ export default function ReplayPanel({
                   .filter(Boolean);
 
                 return (
-                  <div key={group.name} className="space-y-2">
+                  <div key={group.name} className={`space-y-2 rounded-md border p-2 ${isDarkTheme ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
                     <div className={`text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>
                       {group.name}
                     </div>

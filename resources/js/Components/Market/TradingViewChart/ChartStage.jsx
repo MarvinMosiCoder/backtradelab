@@ -681,7 +681,7 @@ function TextInputPopover({
   return (
     <div
       data-chart-ui="text-input"
-      className="absolute z-20 w-56 rounded-lg border border-blue-500 bg-slate-900 p-3 shadow-2xl"
+      className="absolute z-20 w-56 rounded-lg border border-gray-700 bg-skin-black p-3 shadow-2xl"
       style={{
         left: Math.min(textInput.x + 12, Math.max(overlaySize.width - 240, 12)),
         top: Math.max(textInput.y - 12, 12),
@@ -693,7 +693,7 @@ function TextInputPopover({
         onChange={(e) => onTextDraftChange(e.target.value)}
         placeholder="Enter note"
         autoFocus
-        className="mb-2 w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white outline-none"
+        className="mb-2 w-full rounded border border-gray-700 bg-black-table-color px-3 py-2 text-sm text-white outline-none focus:border-gray-500"
         onKeyDown={(e) => {
           if (e.key === 'Enter') onSaveText();
           if (e.key === 'Escape') onCancel();
@@ -703,7 +703,7 @@ function TextInputPopover({
         <button
           type="button"
           onClick={onSaveText}
-          className="inline-flex items-center gap-1.5 rounded bg-blue-600 px-3 py-2 text-xs font-medium text-white"
+          className="inline-flex items-center gap-1.5 rounded bg-skin-black-light px-3 py-2 text-xs font-medium text-white hover:bg-skin-black"
         >
           <Save size={14} />
           Save
@@ -711,7 +711,7 @@ function TextInputPopover({
         <button
           type="button"
           onClick={onCancel}
-          className="inline-flex items-center gap-1.5 rounded bg-gray-700 px-3 py-2 text-xs font-medium text-white"
+          className="inline-flex items-center gap-1.5 rounded bg-black-table-color px-3 py-2 text-xs font-medium text-white hover:bg-skin-black-light"
         >
           <X size={14} />
           Cancel
@@ -796,7 +796,7 @@ export default function ChartStage({
       <button
         type="button"
         onClick={onToggleFullscreen}
-        className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded border border-slate-600 bg-slate-900/90 text-white shadow-lg hover:bg-slate-800"
+        className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded border border-gray-700 bg-black-table-color/95 text-white shadow-lg hover:bg-skin-black-light"
         title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
         aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
       >

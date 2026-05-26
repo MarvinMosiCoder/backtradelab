@@ -47,6 +47,12 @@ Route::post('/send_resetpass_email', [ResetPasswordController::class, 'sendReset
 Route::get('/reset_password_email/{email}', [ResetPasswordController::class, 'getResetIndex'])->name('reset_password_email');
 Route::post('/send_resetpass_email/reset', [ResetPasswordController::class, 'resetPassword']);
 Route::post('login-save', [LoginController::class, 'authenticate'])->name('login-save');
+Route::get('/auth/{provider}/redirect', [LoginController::class, 'redirectToProvider'])
+    ->whereIn('provider', ['google', 'facebook'])
+    ->name('social.redirect');
+Route::get('/auth/{provider}/callback', [LoginController::class, 'handleProviderCallback'])
+    ->whereIn('provider', ['google', 'facebook'])
+    ->name('social.callback');
 Route::get('/appname', [SettingsController::class, 'getAppname'])->name('app-name');
 Route::get('/applogo', [SettingsController::class, 'getApplogo'])->name('app-logo');
 Route::get('/login-details', [SettingsController::class, 'getLoginDetails'])->name('app-login-details');

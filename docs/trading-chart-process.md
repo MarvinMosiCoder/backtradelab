@@ -55,8 +55,8 @@ External API
 
 | File | Purpose |
 |------|---------|
-| `resources/js/Pages/Public/Home.jsx` | Public front page for `/`, with dark/white localStorage theme toggle, navbar search, marketing hero, and sign-in dropdown |
-| `resources/js/Pages/Auth/Login.jsx` | Dedicated `/login` sign-in form that reads the saved public theme preference |
+| `resources/js/Pages/Public/Home.jsx` | Public front page for `/`, with dark/white localStorage theme toggle, black-theme-aligned navbar/search/hero controls, marketing hero, and sign-in dropdown |
+| `resources/js/Pages/Auth/Login.jsx` | Dedicated `/login` sign-in form that reads the saved public theme preference, matches the black public theme surfaces, and offers password, Google, and Facebook sign-in |
 | `resources/js/Layouts/layout/AppContent.jsx` | Authenticated content shell with a dynamic content area so large pages like the chart can size and scroll naturally |
 | `resources/js/Pages/Dashboard/Dashboard.jsx` | Superadmin dashboard cards, or chart-first trader dashboard for non-superadmin users |
 | `resources/js/Layouts/layout/AppSidebar.jsx` | Authenticated sidebar shell that only renders `AdminSidebar` when the current privilege is superadmin |
@@ -105,6 +105,29 @@ The unauthenticated root route `/` renders `resources/js/Pages/Public/Home.jsx`.
 
 The dedicated login form lives at `/login` and renders `resources/js/Pages/Auth/Login.jsx`. The public page links to `/login` from the hero CTA and the login dropdown. The Inertia page resolver in `resources/js/app.jsx` excludes both `Auth/*` and `Public/*` pages from the authenticated app sidebar layout.
 
+Login supports the existing admin-created email/password flow plus Google and Facebook OAuth through Laravel Socialite. Social sign-in routes are:
+
+| Route | Purpose |
+|-------|---------|
+| `GET /auth/google/redirect` | Redirect to Google OAuth |
+| `GET /auth/google/callback` | Handle Google OAuth callback |
+| `GET /auth/facebook/redirect` | Redirect to Facebook OAuth |
+| `GET /auth/facebook/callback` | Handle Facebook OAuth callback |
+
+OAuth does not create new users. The provider email must already exist in `adm_users`, the account must be active, and the user must have an assigned privilege. After a successful provider login, `LoginController` reuses the same menu, privilege, theme, profile, notification, and announcement session setup as password login. Social login skips the password-age/default-password force-change gate so an admin-created OAuth user is not blocked by a password they may not use.
+
+OAuth credentials are configured in `.env`:
+
+```env
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"
+
+FACEBOOK_CLIENT_ID=
+FACEBOOK_CLIENT_SECRET=
+FACEBOOK_REDIRECT_URI="${APP_URL}/auth/facebook/callback"
+```
+
 The public theme preference is browser-only for now. `Home.jsx` stores the selected mode in:
 
 ```javascript
@@ -112,6 +135,8 @@ localStorage.setItem('backtradelab-theme', 'dark' | 'white');
 ```
 
 `Home.jsx` toggles the value from the login dropdown. `Login.jsx` reads the same `backtradelab-theme` key on load so the sign-in page follows the visitor's selected dark or white theme. This theme preference is not saved to the database yet.
+
+The dark public theme is aligned with the authenticated BacktradeLab black theme rather than the older blue tone. Public dark surfaces use the same visual family as the chart shell: `bg-black-screen-color` for page background, `bg-skin-black` for main panels/nav surfaces, `bg-black-table-color` for compact controls/cards, gray borders, and white primary calls to action. The white public theme remains light with dark text and subtle slate borders.
 
 ### 2. Symbol List
 
@@ -431,7 +456,7 @@ The chart uses:
 
 The chart has visible time labels, a right price scale, and enabled native pan/zoom behavior.
 
-Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, and the background color used when entry/exit snapshots are captured. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, and backtest account fields so the controls remain readable in both dark and white themes.
+Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, fullscreen background, text-input popover, and the background color used when entry/exit snapshots are captured. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, preset controls, grouped drawing tools, and backtest account fields/cards so the controls remain readable in both dark and white themes.
 
 The Lightweight Charts TradingView attribution logo is disabled in chart layout options. `ChartStage.jsx` renders the configured application logo from `/applogo` in the bottom-left chart position as the BacktradeLab chart brand mark.
 
@@ -515,7 +540,7 @@ The Tools flyout groups drawing tools as `Trend Lines`, `Finonacci`, `Forcasting
 
 The Tool Editor opens automatically after a tool is clicked or a drawing is selected. It appears across the top of the chart beside the rail instead of as a large left flyout. The color, width, line style, label/text, and preset buttons each open a compact dropdown list. If a drawing is selected, edits apply to that drawing and update the saved defaults for its type. If only a tool is active, edits update the defaults for the next drawing of that type. The selected drawing duplicate and delete actions live in this top toolbar; the tools flyout keeps the broader clear-all action.
 
-Replay, Tools, Tool Editor, and Backtest Account controls share the chart theme. Neutral active controls use the application `skin-black` accent instead of the older blue tone. White theme controls use light surfaces with dark text and subtle borders; dark theme controls use the BacktradeLab black table/control surfaces. Semantic trading actions keep their meaning colors, such as green for long/success actions and red for short/destructive actions.
+Replay, Tools, Tool Editor, and Backtest Account controls share the chart theme. In dark mode, inactive controls and flyout cards use `bg-black-table-color` with gray borders, panel shells use `bg-skin-black`, and selected or primary neutral controls use a high-contrast white button treatment. This removes the older blue/slate control tone from the replay modal, tools flyout, presets editor, fullscreen button, text-label popover, and backtest account panel. White theme controls use light surfaces with dark text and subtle borders. Semantic trading actions keep their meaning colors, such as green for long/success actions, red for short/destructive actions, and amber for price-pick warning actions.
 
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
@@ -817,21 +842,21 @@ Current known build warnings are unrelated to the chart changes:
 
 The chart now includes:
 
-1. Public `/` front page with navbar search, product/community/market/more links, hero content, login dropdown, and browser-local dark/white theme preference.
-2. Dedicated `/login` sign-in form that follows the saved public theme.
+1. Public `/` front page with navbar search, product/community/market/more links, hero content, login dropdown, browser-local dark/white theme preference, and black-theme-aligned dark controls.
+2. Dedicated `/login` sign-in form that follows the saved public theme, uses the same black dark-theme surfaces, and supports password, Google, and Facebook sign-in for existing admin-created users.
 3. Chart-first `/dashboard` for non-superadmin trader users, with superadmin keeping the existing dashboard cards.
 4. Trader navbar quick links for Chart, PnL, and saved symbol selection.
 5. Lightweight Charts candlestick and volume rendering.
 6. Database-backed market symbols through `/api/market-symbols`.
 7. Laravel/exchange candle data flow through `/api/klines`.
 8. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
-9. A single live/replay chart with a compact left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
+9. A single live/replay chart with a compact black-theme-aligned left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
 10. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
 11. Drawing tools for line, Fibonacci retracement/extension, measure, long/short position, forecast, box, and text on the live chart and in replay mode.
 12. Per-tool drawing colors, stroke widths, labels, presets, selection, duplicating, moving, and resizing.
 13. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
 14. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
 15. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
-16. Admin-theme-aligned chart background, grid, axis text, borders, loading overlay, and snapshot background.
+16. Admin-theme-aligned chart background, grid, axis text, borders, loading overlay, fullscreen shell, chart control surfaces, and snapshot background.
 17. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
 18. Fullscreen chart mode.

@@ -38,6 +38,9 @@ export default function ChartHeader({
       : 'border-gray-200 bg-gray-50 text-gray-800'
   }`;
   const labelClass = isDark ? 'text-gray-300' : 'text-gray-600';
+  const neutralActionClass = isDark
+    ? 'bg-white text-skin-black hover:bg-gray-200'
+    : 'bg-skin-black text-white hover:bg-skin-black-light';
   const buildSymbolKey = (item) => `${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`;
   const categorySymbols = symbols.filter((item) => (item.category ?? 'spot') === marketCategory);
   const currentSymbolOption = { symbol, exchange: exchange ?? 'bybit', category: marketCategory ?? 'spot' };
@@ -221,8 +224,8 @@ export default function ChartHeader({
           <button
             type="button"
             onClick={onToggleReplayMode}
-            className={`flex h-9 w-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-semibold text-white ${
-              replayMode ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
+            className={`flex h-9 w-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-semibold ${
+              replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass
             }`}
           >
             {replayMode ? <X size={15} /> : <Play size={15} />}
@@ -269,7 +272,7 @@ export default function ChartHeader({
               ${formatPrice(currentPrice)}
             </div>
             {replayMode && (
-              <div className="max-w-full truncate text-xs text-blue-400">
+              <div className={`max-w-full truncate text-xs ${isDark ? 'text-gray-300' : 'text-slate-500'}`}>
                 Selected: ${formatPrice(selectedReplayPrice)}
               </div>
             )}
