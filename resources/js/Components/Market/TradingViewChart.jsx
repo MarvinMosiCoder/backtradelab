@@ -113,6 +113,107 @@ const FIB_EXTENSION_LEVELS = [
   4.236,
 ];
 
+const PREFETCH_TIMEFRAME_MAP = {
+  '1m': ['3m', '5m'],
+  '3m': ['1m', '5m', '15m'],
+  '5m': ['3m', '15m', '30m'],
+  '15m': ['5m', '30m', '1h'],
+  '30m': ['15m', '1h', '2h'],
+  '1h': ['30m', '2h', '4h'],
+  '2h': ['1h', '4h', '6h'],
+  '4h': ['1h', '2h', '6h', '12h'],
+  '6h': ['4h', '12h', '1d'],
+  '12h': ['6h', '1d'],
+  '1d': ['12h', '1w'],
+  '1w': ['1d', '1M'],
+  '1M': ['1w'],
+};
+
+const CANDLE_CACHE_LIMIT = 18;
+
+function buildCandleCacheKey({ exchange, marketCategory, symbol, timeframe, end = 'latest' }) {
+  return [
+    exchange,
+    marketCategory,
+    symbol,
+    timeframe,
+    end,
+  ].join(':');
+}
+
+function resolvePositionProgressPoint(drawing, stop, candles) {
+  if (!Array.isArray(candles) || !candles.length) return null;
+
+  const entryPrice = Number(drawing.start?.price);
+  const targetPrice = Number(drawing.end?.price);
+  const stopPrice = Number(stop?.price);
+  const isLong = drawing.type === 'long-position';
+
+  if (
+    !Number.isFinite(entryPrice)
+    || !Number.isFinite(targetPrice)
+    || !Number.isFinite(stopPrice)
+  ) {
+    return null;
+  }
+
+  const entryTime = Number(drawing.start?.time);
+  const entryLogical = Number(drawing.start?.logical);
+  const startedCandles = candles.filter((candle) => {
+    if (Number.isFinite(entryLogical) && Number.isFinite(Number(candle.logical))) {
+      return Number(candle.logical) >= entryLogical;
+    }
+
+    if (Number.isFinite(entryTime)) {
+      return Number(candle.time) >= entryTime;
+    }
+
+    return true;
+  });
+
+  if (!startedCandles.length) return null;
+
+  let latestInsidePoint = null;
+  const minPositionPrice = Math.min(targetPrice, stopPrice);
+  const maxPositionPrice = Math.max(targetPrice, stopPrice);
+
+  for (const candle of startedCandles) {
+    const high = Number(candle.high);
+    const low = Number(candle.low);
+    const close = Number(candle.close);
+
+    if (!Number.isFinite(high) || !Number.isFinite(low)) continue;
+
+    if (isLong) {
+      if (low <= stopPrice) {
+        return { time: candle.time, logical: candle.logical, price: stopPrice };
+      }
+
+      if (high >= targetPrice) {
+        return { time: candle.time, logical: candle.logical, price: targetPrice };
+      }
+    } else {
+      if (high >= stopPrice) {
+        return { time: candle.time, logical: candle.logical, price: stopPrice };
+      }
+
+      if (low <= targetPrice) {
+        return { time: candle.time, logical: candle.logical, price: targetPrice };
+      }
+    }
+
+    if (Number.isFinite(close) && close >= minPositionPrice && close <= maxPositionPrice) {
+      latestInsidePoint = {
+        time: candle.time,
+        logical: candle.logical,
+        price: close,
+      };
+    }
+  }
+
+  return latestInsidePoint;
+}
+
 function getRenderedFibonacciLevels(drawing, overlayWidth) {
   const levels = drawing.type === 'fib-extension' ? FIB_EXTENSION_LEVELS : FIB_RETRACEMENT_LEVELS;
   const { p1, p2, p3 } = drawing.screen;
@@ -220,6 +321,8 @@ export default function TradingViewReplayChart({
   const selectedReplayPriceRef = useRef(null);
   const replayModeRef = useRef(false);
   const fetchRequestIdRef = useRef(0);
+  const candleCacheRef = useRef(new Map());
+  const candleFetchAbortRef = useRef(null);
   const isSpacePressedRef = useRef(false);
   const toolRef = useRef(null);
   const drawingColorRef = useRef(DRAWING_COLOR);
@@ -376,17 +479,16 @@ export default function TradingViewReplayChart({
   }, [candleColors]);
 
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(document.fullscreenElement === fullscreenRef.current);
-      scheduleOverlayRender();
-    };
+    if (!isFullscreen || typeof document === 'undefined') return undefined;
 
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    scheduleOverlayRender();
 
     return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.body.style.overflow = previousOverflow;
     };
-  }, [scheduleOverlayRender]);
+  }, [isFullscreen, scheduleOverlayRender]);
 
   useEffect(() => {
     if (!wrapperRef.current) return;
@@ -973,8 +1075,10 @@ export default function TradingViewReplayChart({
         const p2 = toScreen(drawing.end);
         const stop = drawing.stop ?? getDefaultPositionStop(drawing.type, drawing.start, drawing.end);
         const pStop = toScreen(stop);
+        const progressPoint = resolvePositionProgressPoint(drawing, stop, visibleCandles);
+        const pCurrent = progressPoint ? toScreen(progressPoint) : null;
         if (!p1 || !p2 || !pStop) return null;
-        return { ...drawing, stop, screen: { p1, p2, pStop } };
+        return { ...drawing, stop, screen: { p1, p2, pStop, ...(pCurrent ? { pCurrent } : {}) } };
       }
 
       if (drawing.type === 'text') {
@@ -985,7 +1089,7 @@ export default function TradingViewReplayChart({
 
       return null;
     }).filter(Boolean);
-  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop]);
+  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop, visibleCandles]);
 
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
@@ -1987,6 +2091,9 @@ export default function TradingViewReplayChart({
     async function fetchKlines() {
       const requestId = fetchRequestIdRef.current + 1;
       fetchRequestIdRef.current = requestId;
+      candleFetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      candleFetchAbortRef.current = controller;
       const wasInReplay = replayMode;
       const previousSelectedReplayPrice = selectedReplayPriceRef.current;
       const previousReplayTime = wasInReplay ? allCandles[replayIndex]?.time : null;
@@ -2006,6 +2113,7 @@ export default function TradingViewReplayChart({
         wasInReplay && allCandles.length > 1
           ? replayIndex / (allCandles.length - 1)
           : 0.3;
+      let hasUsableCache = false;
 
       setLoading(true);
       setError('');
@@ -2021,10 +2129,33 @@ export default function TradingViewReplayChart({
         const interval = INTERVAL_MAP[timeframe];
         if (!interval) throw new Error(`Unsupported timeframe: ${timeframe}`);
 
-        const fetchCandles = async (requestParams) => {
-          const response = await fetch(`/api/klines?${requestParams.toString()}`, {
-            headers: { Accept: 'application/json' },
+        const rememberCandles = (cacheKey, candles) => {
+          const cache = candleCacheRef.current;
+          if (cache.has(cacheKey)) {
+            cache.delete(cacheKey);
+          }
+
+          cache.set(cacheKey, {
+            candles,
+            cachedAt: Date.now(),
           });
+
+          while (cache.size > CANDLE_CACHE_LIMIT) {
+            const oldestKey = cache.keys().next().value;
+            cache.delete(oldestKey);
+          }
+        };
+
+        const fetchCandles = async (requestParams, signal = controller.signal) => {
+          const fetchOptions = {
+            headers: { Accept: 'application/json' },
+          };
+
+          if (signal) {
+            fetchOptions.signal = signal;
+          }
+
+          const response = await fetch(`/api/klines?${requestParams.toString()}`, fetchOptions);
           const result = await response.json().catch(() => null);
 
           if (!response.ok) {
@@ -2042,6 +2173,55 @@ export default function TradingViewReplayChart({
           }
 
           return normalizedCandles;
+        };
+
+        const applyCandles = (normalized, { updateReplayState = true } = {}) => {
+          setAllCandles(normalized);
+          setLoadedTimeframe(timeframe);
+
+          if (!updateReplayState) return;
+
+          let nextReplayIndex = Math.min(
+            normalized.length - 1,
+            Math.max(0, Math.round((normalized.length - 1) * replayProgress))
+          );
+
+          if (wasInReplay && previousReplayTime != null) {
+            const nearestReplayIndex = findNearestCandleIndex(normalized, previousReplayTime);
+            if (nearestReplayIndex >= 0) {
+              nextReplayIndex = nearestReplayIndex;
+            }
+          }
+
+          if (shouldFrameDrawings) {
+            const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+            const frameLogicals = [
+              previousReplayTime,
+              ...drawingTimes,
+            ]
+              .map((time) => estimateDrawingLogicalFromTime(normalized, time, intervalSeconds))
+              .filter((logical) => Number.isFinite(logical));
+
+            if (frameLogicals.length) {
+              const minLogical = Math.min(...frameLogicals, nextReplayIndex);
+              const maxLogical = Math.max(...frameLogicals, nextReplayIndex);
+              const span = Math.max(maxLogical - minLogical, 6);
+              const padding = Math.max(6, span * 0.18);
+
+              pendingVisibleLogicalRangeRef.current = {
+                from: Math.max(minLogical - padding, -20),
+                to: maxLogical + padding,
+              };
+            }
+          }
+
+          setReplayIndex(nextReplayIndex);
+          setReplayMode(wasInReplay);
+          setSelectedReplayPrice(
+            wasInReplay
+              ? previousSelectedReplayPrice ?? normalized[nextReplayIndex]?.close ?? null
+              : null
+          );
         };
 
         const params = new URLSearchParams({
@@ -2073,53 +2253,71 @@ export default function TradingViewReplayChart({
           params.set('end', String(anchoredEndMs));
         }
 
+        const cacheKey = buildCandleCacheKey({
+          exchange,
+          marketCategory,
+          symbol,
+          timeframe,
+          end: params.get('end') ?? 'latest',
+        });
+        const cachedCandles = candleCacheRef.current.get(cacheKey)?.candles;
+
+        if (cachedCandles?.length) {
+          hasUsableCache = true;
+          applyCandles(cachedCandles);
+          setLoading(false);
+
+          loadStoredDrawings()
+            .then((saved) => {
+              if (fetchRequestIdRef.current !== requestId) return;
+              setDrawings(saved);
+              drawingsRef.current = saved;
+            })
+            .catch(() => {
+              if (fetchRequestIdRef.current !== requestId) return;
+              setDrawings([]);
+              drawingsRef.current = [];
+            });
+        }
+
         const normalized = await fetchCandles(params);
 
         if (fetchRequestIdRef.current !== requestId) return;
 
-        setAllCandles(normalized);
-        setLoadedTimeframe(timeframe);
-        let nextReplayIndex = Math.min(
-          normalized.length - 1,
-          Math.max(0, Math.round((normalized.length - 1) * replayProgress))
-        );
+        rememberCandles(cacheKey, normalized);
+        applyCandles(normalized);
 
-        if (wasInReplay && previousReplayTime != null) {
-          const nearestReplayIndex = findNearestCandleIndex(normalized, previousReplayTime);
-          if (nearestReplayIndex >= 0) {
-            nextReplayIndex = nearestReplayIndex;
-          }
+        if (!wasInReplay) {
+          const prefetchTimeframes = PREFETCH_TIMEFRAME_MAP[timeframe] ?? [];
+          prefetchTimeframes.forEach((prefetchTimeframe) => {
+            const prefetchInterval = INTERVAL_MAP[prefetchTimeframe];
+            if (!prefetchInterval) return;
+
+            const prefetchCacheKey = buildCandleCacheKey({
+              exchange,
+              marketCategory,
+              symbol,
+              timeframe: prefetchTimeframe,
+            });
+
+            if (candleCacheRef.current.has(prefetchCacheKey)) return;
+
+            const prefetchParams = new URLSearchParams({
+              symbol,
+              exchange,
+              interval: prefetchInterval,
+              category: marketCategory,
+              limit: '1000',
+              max_candles: '5000',
+            });
+
+            fetchCandles(prefetchParams, null)
+              .then((prefetchedCandles) => {
+                rememberCandles(prefetchCacheKey, prefetchedCandles);
+              })
+              .catch(() => {});
+          });
         }
-
-        if (shouldFrameDrawings) {
-          const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
-          const frameLogicals = [
-            previousReplayTime,
-            ...drawingTimes,
-          ]
-            .map((time) => estimateDrawingLogicalFromTime(normalized, time, intervalSeconds))
-            .filter((logical) => Number.isFinite(logical));
-
-          if (frameLogicals.length) {
-            const minLogical = Math.min(...frameLogicals, nextReplayIndex);
-            const maxLogical = Math.max(...frameLogicals, nextReplayIndex);
-            const span = Math.max(maxLogical - minLogical, 6);
-            const padding = Math.max(6, span * 0.18);
-
-            pendingVisibleLogicalRangeRef.current = {
-              from: Math.max(minLogical - padding, -20),
-              to: maxLogical + padding,
-            };
-          }
-        }
-
-        setReplayIndex(nextReplayIndex);
-        setReplayMode(wasInReplay);
-        setSelectedReplayPrice(
-          wasInReplay
-            ? previousSelectedReplayPrice ?? normalized[nextReplayIndex]?.close ?? null
-            : null
-        );
 
         try {
           const saved = await loadStoredDrawings();
@@ -2133,9 +2331,10 @@ export default function TradingViewReplayChart({
         }
       } catch (err) {
         if (fetchRequestIdRef.current !== requestId) return;
+        if (err?.name === 'AbortError') return;
         setError(err.message || 'Failed to load chart');
 
-        if (!allCandles.length) {
+        if (!hasUsableCache && !allCandles.length) {
           setAllCandles([]);
           setReplayMode(false);
           setSelectedReplayPrice(null);
@@ -2147,12 +2346,19 @@ export default function TradingViewReplayChart({
         }
       } finally {
         if (fetchRequestIdRef.current === requestId) {
+          if (candleFetchAbortRef.current === controller) {
+            candleFetchAbortRef.current = null;
+          }
           setLoading(false);
         }
       }
     }
 
     fetchKlines();
+
+    return () => {
+      candleFetchAbortRef.current?.abort();
+    };
   }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings]);
 
   const startReplayMode = (startIndex = Math.max(0, Math.floor(allCandles.length * 0.3))) => {
@@ -2938,23 +3144,9 @@ export default function TradingViewReplayChart({
     };
   }, [backtestAccount, executionCandle, replayMode, symbol]);
 
-  const handleToggleFullscreen = async () => {
-    const fullscreenElement = fullscreenRef.current;
-    if (!fullscreenElement) return;
-
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      } else if (fullscreenElement.requestFullscreen) {
-        await fullscreenElement.requestFullscreen();
-      } else {
-        setIsFullscreen((current) => !current);
-        scheduleOverlayRender();
-      }
-    } catch {
-      setIsFullscreen((current) => !current);
-      scheduleOverlayRender();
-    }
+  const handleToggleFullscreen = () => {
+    setIsFullscreen((current) => !current);
+    scheduleOverlayRender();
   };
 
   return (
@@ -2962,7 +3154,7 @@ export default function TradingViewReplayChart({
       ref={fullscreenRef}
       className={
         isFullscreen
-          ? 'flex h-screen flex-col gap-3 overflow-hidden bg-black-screen-color p-4'
+          ? 'fixed inset-0 z-[9999] flex h-[100dvh] flex-col gap-3 overflow-hidden bg-black-screen-color p-4'
           : 'space-y-4'
       }
     >

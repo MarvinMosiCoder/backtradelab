@@ -76,7 +76,8 @@ const FIB_LEVEL_COLORS = {
   4.236: '#7e57c2',
 };
 
-const FIB_LABEL_WIDTH = 118;
+const FIB_LABEL_WIDTH = 126;
+const RIGHT_PRICE_SCALE_SAFE_GAP = 92;
 
 function isFibonacciDrawing(drawing) {
   return ['fib-retracement', 'fib-extension'].includes(drawing?.type);
@@ -92,7 +93,9 @@ function getFibonacciRange(drawing, overlayWidth) {
   const points = drawing.type === 'fib-extension' && p3 ? [p1, p2, p3] : [p1, p2];
   const leftX = Math.max(0, Math.min(...points.map((point) => point.x)));
   const rightX = Math.max(...points.map((point) => point.x), overlayWidth);
-  const labelX = Math.max(Math.min(rightX - 8, overlayWidth - 8), FIB_LABEL_WIDTH);
+  const drawingRightX = Math.max(...points.map((point) => point.x));
+  const maxLabelX = Math.max(8, overlayWidth - RIGHT_PRICE_SCALE_SAFE_GAP - FIB_LABEL_WIDTH);
+  const labelX = Math.min(Math.max(drawingRightX + 8, 8), maxLabelX);
 
   return {
     anchorPoint,
@@ -123,9 +126,43 @@ function getFibonacciLevels(drawing, overlayWidth) {
       x2: rightX,
       labelX,
       color: FIB_LEVEL_COLORS[level] ?? '#ffffff',
-      label: `${formatFibLevel(level)} (${formatPriceLabel(price)})`,
+      label: `${formatFibLevel(level)}  ${formatPriceLabel(price)}`,
     };
   });
+}
+
+function FibLevelBadge({ item, overlayHeight, chartTheme }) {
+  const labelWidth = Math.min(Math.max(item.label.length * 6.2 + 16, 76), FIB_LABEL_WIDTH);
+  const x = item.labelX;
+  const y = Math.min(Math.max(item.y - 10, 4), Math.max(overlayHeight - 24, 4));
+  const isDark = chartTheme?.mode !== 'light';
+  const fill = isDark ? 'rgba(21, 22, 23, 0.96)' : 'rgba(255, 255, 255, 0.96)';
+  const textFill = isDark ? '#f8fafc' : '#0f172a';
+
+  return (
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={labelWidth}
+        height={20}
+        rx={3}
+        fill={fill}
+        stroke={item.color}
+        strokeWidth="1"
+      />
+      <text
+        x={x + labelWidth - 7}
+        y={y + 14}
+        textAnchor="end"
+        fill={textFill}
+        fontSize="11"
+        fontWeight="600"
+      >
+        {item.label}
+      </text>
+    </g>
+  );
 }
 
 function getToolLabel(drawing) {
@@ -140,7 +177,7 @@ function getToolLabel(drawing) {
 }
 
 function getPositionGeometry(drawing) {
-  const { p1, p2, pStop } = drawing.screen;
+  const { p1, p2, pStop, pCurrent } = drawing.screen;
   const isLong = drawing.type === 'long-position';
   const targetY = p2.y;
   const stopY = pStop.y;
@@ -164,6 +201,12 @@ function getPositionGeometry(drawing) {
     entryY: p1.y,
     profitRect: normalizeVisibleRect({ x: left, y: p1.y }, { x: right, y: targetY }),
     lossRect: normalizeVisibleRect({ x: left, y: p1.y }, { x: right, y: stopY }),
+    currentRect: pCurrent
+      ? normalizeVisibleRect(p1, pCurrent)
+      : null,
+    currentIsProfit: pCurrent
+      ? (isLong ? pCurrent.y < p1.y : pCurrent.y > p1.y)
+      : false,
     targetPoint: { x: p2.x, y: targetY },
     stopPoint: { x: pStop.x, y: stopY },
     label: `${isLong ? 'Long' : 'Short'} R/R ${(reward / Math.max(risk, 0.0000001)).toFixed(2)} | Target ${formatSignedNumber(rewardPercent)}% | Stop -${riskPercent.toFixed(2)}% | ${formatDuration(drawing.end.time - drawing.start.time)}`,
@@ -171,21 +214,18 @@ function getPositionGeometry(drawing) {
       {
         key: 'entry',
         label: formatPriceLabel(entryPrice),
-        x: right,
         y: p1.y,
         color: '#e2e8f0',
       },
       {
         key: 'tp',
         label: formatPriceLabel(targetPrice),
-        x: right,
         y: targetY,
         color: '#4ade80',
       },
       {
         key: 'sl',
         label: formatPriceLabel(stopPrice),
-        x: right,
         y: stopY,
         color: '#f87171',
       },
@@ -402,20 +442,11 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                         opacity={item.level === 0 || item.level === 1 ? 0.95 : 0.72}
                       />
                       {!d.id.startsWith('temp-') && (
-                        <text
-                          x={item.labelX}
-                          y={item.y - 5}
-                          textAnchor="end"
-                          fill={item.color}
-                          fontSize="11"
-                          fontWeight="600"
-                          paintOrder="stroke"
-                          stroke="rgba(15, 23, 42, 0.95)"
-                          strokeWidth="4"
-                          strokeLinejoin="round"
-                        >
-                          {item.label}
-                        </text>
+                        <FibLevelBadge
+                          item={item}
+                          overlayHeight={overlaySize.height}
+                          chartTheme={chartTheme}
+                        />
                       )}
                     </g>
                   ))}
@@ -510,6 +541,15 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
           if (isPositionDrawing(d)) {
             const geometry = getPositionGeometry(d);
             const outline = 'rgba(226, 232, 240, 0.75)';
+            const baseProfitFill = chartTheme?.mode === 'light'
+              ? 'rgba(22, 101, 52, 0.18)'
+              : 'rgba(22, 101, 52, 0.30)';
+            const baseLossFill = chartTheme?.mode === 'light'
+              ? 'rgba(127, 29, 29, 0.18)'
+              : 'rgba(127, 29, 29, 0.30)';
+            const currentFill = geometry.currentIsProfit
+              ? 'rgba(34, 197, 94, 0.36)'
+              : 'rgba(239, 68, 68, 0.36)';
 
             return (
               <g key={d.id}>
@@ -518,7 +558,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   y={geometry.profitRect.top}
                   width={geometry.profitRect.width}
                   height={geometry.profitRect.height}
-                  fill="rgba(34, 197, 94, 0.22)"
+                  fill={baseProfitFill}
                   stroke="rgba(34, 197, 94, 0.85)"
                   strokeWidth={strokeWidth}
                   strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
@@ -528,11 +568,21 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   y={geometry.lossRect.top}
                   width={geometry.lossRect.width}
                   height={geometry.lossRect.height}
-                  fill="rgba(239, 68, 68, 0.22)"
+                  fill={baseLossFill}
                   stroke="rgba(239, 68, 68, 0.85)"
                   strokeWidth={strokeWidth}
                   strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
                 />
+                {geometry.currentRect && (
+                  <rect
+                    x={geometry.currentRect.left}
+                    y={geometry.currentRect.top}
+                    width={geometry.currentRect.width}
+                    height={geometry.currentRect.height}
+                    fill={currentFill}
+                    stroke="none"
+                  />
+                )}
                 <line
                   x1={geometry.left}
                   y1={geometry.entryY}
@@ -557,6 +607,38 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   stroke="rgba(239, 68, 68, 0.95)"
                   strokeWidth={Math.max(strokeWidth, 2)}
                 />
+                {d.screen.pCurrent && (
+                  <>
+                    <line
+                      x1={d.screen.p1.x}
+                      y1={d.screen.p1.y}
+                      x2={d.screen.pCurrent.x}
+                      y2={d.screen.pCurrent.y}
+                      stroke={chartTheme?.background ?? '#151617'}
+                      strokeWidth={4}
+                      strokeDasharray="6,5"
+                      opacity="0.9"
+                    />
+                    <line
+                      x1={d.screen.p1.x}
+                      y1={d.screen.p1.y}
+                      x2={d.screen.pCurrent.x}
+                      y2={d.screen.pCurrent.y}
+                      stroke="#9ca3af"
+                      strokeWidth={1.8}
+                      strokeDasharray="6,5"
+                      opacity="0.95"
+                    />
+                    <circle
+                      cx={d.screen.pCurrent.x}
+                      cy={d.screen.pCurrent.y}
+                      r={3}
+                      fill="#9ca3af"
+                      stroke={chartTheme?.background ?? '#151617'}
+                      strokeWidth={2}
+                    />
+                  </>
+                )}
                 {!d.id.startsWith('temp-') && (
                   <>
                     <text

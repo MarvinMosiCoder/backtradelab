@@ -9,6 +9,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
+import { useTheme } from '../../Context/ThemeContext';
 
 const TRADES_PER_PAGE = 10;
 
@@ -90,34 +91,46 @@ function formatTradeDate(trade) {
   });
 }
 
-function getResultClass(result) {
-  if (result === 'win') return 'bg-emerald-500/15 text-emerald-300 ring-emerald-400/30';
-  if (result === 'loss') return 'bg-red-500/15 text-red-300 ring-red-400/30';
-  return 'bg-slate-500/15 text-slate-300 ring-slate-400/30';
+function getResultClass(result, isDark) {
+  if (result === 'win') {
+    return isDark
+      ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-400/30'
+      : 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+  }
+  if (result === 'loss') {
+    return isDark
+      ? 'bg-red-500/15 text-red-300 ring-red-400/30'
+      : 'bg-red-50 text-red-700 ring-red-200';
+  }
+  return isDark
+    ? 'bg-gray-500/15 text-gray-300 ring-gray-400/30'
+    : 'bg-slate-100 text-slate-600 ring-slate-300';
 }
 
-function getPnlClass(value) {
+function getPnlClass(value, isDark) {
   const number = Number(value);
-  if (number > 0) return 'text-emerald-300';
-  if (number < 0) return 'text-red-300';
-  return 'text-slate-300';
+  if (number > 0) return isDark ? 'text-emerald-300' : 'text-emerald-700';
+  if (number < 0) return isDark ? 'text-red-300' : 'text-red-700';
+  return isDark ? 'text-gray-300' : 'text-slate-600';
 }
 
-function StatCard({ label, value, tone = 'neutral', icon: Icon }) {
+function StatCard({ label, value, tone = 'neutral', icon: Icon, isDark }) {
   const toneClass =
     tone === 'win'
       ? 'border-emerald-500/30 bg-emerald-500/10'
       : tone === 'loss'
         ? 'border-red-500/30 bg-red-500/10'
-        : 'border-slate-700 bg-slate-900';
+        : isDark
+          ? 'border-gray-700 bg-black-table-color'
+          : 'border-slate-200 bg-slate-50';
 
   return (
     <div className={`rounded-md border p-3 ${toneClass}`}>
-      <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <div className={`mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
         {Icon && <Icon size={14} />}
         <span>{label}</span>
       </div>
-      <div className="text-lg font-semibold text-white">{value}</div>
+      <div className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{value}</div>
     </div>
   );
 }
@@ -132,6 +145,8 @@ function normalizeTagText(value) {
 }
 
 export default function TradeReport({ refreshKey = 0 }) {
+  const { theme: adminTheme } = useTheme();
+  const isDark = adminTheme === 'bg-skin-black';
   const [report, setReport] = useState({ summary: {}, trades: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -295,20 +310,49 @@ export default function TradeReport({ refreshKey = 0 }) {
     window.location.href = `/market-backtest/report/export?${params.toString()}`;
   };
 
+  const shellClass = isDark
+    ? 'border-gray-800 bg-skin-black text-white shadow-xl'
+    : 'border-slate-200 bg-white text-slate-900 shadow-sm';
+  const borderClass = isDark ? 'border-gray-800' : 'border-slate-200';
+  const mutedTextClass = isDark ? 'text-gray-400' : 'text-slate-500';
+  const faintTextClass = isDark ? 'text-gray-500' : 'text-slate-400';
+  const valueTextClass = isDark ? 'text-white' : 'text-slate-900';
+  const bodyTextClass = isDark ? 'text-gray-300' : 'text-slate-600';
+  const sectionClass = isDark
+    ? 'border-gray-800 bg-black-table-color/70'
+    : 'border-slate-200 bg-slate-50';
+  const buttonClass = isDark
+    ? 'bg-black-table-color text-white hover:bg-skin-black-light'
+    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100';
+  const fieldClass = isDark
+    ? 'border-gray-700 bg-black-table-color text-white placeholder:text-gray-500'
+    : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400';
+  const tableDivideClass = isDark ? 'divide-gray-800' : 'divide-slate-200';
+  const tableHeadClass = isDark
+    ? 'bg-skin-black text-gray-400'
+    : 'bg-white text-slate-500';
+  const rowHoverClass = isDark ? 'hover:bg-skin-black-light/60' : 'hover:bg-white';
+  const editRowClass = isDark ? 'bg-skin-black/70' : 'bg-white';
+  const inactivePillClass = isDark
+    ? 'bg-black-table-color text-gray-600'
+    : 'bg-slate-100 text-slate-400';
+  const longTextClass = isDark ? 'text-emerald-300' : 'text-emerald-700';
+  const shortTextClass = isDark ? 'text-red-300' : 'text-red-700';
+
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950 text-white shadow-xl">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+    <div className={`rounded-lg border ${shellClass}`}>
+      <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 ${borderClass}`}>
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold">
             <span>Trade Win/Loss Report</span>
           </div>
-          <p className="mt-1 text-xs text-slate-400">Closed replay trades, grouped like exchange history.</p>
+          <p className={`mt-1 text-xs ${mutedTextClass}`}>Closed replay trades, grouped like exchange history.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => exportReport('csv')}
-            className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${buttonClass}`}
           >
             <Download size={14} />
             CSV
@@ -316,7 +360,7 @@ export default function TradeReport({ refreshKey = 0 }) {
           <button
             type="button"
             onClick={() => exportReport('json')}
-            className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${buttonClass}`}
           >
             <Download size={14} />
             JSON
@@ -325,7 +369,7 @@ export default function TradeReport({ refreshKey = 0 }) {
             type="button"
             onClick={loadReport}
             disabled={loading}
-            className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${buttonClass}`}
           >
             <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
@@ -333,24 +377,24 @@ export default function TradeReport({ refreshKey = 0 }) {
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Currency</span>
+            <span className={`mb-1 block text-[10px] uppercase tracking-wide ${faintTextClass}`}>Currency</span>
             <select
               value={displayCurrency}
               onChange={(event) => setDisplayCurrency(event.target.value === 'PHP' ? 'PHP' : 'USDT')}
-              className="h-8 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs text-white outline-none"
+              className={`h-8 rounded-md border px-2 text-xs outline-none ${fieldClass}`}
             >
               <option value="USDT">{quoteCurrency}</option>
               <option value="PHP">PHP</option>
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">PHP / {quoteCurrency}</span>
+            <span className={`mb-1 block text-[10px] uppercase tracking-wide ${faintTextClass}`}>PHP / {quoteCurrency}</span>
             <input
               value={phpRate}
               onChange={(event) => setPhpRate(event.target.value)}
               inputMode="decimal"
               disabled={displayCurrency !== 'PHP'}
-              className="h-8 w-24 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs text-white outline-none disabled:opacity-40"
+              className={`h-8 w-24 rounded-md border px-2 text-xs outline-none disabled:opacity-40 ${fieldClass}`}
             />
           </label>
         </div>
@@ -368,31 +412,33 @@ export default function TradeReport({ refreshKey = 0 }) {
           value={formatReportMoney(summary.netPnl)}
           tone={Number(summary.netPnl) >= 0 ? 'win' : 'loss'}
           icon={Number(summary.netPnl) >= 0 ? TrendingUp : TrendingDown}
+          isDark={isDark}
         />
         <StatCard
           label="Loss Net PnL"
           value={formatReportMoney(summary.lossNetPnl ?? summary.grossLoss ?? 0)}
           tone="loss"
           icon={TrendingDown}
+          isDark={isDark}
         />
-        <StatCard label="Win Rate" value={formatPercent(summary.winRate)} />
-        <StatCard label="Wins" value={summary.wins ?? 0} tone="win" />
-        <StatCard label="Losses" value={summary.losses ?? 0} tone="loss" />
-        <StatCard label="Fees" value={formatReportMoney(summary.fees)} />
+        <StatCard label="Win Rate" value={formatPercent(summary.winRate)} isDark={isDark} />
+        <StatCard label="Wins" value={summary.wins ?? 0} tone="win" isDark={isDark} />
+        <StatCard label="Losses" value={summary.losses ?? 0} tone="loss" isDark={isDark} />
+        <StatCard label="Fees" value={formatReportMoney(summary.fees)} isDark={isDark} />
       </div>
 
       <div className="px-4 pb-4">
-        <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900/70">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+        <section className={`overflow-hidden rounded-lg border ${sectionClass}`}>
+          <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 ${borderClass}`}>
             <div className="text-sm font-semibold">Closed Trades</div>
-            <div className="text-xs text-slate-400">
+            <div className={`text-xs ${mutedTextClass}`}>
               {totalTrades ? `${pageStart + 1}-${pageEnd} of ${totalTrades}` : '0 trades'}, {summary.breakeven ?? 0} breakeven
             </div>
           </div>
 
           <div className="max-h-[560px] overflow-auto">
-            <table className="min-w-full divide-y divide-slate-800 text-left text-xs">
-              <thead className="sticky top-0 z-10 bg-slate-950 text-[10px] uppercase tracking-wide text-slate-400">
+            <table className={`min-w-full divide-y text-left text-xs ${tableDivideClass}`}>
+              <thead className={`sticky top-0 z-10 text-[10px] uppercase tracking-wide ${tableHeadClass}`}>
                 <tr>
                   <th className="px-3 py-2">Closed</th>
                   <th className="px-3 py-2">Symbol</th>
@@ -409,30 +455,30 @@ export default function TradeReport({ refreshKey = 0 }) {
                   <th className="px-3 py-2 text-right">Result</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800">
+              <tbody className={`divide-y ${tableDivideClass}`}>
                 {paginatedTrades.length ? (
                   paginatedTrades.map((trade) => {
                     const pnl = Number(trade.pnl ?? 0);
 
                     return (
                       <React.Fragment key={trade.id}>
-                        <tr className="hover:bg-slate-800/60">
-                          <td className="whitespace-nowrap px-3 py-2 text-slate-300">{formatTradeDate(trade)}</td>
-                          <td className="whitespace-nowrap px-3 py-2 font-semibold text-white">{trade.symbol}</td>
+                        <tr className={rowHoverClass}>
+                          <td className={`whitespace-nowrap px-3 py-2 ${bodyTextClass}`}>{formatTradeDate(trade)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 font-semibold ${valueTextClass}`}>{trade.symbol}</td>
                           <td className="whitespace-nowrap px-3 py-2">
-                            <span className={trade.side === 'long' ? 'text-emerald-300' : 'text-red-300'}>
+                            <span className={trade.side === 'long' ? longTextClass : shortTextClass}>
                               {String(trade.side ?? '').toUpperCase()}
                             </span>
                           </td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.entryPrice)}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatMoney(trade.exitPrice)}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatLeverage(trade.leverage)}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.margin)}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-300">{formatReportMoney(trade.notional)}</td>
-                          <td className="whitespace-nowrap px-3 py-2 text-right text-slate-400">{formatReportMoney(trade.fee)}</td>
-                          <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold ${getPnlClass(pnl)}`}>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right ${bodyTextClass}`}>{formatMoney(trade.entryPrice)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right ${bodyTextClass}`}>{formatMoney(trade.exitPrice)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right ${bodyTextClass}`}>{formatLeverage(trade.leverage)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right ${bodyTextClass}`}>{formatReportMoney(trade.margin)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right ${bodyTextClass}`}>{formatReportMoney(trade.notional)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right ${mutedTextClass}`}>{formatReportMoney(trade.fee)}</td>
+                          <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold ${getPnlClass(pnl, isDark)}`}>
                             {pnl > 0 ? '+' : ''}{formatReportMoney(pnl)}
-                            <span className="ml-1 text-[10px] text-slate-400">({formatPercent(trade.pnlPercent)})</span>
+                            <span className={`ml-1 text-[10px] ${mutedTextClass}`}>({formatPercent(trade.pnlPercent)})</span>
                           </td>
                           <td className="whitespace-nowrap px-3 py-2">
                             <div className="flex gap-1">
@@ -441,24 +487,24 @@ export default function TradeReport({ refreshKey = 0 }) {
                                   href={trade.entrySnapshotUrl}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="rounded bg-slate-800 px-2 py-1 text-[10px] font-semibold text-blue-200 hover:bg-slate-700"
+                                  className={`rounded px-2 py-1 text-[10px] font-semibold ${isDark ? 'bg-black-table-color text-blue-200 hover:bg-skin-black-light' : 'border border-slate-300 bg-white text-blue-700 hover:bg-slate-100'}`}
                                 >
                                   Entry
                                 </a>
                               ) : (
-                                <span className="rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-600">Entry</span>
+                                <span className={`rounded px-2 py-1 text-[10px] ${inactivePillClass}`}>Entry</span>
                               )}
                               {trade.exitSnapshotUrl ? (
                                 <a
                                   href={trade.exitSnapshotUrl}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="rounded bg-slate-800 px-2 py-1 text-[10px] font-semibold text-blue-200 hover:bg-slate-700"
+                                  className={`rounded px-2 py-1 text-[10px] font-semibold ${isDark ? 'bg-black-table-color text-blue-200 hover:bg-skin-black-light' : 'border border-slate-300 bg-white text-blue-700 hover:bg-slate-100'}`}
                                 >
                                   Exit
                                 </a>
                               ) : (
-                                <span className="rounded bg-slate-900 px-2 py-1 text-[10px] text-slate-600">Exit</span>
+                                <span className={`rounded px-2 py-1 text-[10px] ${inactivePillClass}`}>Exit</span>
                               )}
                             </div>
                           </td>
@@ -467,71 +513,71 @@ export default function TradeReport({ refreshKey = 0 }) {
                               <button
                                 type="button"
                                 onClick={() => editingTradeId === trade.id ? cancelJournalEdit() : startJournalEdit(trade)}
-                                className="inline-flex h-7 items-center gap-1 rounded-md bg-slate-800 px-2 text-[11px] font-semibold text-white hover:bg-slate-700"
+                                className={`inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-semibold ${buttonClass}`}
                               >
                                 {editingTradeId === trade.id ? <X size={13} /> : <Pencil size={13} />}
                                 {editingTradeId === trade.id ? 'Close' : 'Edit'}
                               </button>
                               <div className="min-w-0">
-                                <div className="truncate text-[11px] font-semibold text-slate-200">
+                                <div className={`truncate text-[11px] font-semibold ${valueTextClass}`}>
                                   {trade.setupTag || 'No setup'}
                                 </div>
-                                <div className="truncate text-[10px] text-slate-500">
+                                <div className={`truncate text-[10px] ${faintTextClass}`}>
                                   {(trade.tags ?? []).length ? trade.tags.join(', ') : 'No tags'}
                                 </div>
                               </div>
                             </div>
                           </td>
                           <td className="whitespace-nowrap px-3 py-2 text-right">
-                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1 ${getResultClass(trade.result)}`}>
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ring-1 ${getResultClass(trade.result, isDark)}`}>
                               {trade.result}
                             </span>
                           </td>
                         </tr>
                         {editingTradeId === trade.id && (
-                          <tr className="bg-slate-950/70">
+                          <tr className={editRowClass}>
                             <td colSpan={13} className="px-3 py-3">
                               <div className="grid gap-3 md:grid-cols-3">
                                 <input
                                   value={journalDraft.setupTag ?? ''}
                                   onChange={(event) => updateJournalDraft('setupTag', event.target.value)}
-                                  className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-xs text-white outline-none"
+                                  className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
                                   placeholder="Setup tag"
                                 />
                                 <input
                                   value={journalDraft.tags ?? ''}
                                   onChange={(event) => updateJournalDraft('tags', event.target.value)}
-                                  className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-xs text-white outline-none"
+                                  className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
                                   placeholder="Tags, comma separated"
                                 />
                                 <input
                                   value={journalDraft.emotion ?? ''}
                                   onChange={(event) => updateJournalDraft('emotion', event.target.value)}
-                                  className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-xs text-white outline-none"
+                                  className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
                                   placeholder="Emotion"
                                 />
                                 <textarea
                                   value={journalDraft.entryReason ?? ''}
                                   onChange={(event) => updateJournalDraft('entryReason', event.target.value)}
-                                  className="min-h-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none"
+                                  className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
                                   placeholder="Entry reason"
                                 />
                                 <textarea
                                   value={journalDraft.exitReason ?? ''}
                                   onChange={(event) => updateJournalDraft('exitReason', event.target.value)}
-                                  className="min-h-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none"
+                                  className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
                                   placeholder="Exit reason"
                                 />
                                 <textarea
                                   value={journalDraft.mistake ?? ''}
                                   onChange={(event) => updateJournalDraft('mistake', event.target.value)}
-                                  className="min-h-20 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none"
+                                  className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
                                   placeholder="Mistake / improvement"
                                 />
                                 <textarea
                                   value={journalDraft.journalNotes ?? ''}
                                   onChange={(event) => updateJournalDraft('journalNotes', event.target.value)}
-                                  className="min-h-24 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-white outline-none md:col-span-3"
+                                  className={`min-h-24 rounded-md border px-3 py-2 text-xs outline-none md:col-span-3 ${fieldClass}`}
                                   placeholder="Journal notes"
                                 />
                               </div>
@@ -548,7 +594,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                                 <button
                                   type="button"
                                   onClick={cancelJournalEdit}
-                                  className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                                  className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${buttonClass}`}
                                 >
                                   <X size={14} />
                                   Cancel
@@ -562,7 +608,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={13} className="px-3 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={13} className={`px-3 py-10 text-center text-sm ${faintTextClass}`}>
                       No closed trades yet. Close a replay position to populate the report.
                     </td>
                   </tr>
@@ -571,8 +617,8 @@ export default function TradeReport({ refreshKey = 0 }) {
             </table>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 px-3 py-2">
-            <div className="text-xs text-slate-400">
+          <div className={`flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 ${borderClass}`}>
+            <div className={`text-xs ${mutedTextClass}`}>
               Page {safeCurrentPage} of {totalPages}
             </div>
             <div className="flex items-center gap-2">
@@ -580,7 +626,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                 type="button"
                 onClick={() => goToPage(safeCurrentPage - 1)}
                 disabled={safeCurrentPage <= 1}
-                className="h-8 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className={`h-8 rounded-md px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${buttonClass}`}
               >
                 Previous
               </button>
@@ -588,7 +634,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                 type="button"
                 onClick={() => goToPage(safeCurrentPage + 1)}
                 disabled={safeCurrentPage >= totalPages}
-                className="h-8 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className={`h-8 rounded-md px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${buttonClass}`}
               >
                 Next
               </button>

@@ -6,6 +6,7 @@ import {
   ChevronRight,
   RefreshCcw,
 } from 'lucide-react';
+import { useTheme } from '../../Context/ThemeContext';
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_LABELS = [
@@ -104,14 +105,16 @@ function buildCalendarDays(monthDate) {
   });
 }
 
-function getPnlClass(value) {
+function getPnlClass(value, isDark) {
   const number = Number(value);
-  if (number > 0) return 'text-emerald-300';
-  if (number < 0) return 'text-red-300';
-  return 'text-slate-300';
+  if (number > 0) return isDark ? 'text-emerald-300' : 'text-emerald-700';
+  if (number < 0) return isDark ? 'text-red-300' : 'text-red-700';
+  return isDark ? 'text-gray-300' : 'text-slate-600';
 }
 
 export default function TradeCalendar() {
+  const { theme: adminTheme } = useTheme();
+  const isDark = adminTheme === 'bg-skin-black';
   const [report, setReport] = useState({ account: null, trades: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -237,43 +240,67 @@ export default function TradeCalendar() {
     setShowCalendarPicker(false);
   };
 
+  const shellClass = isDark
+    ? 'border-gray-800 bg-skin-black text-white shadow-xl'
+    : 'border-slate-200 bg-white text-slate-900 shadow-sm';
+  const borderClass = isDark ? 'border-gray-800' : 'border-slate-200';
+  const mutedTextClass = isDark ? 'text-gray-400' : 'text-slate-500';
+  const faintTextClass = isDark ? 'text-gray-500' : 'text-slate-400';
+  const valueTextClass = isDark ? 'text-white' : 'text-slate-900';
+  const bodyTextClass = isDark ? 'text-gray-300' : 'text-slate-600';
+  const sectionClass = isDark
+    ? 'border-gray-800 bg-black-table-color/70'
+    : 'border-slate-200 bg-slate-50';
+  const buttonClass = isDark
+    ? 'bg-black-table-color text-white hover:bg-skin-black-light'
+    : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100';
+  const iconButtonClass = isDark
+    ? 'text-gray-300 hover:bg-skin-black-light hover:text-white'
+    : 'text-slate-600 hover:bg-white hover:text-slate-900';
+  const fieldClass = isDark
+    ? 'border-gray-700 bg-black-table-color text-white'
+    : 'border-slate-300 bg-white text-slate-900';
+  const calendarDividerClass = isDark ? 'border-gray-800 bg-gray-800' : 'border-slate-200 bg-slate-200';
+  const dayHeaderClass = isDark ? 'bg-black-table-color text-gray-400' : 'bg-white text-slate-500';
+  const dayCellClass = isDark ? 'bg-skin-black' : 'bg-white';
+
   return (
-    <section className="rounded-lg border border-slate-800 bg-slate-950 text-white shadow-xl">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+    <section className={`rounded-lg border ${shellClass}`}>
+      <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 ${borderClass}`}>
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold">
             <CalendarDays size={16} />
             <span>Trade Calendar</span>
           </div>
-          <p className="mt-1 text-xs text-slate-400">Daily PnL grouped by close date.</p>
+          <p className={`mt-1 text-xs ${mutedTextClass}`}>Daily PnL grouped by close date.</p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">Currency</span>
+            <span className={`mb-1 block text-[10px] uppercase tracking-wide ${faintTextClass}`}>Currency</span>
             <select
               value={displayCurrency}
               onChange={(event) => setDisplayCurrency(event.target.value === 'PHP' ? 'PHP' : 'USDT')}
-              className="h-8 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs text-white outline-none"
+              className={`h-8 rounded-md border px-2 text-xs outline-none ${fieldClass}`}
             >
               <option value="USDT">{quoteCurrency}</option>
               <option value="PHP">PHP</option>
             </select>
           </label>
           <label className="block">
-            <span className="mb-1 block text-[10px] uppercase tracking-wide text-slate-500">PHP / {quoteCurrency}</span>
+            <span className={`mb-1 block text-[10px] uppercase tracking-wide ${faintTextClass}`}>PHP / {quoteCurrency}</span>
             <input
               value={phpRate}
               onChange={(event) => setPhpRate(event.target.value)}
               inputMode="decimal"
               disabled={displayCurrency !== 'PHP'}
-              className="h-8 w-24 rounded-md border border-slate-700 bg-slate-900 px-2 text-xs text-white outline-none disabled:opacity-40"
+              className={`h-8 w-24 rounded-md border px-2 text-xs outline-none disabled:opacity-40 ${fieldClass}`}
             />
           </label>
           <button
             type="button"
             onClick={loadReport}
             disabled={loading}
-            className="inline-flex h-8 items-center gap-2 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${buttonClass}`}
           >
             <RefreshCcw size={14} className={loading ? 'animate-spin' : ''} />
             Refresh
@@ -288,12 +315,12 @@ export default function TradeCalendar() {
       )}
 
       <div className="p-4">
-        <div className="rounded-lg border border-slate-800 bg-slate-900/70">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2">
+        <div className={`rounded-lg border ${sectionClass}`}>
+          <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 ${borderClass}`}>
             <button
               type="button"
               onClick={() => moveMonth(-1)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-300 hover:bg-slate-800 hover:text-white"
+              className={`flex h-8 w-8 items-center justify-center rounded-md ${iconButtonClass}`}
               title="Previous month"
               aria-label="Previous month"
             >
@@ -302,7 +329,7 @@ export default function TradeCalendar() {
             <button
               type="button"
               onClick={() => setShowCalendarPicker((current) => !current)}
-              className="rounded-md px-2 py-1 text-sm font-semibold text-white hover:bg-slate-800"
+              className={`rounded-md px-2 py-1 text-sm font-semibold ${valueTextClass} ${isDark ? 'hover:bg-skin-black-light' : 'hover:bg-white'}`}
               title="Select month and year"
             >
               {monthLabel}
@@ -310,7 +337,7 @@ export default function TradeCalendar() {
             <button
               type="button"
               onClick={() => moveMonth(1)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-slate-300 hover:bg-slate-800 hover:text-white"
+              className={`flex h-8 w-8 items-center justify-center rounded-md ${iconButtonClass}`}
               title="Next month"
               aria-label="Next month"
             >
@@ -321,7 +348,7 @@ export default function TradeCalendar() {
                 <select
                   value={monthDate.getMonth()}
                   onChange={(event) => setMonthDate((current) => new Date(current.getFullYear(), Number(event.target.value), 1))}
-                  className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none"
+                  className={`h-8 rounded-md border px-2 text-xs outline-none ${fieldClass}`}
                 >
                   {MONTH_LABELS.map((month, index) => (
                     <option key={month} value={index}>{month}</option>
@@ -330,7 +357,7 @@ export default function TradeCalendar() {
                 <select
                   value={monthDate.getFullYear()}
                   onChange={(event) => setMonthDate((current) => new Date(Number(event.target.value), current.getMonth(), 1))}
-                  className="h-8 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-white outline-none"
+                  className={`h-8 rounded-md border px-2 text-xs outline-none ${fieldClass}`}
                 >
                   {selectableYears.map((year) => (
                     <option key={year} value={year}>{year}</option>
@@ -339,7 +366,7 @@ export default function TradeCalendar() {
                 <button
                   type="button"
                   onClick={goToCurrentMonth}
-                  className="h-8 rounded-md bg-slate-800 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                  className={`h-8 rounded-md px-3 text-xs font-semibold ${buttonClass}`}
                 >
                   Today
                 </button>
@@ -347,13 +374,13 @@ export default function TradeCalendar() {
             )}
           </div>
 
-          <div className="grid grid-cols-7 gap-px border-b border-slate-800 bg-slate-800 text-center text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+          <div className={`grid grid-cols-7 gap-px border-b text-center text-[10px] font-semibold uppercase tracking-wide ${calendarDividerClass} ${mutedTextClass}`}>
             {DAY_LABELS.map((day) => (
-              <div key={day} className="bg-slate-900 px-1 py-2">{day}</div>
+              <div key={day} className={`px-1 py-2 ${dayHeaderClass}`}>{day}</div>
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-px bg-slate-800">
+          <div className={`grid grid-cols-7 gap-px ${calendarDividerClass}`}>
             {calendarDays.map((item) => {
               const day = dailyStats[item.key];
               const pnl = Number(day?.pnl ?? 0);
@@ -367,19 +394,19 @@ export default function TradeCalendar() {
               return (
                 <div
                   key={item.key}
-                  className={`min-h-[82px] bg-slate-950 p-2 ${item.isCurrentMonth ? '' : 'opacity-40'}`}
+                  className={`min-h-[82px] p-2 ${dayCellClass} ${item.isCurrentMonth ? '' : 'opacity-40'}`}
                   style={{ backgroundColor }}
                 >
                   <div className="mb-1 flex items-center justify-between gap-1">
-                    <span className="text-xs font-semibold text-slate-300">{item.date.getDate()}</span>
-                    {day && <span className="text-[10px] text-slate-300">{day.trades}T</span>}
+                    <span className={`text-xs font-semibold ${bodyTextClass}`}>{item.date.getDate()}</span>
+                    {day && <span className={`text-[10px] ${bodyTextClass}`}>{day.trades}T</span>}
                   </div>
                   {day && (
                     <div className="space-y-1">
-                      <div className={`text-xs font-semibold ${getPnlClass(pnl)}`}>
+                      <div className={`text-xs font-semibold ${getPnlClass(pnl, isDark)}`}>
                         {pnl > 0 ? '+' : ''}{formatReportMoney(pnl)}
                       </div>
-                      <div className="text-[10px] text-slate-300">
+                      <div className={`text-[10px] ${bodyTextClass}`}>
                         W {day.wins} / L {day.losses}
                       </div>
                     </div>

@@ -242,6 +242,8 @@ const response = await fetch(`/api/klines?${params.toString()}`, {
 
 When replay mode is active, timeframe changes anchor the candle request around the current replay candle and saved drawing timestamps. The frontend passes an `end` timestamp to `/api/klines` so lower timeframes load candles around the active replay area instead of only loading the latest market data. This prevents the chart and tools from disappearing when switching from a higher timeframe to a lower one whose latest candle window would otherwise not include the old replay/drawing time.
 
+Fetched candles are cached in memory by exchange, market category, symbol, timeframe, and replay anchor. If the user switches back to a previously loaded timeframe, `TradingViewChart.jsx` renders the cached candles immediately and refreshes them in the background. The current active candle request is aborted when a newer timeframe request starts, so rapid timeframe clicks do not let older responses replace the newest chart. In live mode, the chart also prefetches nearby common timeframes after the active timeframe loads.
+
 The UI timeframe is mapped to the selected exchange interval in `MarketDataController.php`.
 
 | UI Timeframe | API Interval |
@@ -403,6 +405,8 @@ The paper account remains internally quote-currency based, normally `USDT`. The 
 
 `TradeReportPage.jsx` displays reporting as two separate modules: `TradeCalendar.jsx` for daily calendar PnL and `TradeReport.jsx` for the PnL report table. It is available from the sidebar at `/trade-report`.
 
+`TradeCalendar.jsx` and `TradeReport.jsx` read the authenticated admin theme from `ThemeContext`. When the theme is `bg-skin-black`, the report uses the same black chart surfaces (`bg-skin-black`, `bg-black-table-color`, gray borders, and white text). Other admin themes render the report with white/light slate surfaces so the Trade Report remains readable in white mode.
+
 Both report modules use `GET /market-backtest/report`, which reads closed `market_backtest_positions` for the authenticated user's active demo account. Closed positions are used instead of raw trade rows because each closed position contains the full entry, exit, margin, leverage, entry fee, exit fee, and realized PnL in one record.
 
 Closed trades can be expanded inline from the report table to edit journal fields. The journal stores a primary setup tag, comma-separated freeform tags, entry reason, exit reason, mistake/improvement note, emotion, and general notes on the closed position. Saving calls `PUT /market-backtest/trades/{position}/journal` and updates the row without a full report reload.
@@ -557,7 +561,7 @@ Replay, Tools, Tool Editor, and Backtest Account controls share the chart theme.
 
 After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool. Trend-based Fibonacci extension uses three clicks and resets after the extension anchor is placed.
 
-Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit box and red loss box can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci retracement and trend-based extension drawings render TradingView-style horizontal levels projected to the right side of the chart, with right-aligned ratio and price labels such as `0.382`, `0.618`, and `1.618`; each level uses a fixed level color while the guide/anchor line keeps the tool color.
+Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the dark green profit zone and dark red loss zone can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Visible candles after the entry are scanned with high/low prices; when price reaches the target or stop box edge, a gray dynamic dashed line connects the entry point to that hit price, and the time-progressing area between the entry candle and hit/current price point is colored brighter green for profit or brighter red for loss. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci retracement and trend-based extension drawings render TradingView-style horizontal levels projected to the right side of the chart, with each ratio and price shown in its own small badge inside the chart overlay rather than in the right price panel; each level uses a fixed level color while the guide/anchor line keeps the tool color.
 
 Drawings are stored per symbol:
 
@@ -652,11 +656,11 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 | Box | SVG `<rect>` with color-based transparent fill |
 | Text | Plain absolutely positioned React text without a background box |
 | Resize handles | Small SVG `<rect>` handles |
-| Fullscreen | Browser fullscreen API on the chart wrapper |
+| Fullscreen | In-page maximized chart shell on the chart wrapper |
 
 The overlay is intentionally `pointer-events: none`; mouse events are handled by the chart wrapper in `TradingViewChart.jsx`.
 
-`ChartStage.jsx` includes a fullscreen button in the chart's top-right corner. Fullscreen mode uses the browser Fullscreen API when available and falls back to internal fullscreen state if needed. The chart and overlay are both resized through the same wrapper, so drawing alignment is preserved.
+`ChartStage.jsx` includes a fullscreen button in the chart's top-right corner. Fullscreen mode uses an in-page fixed-position chart shell instead of the browser Fullscreen API, so the operating system taskbar can still appear when the user hovers an auto-hidden taskbar area. The chart and overlay are both resized through the same wrapper, so drawing alignment is preserved.
 
 ### Overlay Refresh
 
