@@ -543,13 +543,13 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
             const outline = 'rgba(226, 232, 240, 0.75)';
             const baseProfitFill = chartTheme?.mode === 'light'
               ? 'rgba(22, 101, 52, 0.18)'
-              : 'rgba(22, 101, 52, 0.30)';
+              : 'rgba(22, 101, 52, 0.18)';
             const baseLossFill = chartTheme?.mode === 'light'
               ? 'rgba(127, 29, 29, 0.18)'
-              : 'rgba(127, 29, 29, 0.30)';
+              : 'rgba(127, 29, 29, 0.18)';
             const currentFill = geometry.currentIsProfit
-              ? 'rgba(34, 197, 94, 0.36)'
-              : 'rgba(239, 68, 68, 0.36)';
+              ? 'rgba(34, 197, 94, 0.16)'
+              : 'rgba(239, 68, 68, 0.16)';
 
             return (
               <g key={d.id}>
@@ -614,18 +614,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                       y1={d.screen.p1.y}
                       x2={d.screen.pCurrent.x}
                       y2={d.screen.pCurrent.y}
-                      stroke={chartTheme?.background ?? '#151617'}
-                      strokeWidth={4}
-                      strokeDasharray="6,5"
-                      opacity="0.9"
-                    />
-                    <line
-                      x1={d.screen.p1.x}
-                      y1={d.screen.p1.y}
-                      x2={d.screen.pCurrent.x}
-                      y2={d.screen.pCurrent.y}
                       stroke="#9ca3af"
-                      strokeWidth={1.8}
+                      strokeWidth={1}
                       strokeDasharray="6,5"
                       opacity="0.95"
                     />

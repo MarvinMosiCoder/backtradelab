@@ -682,6 +682,14 @@ function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, levera
   const quantity = effectivePositionNotional ? effectivePositionNotional / entry : null;
   const riskAmount = quantity && riskPerUnit && riskPerUnit > 0 ? quantity * riskPerUnit : null;
   const rewardAmount = quantity && rewardPerUnit && rewardPerUnit > 0 ? quantity * rewardPerUnit : null;
+  const exitFee = effectivePositionNotional ? effectivePositionNotional * feeRateValue : null;
+  const totalEstimatedFees = entryFee != null && exitFee != null ? entryFee + exitFee : null;
+  const estimatedProfit = rewardAmount != null && totalEstimatedFees != null
+    ? rewardAmount - totalEstimatedFees
+    : null;
+  const estimatedLoss = riskAmount != null && totalEstimatedFees != null
+    ? riskAmount + totalEstimatedFees
+    : null;
 
   return {
     margin: Number.isFinite(margin) && margin > 0 ? margin : null,
@@ -694,6 +702,9 @@ function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, levera
     quantity,
     riskAmount,
     rewardAmount,
+    exitFee,
+    estimatedProfit,
+    estimatedLoss,
     rr: riskAmount && rewardAmount ? rewardAmount / riskAmount : null,
     isStopValid: riskPerUnit == null || riskPerUnit > 0,
     isTargetValid: rewardPerUnit == null || rewardPerUnit > 0,
@@ -1348,6 +1359,14 @@ export default function ReplayPanel({
                 <span>Risk {orderPlan?.riskAmount ? formatAccountMoney(orderPlan.riskAmount) : '---'}</span>
                 <span>Reward {orderPlan?.rewardAmount ? formatAccountMoney(orderPlan.rewardAmount) : '---'}</span>
                 <span>R/R {orderPlan?.rr ? orderPlan.rr.toFixed(2) : '---'}</span>
+              </div>
+              <div className={`grid grid-cols-2 gap-2 text-[11px] ${labelTextClass}`}>
+                <span className={orderPlan?.estimatedProfit != null ? (orderPlan.estimatedProfit >= 0 ? 'text-emerald-400' : 'text-red-400') : undefined}>
+                  Est profit {orderPlan?.estimatedProfit != null ? formatAccountMoney(orderPlan.estimatedProfit) : '---'}
+                </span>
+                <span className={orderPlan?.estimatedLoss != null ? 'text-red-400' : undefined}>
+                  Est loss {orderPlan?.estimatedLoss != null ? formatAccountMoney(orderPlan.estimatedLoss) : '---'}
+                </span>
               </div>
             </div>
 
