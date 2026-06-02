@@ -56,7 +56,7 @@ External API
 | File | Purpose |
 |------|---------|
 | `resources/js/Pages/Public/Home.jsx` | Public front page for `/`, with dark/white localStorage theme toggle, black-theme-aligned navbar/search/hero controls, marketing hero, and sign-in dropdown |
-| `resources/js/Pages/Auth/Login.jsx` | Dedicated `/login` sign-in form that reads the saved public theme preference, matches the black public theme surfaces, and offers password, Google, and Facebook sign-in |
+| `resources/js/Pages/Auth/Login.jsx` | Dedicated `/login` sign-in form that reads the saved public theme preference, matches the black public theme surfaces, and offers password, Google, and Facebook sign-in with brand-colored social buttons |
 | `resources/js/Layouts/layout/AppContent.jsx` | Authenticated content shell with a dynamic content area so large pages like the chart can size and scroll naturally |
 | `resources/js/Pages/Dashboard/Dashboard.jsx` | Superadmin dashboard cards, or chart-first trader dashboard for non-superadmin users |
 | `resources/js/Layouts/layout/AppSidebar.jsx` | Authenticated sidebar shell that only renders `AdminSidebar` when the current privilege is superadmin |
@@ -115,6 +115,8 @@ Login supports the existing admin-created email/password flow plus Google and Fa
 | `GET /auth/facebook/callback` | Handle Facebook OAuth callback |
 
 OAuth does not create new users. The provider email must already exist in `adm_users`, the account must be active, and the user must have an assigned privilege. After a successful provider login, `LoginController` reuses the same menu, privilege, theme, profile, notification, and announcement session setup as password login. Social login skips the password-age/default-password force-change gate so an admin-created OAuth user is not blocked by a password they may not use.
+
+The login form keeps the social actions visually recognizable in both dark and white public themes. The Google action uses a white button with the four-color Google SVG mark and dark label text. The Facebook action uses the standard Facebook blue button with white label text.
 
 OAuth credentials are configured in `.env`:
 
@@ -847,7 +849,7 @@ Current known build warnings are unrelated to the chart changes:
 The chart now includes:
 
 1. Public `/` front page with navbar search, product/community/market/more links, hero content, login dropdown, browser-local dark/white theme preference, and black-theme-aligned dark controls.
-2. Dedicated `/login` sign-in form that follows the saved public theme, uses the same black dark-theme surfaces, and supports password, Google, and Facebook sign-in for existing admin-created users.
+2. Dedicated `/login` sign-in form that follows the saved public theme, uses the same black dark-theme surfaces, and supports password, Google, and Facebook sign-in for existing admin-created users with brand-colored social buttons.
 3. Chart-first `/dashboard` for non-superadmin trader users, with superadmin keeping the existing dashboard cards.
 4. Trader navbar quick links for Chart, PnL, and saved symbol selection.
 5. Lightweight Charts candlestick and volume rendering.
