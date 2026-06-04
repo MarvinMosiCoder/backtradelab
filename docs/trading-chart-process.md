@@ -74,7 +74,7 @@ External API
 | `resources/js/Context/ThemeContext.jsx` | Provides the authenticated admin theme class used by the chart to choose dark or white chart colors |
 | `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
 | `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
-| `app/Http/Controllers/MarketBacktestController.php` | Loads paper account/session state, starts/ends backtest sessions, places market/conditional replay entries, updates trade journal notes/tags, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
+| `app/Http/Controllers/MarketBacktestController.php` | Loads paper account/session state, starts/ends backtest sessions, places market/limit/trigger replay entries, updates chart-dragged SL/TP and pending entry prices, updates trade journal notes/tags, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
 | `routes/api.php` | Defines `/api/market-symbols`, `/api/market-symbol-options`, and `/api/klines` |
 | `routes/web.php` | Defines public `/`, `/login`, authenticated `/market-drawings`, `/market-tool-settings`, and `/market-backtest/*` routes |
 | `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Binance/OKX/Bybit/BingX/MEXC symbol options, and fetches/normalizes candle data |
@@ -372,11 +372,13 @@ The account response includes `account.activeSession` when a session is active. 
 
 New positions and their open/close trade rows store `market_backtest_session_id`. The Wallet flyout filters open positions, pending entries, and recent trades to the active session when one exists, so each session behaves like a focused backtest run while the underlying paper account balance remains shared.
 
-When a market entry is placed, a pending entry is placed, a pending entry triggers, or an open position closes, the chart attempts to capture the visible chart canvas and SVG drawing overlay as a PNG. Snapshots are uploaded to the public disk under `market-backtest-snapshots` and linked to the position as `entry` or `exit` snapshots. The Trade Report shows entry/exit snapshot links when they are available. Snapshot URLs are generated from the app base URL plus `/storage/{path}`. The public storage link must exist for snapshot URLs to resolve in the browser.
+When a market entry is placed, a pending entry is placed, a pending entry triggers, or an open position closes, the chart attempts to capture the visible chart canvas and SVG drawing overlay as a PNG. Snapshot capture is best-effort and must not block the trade action; if capture fails, the open/trigger/close request still proceeds. Snapshots are uploaded to the public disk under `market-backtest-snapshots` and linked to the position as `entry` or `exit` snapshots. The Trade Report shows entry/exit snapshot links when they are available. Snapshot URLs are generated from the app base URL plus `/storage/{path}`. The public storage link must exist for snapshot URLs to resolve in the browser.
 
-Replay orders can be placed as Market or Conditional entries. Market entries fill immediately at the current replay execution price, or at the optional manual entry override. Conditional entries require a trigger price and are stored as pending positions until a replay candle trades through that level. The ticket accepts margin, leverage, optional stop loss, and optional take profit levels. For long positions, SL must be below entry and TP must be above entry; for short positions, SL must be above entry and TP must be below entry. The panel shows estimated leveraged value, risk, reward, R/R, estimated profit, and estimated loss before entry. `Risk` and `Reward` are gross SL/TP movement estimates, while `Est profit` subtracts estimated entry and exit fees from TP reward, and `Est loss` adds estimated entry and exit fees to SL risk.
+Replay orders can be placed as Market, Limit, or Trigger entries. Market entries fill immediately at the current replay execution price, or at the optional manual entry override. Limit and Trigger entries require a set price and are stored as pending positions until a replay candle trades through that level. The ticket accepts margin, leverage, optional stop loss, and optional take profit levels. For long positions, SL must be below entry and TP must be above entry; for short positions, SL must be above entry and TP must be below entry. The panel shows estimated leveraged value, risk, reward, R/R, estimated profit, and estimated loss before entry. `Risk` and `Reward` are gross SL/TP movement estimates, while `Est profit` subtracts estimated entry and exit fees from TP reward, and `Est loss` adds estimated entry and exit fees to SL risk. The submit button is disabled when margin plus entry fee would exceed available cash, and the panel shows the largest fee-adjusted margin that fits.
 
-Pending entries are checked against the current replay candle high/low. If `low <= entryPrice <= high`, the pending entry is triggered at its configured entry price, the open trade is recorded, margin is locked, and the entry fee is charged. The candle where the order was placed is skipped so a conditional order cannot trigger from price action that already happened before placement. Pending entries can also be cancelled from the Wallet panel before they trigger.
+Pending entries are checked against the current replay candle high/low. If `low <= entryPrice <= high`, the pending entry is triggered at its configured entry price, the open trade is recorded, margin is locked, and the entry fee is charged. The candle where the order was placed is skipped so a pending order cannot trigger from price action that already happened before placement. Pending entries can also be cancelled from the Wallet panel before they trigger.
+
+Backtest order levels render on the chart as exchange-style horizontal lines. While the Wallet flyout is open, the active order ticket shows draft Entry, SL, and TP lines before submission; blank SL/TP fields use temporary 1% placeholder lines so the user can drag them to set the input value. Pending entry lines are amber and dashed, TP lines are green, and SL lines are red. Pending entry prices, pending SL/TP, and open-position SL/TP lines can be dragged on the chart; the frontend updates the account locally while dragging, then saves the new prices through `/market-backtest/positions/{position}/risk` on mouse-up. Pending entry lines also show a small red `x` control near the right edge of the chart that cancels the pending order through `/market-backtest/positions/{position}/cancel`. Open position entry lines are display-only.
 
 As replay advances, open positions are checked against the current candle high/low. A long closes at SL when `low <= stopLoss`, or at TP when `high >= takeProfit`; a short closes at SL when `high >= stopLoss`, or at TP when `low <= takeProfit`. The entry candle is skipped so a newly opened trade is not closed by price movement that happened before the simulated entry. If SL and TP are both inside the same candle, SL is treated as hit first because the intrabar path is unknown from OHLC data.
 
@@ -389,15 +391,16 @@ Paper futures trading treats the entered size as margin/collateral. Leverage can
 | `GET /market-backtest/report/export` | Download closed-position report data as CSV or JSON, including journal fields and snapshot URLs |
 | `POST /market-backtest/sessions` | End the current active session and start a new session for the current chart context |
 | `POST /market-backtest/sessions/{session}/end` | End an active session |
-| `POST /market-backtest/positions` | Place a market entry or pending conditional entry |
-| `POST /market-backtest/positions/{position}/trigger` | Trigger a pending conditional entry when replay price reaches the entry |
-| `POST /market-backtest/positions/{position}/cancel` | Cancel a pending conditional entry |
+| `POST /market-backtest/positions` | Place a market entry or pending limit/trigger entry |
+| `PUT /market-backtest/positions/{position}/risk` | Update pending entry price, pending SL/TP, or open-position SL/TP from dragged chart lines |
+| `POST /market-backtest/positions/{position}/trigger` | Trigger a pending entry when replay price reaches the entry |
+| `POST /market-backtest/positions/{position}/cancel` | Cancel a pending entry |
 | `POST /market-backtest/positions/{position}/close` | Close an open replay position at the current replay price |
 | `POST /market-backtest/positions/{position}/snapshot` | Upload an entry or exit chart snapshot image for a position |
 | `PUT /market-backtest/trades/{position}/journal` | Update setup tag, tags, entry/exit reasons, mistake, emotion, and journal notes on a closed position |
 | `POST /market-backtest/reset` | Reset the demo account back to the starting balance |
 
-`ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows the active session, New/End session actions, equity, cash, open PnL, execution price, market/conditional order mode, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, risk/reward and fee-adjusted profit/loss estimates, pending entry cancel buttons, open position close buttons, account reset balance input, and recent trades.
+`ReplayPanel.jsx` exposes this through the Wallet flyout. The panel shows the active session, New/End session actions, equity, cash, open PnL, execution price, market/limit/trigger order mode, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, risk/reward and fee-adjusted profit/loss estimates, pending entry cancel buttons, open position close buttons, account reset balance input, and recent trades.
 
 The Wallet flyout keeps its header visible and scrolls the account content internally. This keeps the full order ticket, pending entries, open positions, and recent trades reachable on smaller screens without pushing the panel outside the viewport.
 
@@ -563,7 +566,7 @@ Replay, Tools, Tool Editor, and Backtest Account controls share the chart theme.
 
 After a two-point drawing is completed, the active tool is reset to default so the next click does not keep drawing the same tool. Trend-based Fibonacci extension uses three clicks and resets after the extension anchor is placed.
 
-Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit zone and red loss zone can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. Visible candles after the entry are scanned with high/low prices; when price reaches the target or stop box edge, the time-progressing area keeps its clean green/red background highlight, and a 1px gray dashed connector line runs from entry to the hit price. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci retracement and trend-based extension drawings render TradingView-style horizontal levels projected to the right side of the chart, with each ratio and price shown in its own small badge inside the chart overlay rather than in the right price panel; each level uses a fixed level color while the guide/anchor line keeps the tool color.
+Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit zone and red loss zone can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. The profit/loss zones use transparent green/red fills without a full dark backdrop. Visible candles after the entry are scanned with high/low prices; when price reaches the target or stop box edge, the time-progressing area stops at that price, while otherwise it follows the latest post-entry candle close. A 1px gray dashed connector line runs from the entry point to the current/hit price. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci retracement and trend-based extension drawings render TradingView-style horizontal levels projected to the right side of the chart, with each ratio and price shown in its own small badge inside the chart overlay rather than in the right price panel; each level uses a fixed level color while the guide/anchor line keeps the tool color.
 
 Drawings are stored per symbol:
 
@@ -588,17 +591,31 @@ Drawing colors are defined in `constants.js`:
 ```javascript
 export const DRAWING_COLORS = [
   '#60a5fa',
+  '#38bdf8',
+  '#22d3ee',
+  '#2dd4bf',
   '#fbbf24',
+  '#facc15',
   '#34d399',
+  '#22c55e',
+  '#84cc16',
   '#fb7185',
+  '#ef4444',
+  '#dc2626',
   '#a78bfa',
+  '#8b5cf6',
+  '#d946ef',
+  '#ec4899',
   '#f97316',
+  '#ea580c',
+  '#94a3b8',
+  '#64748b',
   '#f8fafc',
   '#000000',
 ];
 ```
 
-The active color applies to the selected drawing or to the active tool defaults. Line, Horizontal Ray, Fibonacci, Forecast, Measure, Box, Text, Long, and Short can each keep a separate saved color/default style. Box fill uses the same color with transparency, Fibonacci level lines use fixed per-level colors, and long/short position tools use fixed green profit and red loss zones.
+The active color applies to the selected drawing or to the active tool defaults. Line, Horizontal Ray, Fibonacci, Forecast, Measure, Box, Text, Long, and Short can each keep a separate saved color/default style. The color dropdown includes square preset swatches and a hex color input; valid `#rgb` and `#rrggbb` values are normalized and saved through the same drawing color path. Box fill uses the same color with transparency, Fibonacci level lines use fixed per-level colors, and long/short position tools use fixed green profit and red loss zones.
 
 ---
 
@@ -651,13 +668,14 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 | Horizontal Ray | SVG `<line>` from anchor to the chart's right edge |
 | Fibonacci Retracement | SVG guide line plus horizontal ratio levels with TradingView-style numeric labels and fixed per-level colors |
 | Trend-Based Fibonacci Extension | SVG trend line, extension anchor guide, and projected horizontal ratio levels with fixed per-level colors |
-| Long Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
-| Short Position | Independently resizable green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
+| Long Position | Transparent green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
+| Short Position | Transparent green profit zone and red loss zone, entry/target/stop lines, reward/risk label, and colored right-axis price text |
 | Forecast | Dashed SVG `<line>` with arrowhead and projection label |
 | Measure | Dashed SVG `<line>` with endpoint dots and delta label |
-| Box | SVG `<rect>` with color-based transparent fill |
+| Box | SVG `<rect>` with square corners and color-based transparent fill |
 | Text | Plain absolutely positioned React text without a background box |
 | Resize handles | Small SVG `<rect>` handles |
+| Backtest order levels | Horizontal SVG entry, SL, and TP lines with right-side drag handles |
 | Fullscreen | In-page maximized chart shell on the chart wrapper |
 
 The overlay is intentionally `pointer-events: none`; mouse events are handled by the chart wrapper in `TradingViewChart.jsx`.
@@ -768,6 +786,8 @@ Line, Fibonacci, measure, forecast, box, text, and position drawings support a s
 | `Backspace` | Delete selected drawing |
 | `Ctrl` / `Cmd` + `D` | Duplicate selected drawing |
 | `Space` | Start replay if needed, then toggle play/pause |
+| `Alt` + `L` | Quick-open a market long position using the current execution price and the smaller of `1000` margin or fee-adjusted available cash |
+| `Alt` + `S` | Quick-open a market short position using the current execution price and the smaller of `1000` margin or fee-adjusted available cash |
 | `ArrowLeft` / `ArrowRight` | Move selected drawing one candle backward/forward |
 | `ArrowUp` / `ArrowDown` | Move selected drawing up/down by a small visible price step |
 | `Shift` + `Arrow` | Move selected drawing faster |

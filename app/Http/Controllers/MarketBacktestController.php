@@ -357,7 +357,7 @@ class MarketBacktestController extends Controller
         $validated = $request->validate([
             'symbol' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9]+$/'],
             'side' => ['required', Rule::in(['long', 'short'])],
-            'order_type' => ['nullable', Rule::in(['market', 'conditional'])],
+            'order_type' => ['nullable', Rule::in(['market', 'conditional', 'limit', 'trigger'])],
             'session_id' => ['nullable', 'integer', 'min:1'],
             'exchange' => ['nullable', 'string', 'max:32'],
             'category' => ['nullable', 'string', 'max:32'],
@@ -379,6 +379,7 @@ class MarketBacktestController extends Controller
             $stopLoss = isset($validated['stop_loss']) ? (float) $validated['stop_loss'] : null;
             $takeProfit = isset($validated['take_profit']) ? (float) $validated['take_profit'] : null;
             $orderType = $validated['order_type'] ?? 'market';
+            $isPendingOrder = in_array($orderType, ['conditional', 'limit', 'trigger'], true);
 
             if ($validated['side'] === 'long') {
                 if ($stopLoss !== null && $stopLoss >= $price) {
@@ -420,9 +421,12 @@ class MarketBacktestController extends Controller
             );
 
             if (!$sizing) {
+                $entryFee = round($requestedMargin * $leverage * self::FEE_RATE, 8);
+                $requiredCash = round($requestedMargin + $entryFee, 8);
+
                 abort(response()->json([
                     'success' => false,
-                    'message' => 'Insufficient paper balance for this margin and entry fee.',
+                    'message' => "Insufficient paper balance. Cash: {$account->cash_balance}, margin: {$requestedMargin}, entry fee: {$entryFee}, required: {$requiredCash}.",
                 ], 422));
             }
 
@@ -439,10 +443,10 @@ class MarketBacktestController extends Controller
                 'opened_at_time' => $validated['executed_at_time'] ?? null,
                 'stop_loss' => $stopLoss,
                 'take_profit' => $takeProfit,
-                'status' => $orderType === 'conditional' ? 'pending' : 'open',
+                'status' => $isPendingOrder ? 'pending' : 'open',
             ]);
 
-            if ($orderType === 'conditional') {
+            if ($isPendingOrder) {
                 return $account->fresh();
             }
 
@@ -474,6 +478,92 @@ class MarketBacktestController extends Controller
                 $account,
                 strtoupper($validated['symbol']),
                 (float) $validated['price'],
+                $this->getActiveSession($request, $account)
+            ),
+        ]);
+    }
+
+    public function updatePositionRisk(Request $request, MarketBacktestPosition $position)
+    {
+        $validated = $request->validate([
+            'entry_price' => ['nullable', 'numeric', 'gt:0'],
+            'stop_loss' => ['nullable', 'numeric', 'gt:0'],
+            'take_profit' => ['nullable', 'numeric', 'gt:0'],
+            'price' => ['nullable', 'numeric', 'gt:0'],
+        ]);
+
+        $account = DB::transaction(function () use ($request, $position, $validated) {
+            $account = $this->getOrCreateAccount($request, true);
+
+            $position = MarketBacktestPosition::query()
+                ->where('id', $position->id)
+                ->where('market_backtest_account_id', $account->id)
+                ->whereIn('status', ['pending', 'open'])
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $entryPrice = $position->status === 'pending' && isset($validated['entry_price'])
+                ? (float) $validated['entry_price']
+                : (float) $position->entry_price;
+            $stopLoss = array_key_exists('stop_loss', $validated)
+                ? (float) $validated['stop_loss']
+                : ($position->stop_loss !== null ? (float) $position->stop_loss : null);
+            $takeProfit = array_key_exists('take_profit', $validated)
+                ? (float) $validated['take_profit']
+                : ($position->take_profit !== null ? (float) $position->take_profit : null);
+
+            if ($position->side === 'long') {
+                if ($stopLoss !== null && $stopLoss >= $entryPrice) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => 'Long stop loss must be below entry price.',
+                    ], 422));
+                }
+
+                if ($takeProfit !== null && $takeProfit <= $entryPrice) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => 'Long take profit must be above entry price.',
+                    ], 422));
+                }
+            }
+
+            if ($position->side === 'short') {
+                if ($stopLoss !== null && $stopLoss <= $entryPrice) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => 'Short stop loss must be above entry price.',
+                    ], 422));
+                }
+
+                if ($takeProfit !== null && $takeProfit >= $entryPrice) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => 'Short take profit must be below entry price.',
+                    ], 422));
+                }
+            }
+
+            $updates = [
+                'stop_loss' => $stopLoss,
+                'take_profit' => $takeProfit,
+            ];
+
+            if ($position->status === 'pending' && isset($validated['entry_price'])) {
+                $updates['entry_price'] = $entryPrice;
+            }
+
+            $position->update($updates);
+
+            return $account->fresh();
+        });
+
+        return response()->json([
+            'success' => true,
+            'account' => $this->buildPayload(
+                $account,
+                $position->symbol,
+                isset($validated['price']) ? (float) $validated['price'] : null,
                 $this->getActiveSession($request, $account)
             ),
         ]);

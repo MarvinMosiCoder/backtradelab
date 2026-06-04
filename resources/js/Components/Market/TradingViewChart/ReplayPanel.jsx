@@ -196,6 +196,21 @@ const LINE_STYLE_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib
 const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect'];
 const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
 
+function normalizeHexColor(value) {
+  if (typeof value !== 'string') return null;
+
+  const trimmed = value.trim();
+  const match = trimmed.match(/^#?([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!match) return null;
+
+  const hex = match[1];
+  if (hex.length === 3) {
+    return `#${hex.split('').map((char) => `${char}${char}`).join('')}`.toLowerCase();
+  }
+
+  return `#${hex}`.toLowerCase();
+}
+
 function getToolLabel(type) {
   return TOOL_LABELS[type] ?? (
     type
@@ -236,6 +251,8 @@ function TopToolEditorBar({
   onSavePreset,
   chartTheme,
 }) {
+  const [hexColorDraft, setHexColorDraft] = useState(activeColor ?? '');
+
   const toggleMenu = (menu) => {
     setOpenMenu((currentMenu) => (currentMenu === menu ? null : menu));
   };
@@ -260,6 +277,23 @@ function TopToolEditorBar({
         ? 'border-gray-700 bg-black-table-color text-white hover:bg-skin-black-light'
         : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
   );
+  const displayColor = normalizeHexColor(activeColor) ?? activeColor ?? '#60a5fa';
+
+  useEffect(() => {
+    setHexColorDraft(normalizeHexColor(activeColor) ?? activeColor ?? '');
+  }, [activeColor]);
+
+  const handleHexColorChange = (value) => {
+    const nextValue = value.startsWith('#') ? value : `#${value}`;
+    if (!/^#[0-9a-fA-F]{0,6}$/.test(nextValue)) return;
+
+    setHexColorDraft(nextValue);
+
+    const normalizedColor = normalizeHexColor(nextValue);
+    if (normalizedColor) {
+      onDrawingColorChange(normalizedColor);
+    }
+  };
 
   return (
     <div
@@ -280,15 +314,35 @@ function TopToolEditorBar({
             chartTheme={chartTheme}
           >
             <span
-              className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/50"
-              style={{ backgroundColor: activeColor }}
+              className="h-3.5 w-3.5 shrink-0 rounded-sm border border-white/50"
+              style={{ backgroundColor: displayColor }}
             />
             Color
           </TopMenuButton>
           {openMenu === 'color' && (
             <div className={menuPanelClass}>
               <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Color</div>
-              <div className="grid grid-cols-7 gap-1.5">
+              <div className="mb-3 flex items-center gap-2">
+                <span
+                  className="h-8 w-8 shrink-0 rounded-sm border border-gray-500"
+                  style={{ backgroundColor: displayColor }}
+                  aria-hidden="true"
+                />
+                <input
+                  value={hexColorDraft}
+                  onChange={(event) => handleHexColorChange(event.target.value)}
+                  onBlur={() => {
+                    const normalizedColor = normalizeHexColor(hexColorDraft);
+                    setHexColorDraft(normalizedColor ?? displayColor);
+                  }}
+                  maxLength={7}
+                  spellCheck={false}
+                  placeholder="#60a5fa"
+                  className={`h-8 min-w-0 flex-1 rounded border px-2 text-xs font-mono uppercase outline-none ${editorFieldClass}`}
+                  aria-label="Hex color"
+                />
+              </div>
+              <div className="grid grid-cols-6 gap-1.5">
                 {DRAWING_COLORS.map((color) => {
                   const isActive = activeColor?.toLowerCase() === color.toLowerCase();
 
@@ -300,7 +354,7 @@ function TopToolEditorBar({
                         onDrawingColorChange(color);
                         setOpenMenu(null);
                       }}
-                      className={`h-7 w-7 rounded-full border ${
+                      className={`h-8 w-8 rounded-sm border ${
                         isActive ? 'border-white ring-2 ring-white' : 'border-gray-500'
                       }`}
                       style={{ backgroundColor: color }}
@@ -711,6 +765,18 @@ function getOrderPlan({ side, entryPrice, stopLoss, takeProfit, notional, levera
   };
 }
 
+function getMaxMarginForCash(cashBalance, leverage, feeRate) {
+  const cash = Number(cashBalance);
+  const leverageValue = Number(leverage);
+  const feeRateValue = Number.isFinite(Number(feeRate)) ? Number(feeRate) : 0.0004;
+
+  if (!Number.isFinite(cash) || cash <= 0 || !Number.isFinite(leverageValue) || leverageValue <= 0) {
+    return null;
+  }
+
+  return cash / (1 + (leverageValue * feeRateValue));
+}
+
 export default function ReplayPanel({
   replayMode,
   isPlaying,
@@ -754,6 +820,8 @@ export default function ReplayPanel({
   onCloseBacktestPosition,
   onCancelBacktestPosition,
   onResetBacktestAccount,
+  orderLineDraftPatch,
+  onBacktestOrderDraftChange,
   chartTheme,
   className = '',
 }) {
@@ -839,6 +907,22 @@ export default function ReplayPanel({
     }
   }, [backtestAccount?.startingBalance]);
 
+  useEffect(() => {
+    if (!orderLineDraftPatch) return;
+
+    if (orderLineDraftPatch.kind === 'entry') {
+      setOrderEntryPrice(orderLineDraftPatch.value);
+    }
+
+    if (orderLineDraftPatch.kind === 'sl') {
+      setOrderStopLoss(orderLineDraftPatch.value);
+    }
+
+    if (orderLineDraftPatch.kind === 'tp') {
+      setOrderTakeProfit(orderLineDraftPatch.value);
+    }
+  }, [orderLineDraftPatch]);
+
   const toggleGroup = (group) => {
     setActiveGroup((currentGroup) => (currentGroup === group ? null : group));
   };
@@ -876,7 +960,7 @@ export default function ReplayPanel({
   const customEntryPrice = getPositiveNumber(orderEntryPrice);
   const canTrade = currentExecutionPrice != null && !isBacktestLoading;
   const hasCustomEntryPrice = customEntryPrice != null;
-  const isConditionalOrder = orderType === 'conditional';
+  const isPendingOrder = orderType === 'limit' || orderType === 'trigger' || orderType === 'conditional';
   const effectiveEntryPrice = hasCustomEntryPrice ? customEntryPrice : currentExecutionPrice;
   const quoteNotional = displayToQuoteAmount(orderNotional, displayCurrency, normalizedPhpRate);
   const leverageValue = Number(orderLeverage);
@@ -898,7 +982,11 @@ export default function ReplayPanel({
     Number(quoteNotional) > 0 &&
     isLeverageValid &&
     effectiveEntryPrice != null &&
-    (!isConditionalOrder || hasCustomEntryPrice) &&
+    orderPlan?.margin != null &&
+    orderPlan.margin >= 1 &&
+    orderPlan?.requiredCash != null &&
+    orderPlan.requiredCash <= backtestMetrics.cashBalance + 0.00000001 &&
+    (!isPendingOrder || hasCustomEntryPrice) &&
     (orderPlan?.isStopValid ?? true) &&
     (orderPlan?.isTargetValid ?? true);
 
@@ -955,6 +1043,29 @@ export default function ReplayPanel({
         ? 'border border-gray-700 bg-black-table-color text-gray-200 hover:bg-skin-black-light hover:text-white'
         : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
   );
+
+  useEffect(() => {
+    onBacktestOrderDraftChange?.({
+      visible: activeGroup === 'backtest',
+      orderType,
+      side: orderSide,
+      entryPrice: orderEntryPrice,
+      stopLoss: orderStopLoss,
+      takeProfit: orderTakeProfit,
+      effectiveEntryPrice,
+      isPendingOrder,
+    });
+  }, [
+    activeGroup,
+    effectiveEntryPrice,
+    isPendingOrder,
+    onBacktestOrderDraftChange,
+    orderEntryPrice,
+    orderSide,
+    orderStopLoss,
+    orderTakeProfit,
+    orderType,
+  ]);
 
   return (
     <div className={`pointer-events-none flex items-start ${className}`}>
@@ -1235,7 +1346,7 @@ export default function ReplayPanel({
 
             <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
               <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Enter Position</div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setOrderType('market')}
@@ -1245,10 +1356,17 @@ export default function ReplayPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setOrderType('conditional')}
-                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(isConditionalOrder)}`}
+                  onClick={() => setOrderType('limit')}
+                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(orderType === 'limit')}`}
                 >
-                  Conditional
+                  Limit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderType('trigger')}
+                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(orderType === 'trigger')}`}
+                >
+                  Trigger
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2">
@@ -1296,7 +1414,7 @@ export default function ReplayPanel({
                   variant={orderSide === 'long' ? 'success' : 'danger'}
                   chartTheme={chartTheme}
                 >
-                  {isConditionalOrder ? 'Place' : 'Enter'}
+                  {isPendingOrder ? 'Place' : 'Enter'}
                 </ControlButton>
               </div>
               <div className={`grid grid-cols-3 gap-2 text-[11px] ${labelTextClass}`}>
@@ -1313,17 +1431,22 @@ export default function ReplayPanel({
                   Margin adjusted to include entry fee in available cash.
                 </div>
               )}
+              {orderPlan && orderPlan.requiredCash > backtestMetrics.cashBalance && (
+                <div className="rounded-md border border-red-900 bg-red-950/60 px-2 py-1 text-[11px] text-red-200">
+                  Reduce margin to {formatAccountMoney(getMaxMarginForCash(backtestMetrics.cashBalance, leverageValue, feeRate))} or less.
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-2">
                 <label className="block">
                   <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
-                    {isConditionalOrder ? 'Trigger' : 'Entry'}
+                    {isPendingOrder ? 'Price' : 'Entry'}
                   </span>
                   <input
                     value={orderEntryPrice}
                     onChange={(event) => setOrderEntryPrice(event.target.value)}
                     inputMode="decimal"
                     className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
-                    placeholder={isConditionalOrder ? 'Required' : formatMoney(executionPrice)}
+                    placeholder={isPendingOrder ? 'Required' : formatMoney(executionPrice)}
                   />
                 </label>
                 <label className="block">

@@ -173,9 +173,7 @@ function resolvePositionProgressPoint(drawing, stop, candles) {
 
   if (!startedCandles.length) return null;
 
-  let latestInsidePoint = null;
-  const minPositionPrice = Math.min(targetPrice, stopPrice);
-  const maxPositionPrice = Math.max(targetPrice, stopPrice);
+  let latestProgressPoint = null;
 
   for (const candle of startedCandles) {
     const high = Number(candle.high);
@@ -202,8 +200,8 @@ function resolvePositionProgressPoint(drawing, stop, candles) {
       }
     }
 
-    if (Number.isFinite(close) && close >= minPositionPrice && close <= maxPositionPrice) {
-      latestInsidePoint = {
+    if (Number.isFinite(close)) {
+      latestProgressPoint = {
         time: candle.time,
         logical: candle.logical,
         price: close,
@@ -211,7 +209,7 @@ function resolvePositionProgressPoint(drawing, stop, candles) {
     }
   }
 
-  return latestInsidePoint;
+  return latestProgressPoint;
 }
 
 function getRenderedFibonacciLevels(drawing, overlayWidth) {
@@ -235,6 +233,28 @@ function getPositiveNumber(value) {
 
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function formatOverlayPrice(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '---';
+
+  return number.toLocaleString(undefined, {
+    minimumFractionDigits: number >= 100 ? 2 : 4,
+    maximumFractionDigits: number >= 100 ? 2 : 6,
+  });
+}
+
+function getMaxBacktestMarginForCash(cashBalance, leverage = 1, feeRate = 0.0004) {
+  const cash = Number(cashBalance);
+  const leverageValue = Number(leverage);
+  const feeRateValue = Number(feeRate);
+
+  if (!Number.isFinite(cash) || cash <= 0 || !Number.isFinite(leverageValue) || leverageValue <= 0) {
+    return null;
+  }
+
+  return cash / (1 + (leverageValue * (Number.isFinite(feeRateValue) ? feeRateValue : 0.0004)));
 }
 
 function loadImageFromUrl(url) {
@@ -320,6 +340,8 @@ export default function TradingViewReplayChart({
   const selectedPriceLineRef = useRef(null);
   const selectedReplayPriceRef = useRef(null);
   const replayModeRef = useRef(false);
+  const symbolRef = useRef(initialSymbol);
+  const backtestAccountRef = useRef(null);
   const fetchRequestIdRef = useRef(0);
   const candleCacheRef = useRef(new Map());
   const candleFetchAbortRef = useRef(null);
@@ -331,11 +353,16 @@ export default function TradingViewReplayChart({
   const selectedDrawingIdRef = useRef(null);
   const dragDrawingRef = useRef(null);
   const resizeDrawingRef = useRef(null);
+  const dragBacktestOrderRef = useRef(null);
   const isReplayPricePickActiveRef = useRef(false);
   const overlayRenderFrameRef = useRef(null);
   const autoClosedPositionRef = useRef(new Set());
   const autoTriggeredPositionRef = useRef(new Set());
   const pendingVisibleLogicalRangeRef = useRef(null);
+  const quickOpenBacktestPositionRef = useRef(null);
+  const cancelBacktestPositionRef = useRef(null);
+  const triggerBacktestPositionRef = useRef(null);
+  const closeBacktestPositionRef = useRef(null);
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [exchange, setExchange] = useState(initialExchange);
@@ -388,6 +415,8 @@ export default function TradingViewReplayChart({
   const [backtestAccount, setBacktestAccount] = useState(null);
   const [isBacktestLoading, setIsBacktestLoading] = useState(false);
   const [backtestError, setBacktestError] = useState('');
+  const [backtestOrderDraft, setBacktestOrderDraft] = useState(null);
+  const [orderLineDraftPatch, setOrderLineDraftPatch] = useState(null);
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: CHART_HEIGHT });
   const [overlayRenderVersion, setOverlayRenderVersion] = useState(0);
 
@@ -419,6 +448,14 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     visibleCandlesRef.current = visibleCandles;
   }, [visibleCandles]);
+
+  useEffect(() => {
+    symbolRef.current = symbol;
+  }, [symbol]);
+
+  useEffect(() => {
+    backtestAccountRef.current = backtestAccount;
+  }, [backtestAccount]);
 
   const currentPrice = useMemo(() => {
     if (!visibleCandles.length) return null;
@@ -913,20 +950,36 @@ export default function TradingViewReplayChart({
   const selectedPriceAutoscaleInfoProvider = useCallback((original) => {
     const autoscaleInfo = original();
     const selectedPrice = selectedReplayPriceRef.current;
+    const account = backtestAccountRef.current;
+    const activeSymbol = symbolRef.current;
+    const backtestPrices = [
+      ...(account?.pendingPositions ?? []),
+      ...(account?.openPositions ?? []),
+    ]
+      .filter((position) => position.symbol === activeSymbol)
+      .flatMap((position) => [position.entryPrice, position.stopLoss, position.takeProfit])
+      .map(Number)
+      .filter((price) => Number.isFinite(price) && price > 0);
 
-    if (!autoscaleInfo || !replayModeRef.current || !Number.isFinite(selectedPrice)) {
+    if (!autoscaleInfo) {
       return autoscaleInfo;
     }
 
+    if (replayModeRef.current && Number.isFinite(selectedPrice)) {
+      backtestPrices.push(selectedPrice);
+    }
+
+    if (!backtestPrices.length) return autoscaleInfo;
+
     const priceRange = autoscaleInfo.priceRange ?? {
-      minValue: selectedPrice,
-      maxValue: selectedPrice,
+      minValue: backtestPrices[0],
+      maxValue: backtestPrices[0],
     };
-    let minValue = Math.min(priceRange.minValue, selectedPrice);
-    let maxValue = Math.max(priceRange.maxValue, selectedPrice);
+    let minValue = Math.min(priceRange.minValue, ...backtestPrices);
+    let maxValue = Math.max(priceRange.maxValue, ...backtestPrices);
 
     if (minValue === maxValue) {
-      const padding = Math.max(Math.abs(selectedPrice) * 0.01, 1);
+      const padding = Math.max(Math.abs(minValue) * 0.01, 1);
       minValue -= padding;
       maxValue += padding;
     }
@@ -1078,7 +1131,16 @@ export default function TradingViewReplayChart({
         const progressPoint = resolvePositionProgressPoint(drawing, stop, visibleCandles);
         const pCurrent = progressPoint ? toScreen(progressPoint) : null;
         if (!p1 || !p2 || !pStop) return null;
-        return { ...drawing, stop, screen: { p1, p2, pStop, ...(pCurrent ? { pCurrent } : {}) } };
+        return {
+          ...drawing,
+          stop,
+          screen: {
+            p1,
+            p2,
+            pStop,
+            ...(pCurrent ? { pCurrent } : {}),
+          },
+        };
       }
 
       if (drawing.type === 'text') {
@@ -1090,6 +1152,122 @@ export default function TradingViewReplayChart({
       return null;
     }).filter(Boolean);
   }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop, visibleCandles]);
+
+  const renderedBacktestOrders = useMemo(() => {
+    const series = candleSeriesRef.current;
+    if (!series || !overlaySize.width) return [];
+
+    const buildLine = (position, kind, price, options = {}) => {
+      const value = getPositiveNumber(price);
+      if (value == null) return null;
+
+      const y = series.priceToCoordinate(value);
+      if (y == null) return null;
+
+      const kindLabel = kind === 'entry' ? (position.status === 'pending' ? 'ENTRY' : 'OPEN') : kind.toUpperCase();
+      const sideLabel = position.side === 'short' ? 'SHORT' : 'LONG';
+
+      return {
+        id: options.id ?? `${position.status}:${position.id}:${kind}`,
+        positionId: position.id,
+        status: position.status,
+        side: position.side,
+        kind,
+        price: value,
+        y,
+        dashed: options.dashed ?? position.status === 'pending',
+        color: kind === 'tp' ? '#22c55e' : kind === 'sl' ? '#ef4444' : '#f59e0b',
+        isDraft: Boolean(options.isDraft),
+        canCancel: Boolean(options.canCancel),
+        label: options.label ?? `${sideLabel} ${kindLabel} ${formatOverlayPrice(value)}`,
+      };
+    };
+    const draftEntryPrice = getPositiveNumber(
+      backtestOrderDraft?.isPendingOrder
+        ? backtestOrderDraft?.entryPrice
+        : backtestOrderDraft?.effectiveEntryPrice
+    );
+    const draftStopLoss = getPositiveNumber(backtestOrderDraft?.stopLoss) ?? (
+      draftEntryPrice
+        ? backtestOrderDraft?.side === 'short'
+          ? draftEntryPrice * 1.01
+          : draftEntryPrice * 0.99
+        : null
+    );
+    const draftTakeProfit = getPositiveNumber(backtestOrderDraft?.takeProfit) ?? (
+      draftEntryPrice
+        ? backtestOrderDraft?.side === 'short'
+          ? draftEntryPrice * 0.99
+          : draftEntryPrice * 1.01
+        : null
+    );
+
+    return [
+      ...(backtestOrderDraft?.visible
+        ? [
+            buildLine(
+              {
+                id: 'draft',
+                status: 'draft',
+                side: backtestOrderDraft.side,
+              },
+              'entry',
+              draftEntryPrice,
+              {
+                id: 'draft:entry',
+                isDraft: true,
+                dashed: true,
+                label: `${backtestOrderDraft.side === 'short' ? 'SHORT' : 'LONG'} ${backtestOrderDraft.isPendingOrder ? 'ORDER' : 'ENTRY'} ${formatOverlayPrice(draftEntryPrice)}`,
+              }
+            ),
+            buildLine(
+              {
+                id: 'draft',
+                status: 'draft',
+                side: backtestOrderDraft.side,
+              },
+              'sl',
+              draftStopLoss,
+              {
+                id: 'draft:sl',
+                isDraft: true,
+                dashed: true,
+                label: `SL ${formatOverlayPrice(draftStopLoss)}`,
+              }
+            ),
+            buildLine(
+              {
+                id: 'draft',
+                status: 'draft',
+                side: backtestOrderDraft.side,
+              },
+              'tp',
+              draftTakeProfit,
+              {
+                id: 'draft:tp',
+                isDraft: true,
+                dashed: true,
+                label: `TP ${formatOverlayPrice(draftTakeProfit)}`,
+              }
+            ),
+          ]
+        : []),
+      ...(backtestAccount?.pendingPositions ?? [])
+        .filter((position) => position.symbol === symbol)
+        .flatMap((position) => [
+          buildLine({ ...position, status: 'pending' }, 'entry', position.entryPrice, { dashed: true, canCancel: true }),
+          buildLine({ ...position, status: 'pending' }, 'sl', position.stopLoss, { dashed: true }),
+          buildLine({ ...position, status: 'pending' }, 'tp', position.takeProfit, { dashed: true }),
+        ]),
+      ...(backtestAccount?.openPositions ?? [])
+        .filter((position) => position.symbol === symbol)
+        .flatMap((position) => [
+          buildLine({ ...position, status: 'open' }, 'entry', position.entryPrice, { dashed: false }),
+          buildLine({ ...position, status: 'open' }, 'sl', position.stopLoss, { dashed: false }),
+          buildLine({ ...position, status: 'open' }, 'tp', position.takeProfit, { dashed: false }),
+        ]),
+    ].filter(Boolean);
+  }, [backtestAccount, backtestOrderDraft, overlayRenderVersion, overlaySize.width, symbol]);
 
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
@@ -1152,6 +1330,32 @@ export default function TradingViewReplayChart({
     return null;
   }, [overlaySize.width, renderedDrawings]);
 
+  const hitTestBacktestOrder = useCallback((x, y) => {
+    for (let i = renderedBacktestOrders.length - 1; i >= 0; i -= 1) {
+      const item = renderedBacktestOrders[i];
+      const nearCancel =
+        item.canCancel &&
+        x >= overlaySize.width - 44 &&
+        x <= overlaySize.width - 24 &&
+        Math.abs(y - item.y) <= 12;
+      const nearLine = Math.abs(y - item.y) <= 6 && x >= 0 && x <= overlaySize.width;
+      const nearHandle =
+        x >= overlaySize.width - 24 &&
+        x <= overlaySize.width &&
+        Math.abs(y - item.y) <= 12;
+
+      if (nearCancel) {
+        return { ...item, action: 'cancel' };
+      }
+
+      if (nearLine || nearHandle) {
+        return item;
+      }
+    }
+
+    return null;
+  }, [overlaySize.width, renderedBacktestOrders]);
+
   const hitTestResizeHandle = useCallback((x, y) => {
     if (!selectedDrawingIdRef.current) return null;
 
@@ -1205,6 +1409,53 @@ export default function TradingViewReplayChart({
 
     return null;
   }, [renderedDrawings]);
+
+  const updateLocalBacktestPositionLine = useCallback((positionId, updates) => {
+    setBacktestAccount((currentAccount) => {
+      if (!currentAccount) return currentAccount;
+
+      const updatePosition = (position) => (
+        position.id === positionId
+          ? { ...position, ...updates }
+          : position
+      );
+
+      return {
+        ...currentAccount,
+        pendingPositions: (currentAccount.pendingPositions ?? []).map(updatePosition),
+        openPositions: (currentAccount.openPositions ?? []).map(updatePosition),
+      };
+    });
+  }, []);
+
+  const handleUpdateBacktestPositionRisk = useCallback(async (dragState) => {
+    if (!dragState?.positionId) return;
+
+    const payload = {
+      price: getPositiveNumber(executionPrice),
+    };
+
+    if (dragState.kind === 'entry' && dragState.status === 'pending') {
+      payload.entry_price = dragState.price;
+    }
+
+    if (dragState.kind === 'sl') {
+      payload.stop_loss = dragState.price;
+    }
+
+    if (dragState.kind === 'tp') {
+      payload.take_profit = dragState.price;
+    }
+
+    try {
+      const response = await axios.put(`/market-backtest/positions/${dragState.positionId}/risk`, payload);
+      setBacktestAccount(response.data?.account ?? null);
+      setBacktestError('');
+    } catch (err) {
+      setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to update position prices');
+      loadBacktestAccount(executionPrice);
+    }
+  }, [executionPrice, loadBacktestAccount]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1583,6 +1834,8 @@ export default function TradingViewReplayChart({
     selectedReplayPrice,
     chartTheme,
     timeframe,
+    backtestAccount,
+    symbol,
     visibleCandles.length,
   ]);
 
@@ -1715,6 +1968,12 @@ export default function TradingViewReplayChart({
 
       if (isTyping) return;
 
+      if (event.altKey && !event.repeat && ['l', 's'].includes(event.key.toLowerCase())) {
+        event.preventDefault();
+        quickOpenBacktestPositionRef.current?.(event.key.toLowerCase() === 'l' ? 'long' : 'short');
+        return;
+      }
+
       if (event.code === 'Space') {
         event.preventDefault();
 
@@ -1764,6 +2023,7 @@ export default function TradingViewReplayChart({
         setTextInput(null);
         resizeDrawingRef.current = null;
         dragDrawingRef.current = null;
+        dragBacktestOrderRef.current = null;
         setIsReplayPricePickActive(false);
       }
     };
@@ -1774,6 +2034,7 @@ export default function TradingViewReplayChart({
         setIsSpacePressed(false);
         dragDrawingRef.current = null;
         resizeDrawingRef.current = null;
+        dragBacktestOrderRef.current = null;
       }
     };
 
@@ -1827,6 +2088,40 @@ export default function TradingViewReplayChart({
       }
 
       const { x, y } = getRelativePoint(event);
+
+      const backtestOrderHit = hitTestBacktestOrder(x, y);
+      if (backtestOrderHit?.action === 'cancel') {
+        event.preventDefault();
+        event.stopPropagation();
+        cancelBacktestPositionRef.current?.(backtestOrderHit.positionId);
+        return;
+      }
+
+      if (
+        backtestOrderHit &&
+        (
+          backtestOrderHit.isDraft ||
+          backtestOrderHit.status === 'pending' ||
+          backtestOrderHit.kind !== 'entry'
+        )
+      ) {
+        const coords = getChartCoordinates(x, y);
+        if (!coords) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        setChartMouseInteractions(false);
+        dragBacktestOrderRef.current = {
+          positionId: backtestOrderHit.positionId,
+          status: backtestOrderHit.status,
+          kind: backtestOrderHit.kind,
+          price: backtestOrderHit.price,
+          isDraft: backtestOrderHit.isDraft,
+        };
+        dragDrawingRef.current = null;
+        resizeDrawingRef.current = null;
+        return;
+      }
 
       const resizeHit = hitTestResizeHandle(x, y);
       if (resizeHit) {
@@ -2040,6 +2335,59 @@ export default function TradingViewReplayChart({
         return;
       }
 
+      if (dragBacktestOrderRef.current) {
+        const coords = getChartCoordinates(x, y);
+        if (!coords) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const dragState = {
+          ...dragBacktestOrderRef.current,
+          price: coords.price,
+        };
+        dragBacktestOrderRef.current = dragState;
+
+        if (dragState.isDraft) {
+          const value = String(Number(coords.price.toFixed(8)));
+          setBacktestOrderDraft((currentDraft) => {
+            if (!currentDraft) return currentDraft;
+
+            if (dragState.kind === 'entry') {
+              return { ...currentDraft, entryPrice: value, effectiveEntryPrice: coords.price };
+            }
+
+            if (dragState.kind === 'sl') {
+              return { ...currentDraft, stopLoss: value };
+            }
+
+            if (dragState.kind === 'tp') {
+              return { ...currentDraft, takeProfit: value };
+            }
+
+            return currentDraft;
+          });
+          setOrderLineDraftPatch({
+            kind: dragState.kind,
+            value,
+            version: Date.now(),
+          });
+          return;
+        }
+
+        const updates = {};
+        if (dragState.kind === 'entry' && dragState.status === 'pending') {
+          updates.entryPrice = coords.price;
+        } else if (dragState.kind === 'sl') {
+          updates.stopLoss = coords.price;
+        } else if (dragState.kind === 'tp') {
+          updates.takeProfit = coords.price;
+        }
+
+        updateLocalBacktestPositionLine(dragState.positionId, updates);
+        return;
+      }
+
       if (dragDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
@@ -2063,6 +2411,15 @@ export default function TradingViewReplayChart({
     };
 
     const handleMouseUp = () => {
+      if (dragBacktestOrderRef.current) {
+        const dragState = dragBacktestOrderRef.current;
+        dragBacktestOrderRef.current = null;
+        restoreChartMouseInteractions();
+        if (!dragState.isDraft) {
+          handleUpdateBacktestPositionRisk(dragState);
+        }
+      }
+
       if (resizeDrawingRef.current) {
         saveDrawings(drawingsRef.current);
         resizeDrawingRef.current = null;
@@ -2085,7 +2442,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, hitTestDrawing, hitTestResizeHandle, saveDrawings]);
+  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, handleUpdateBacktestPositionRisk, hitTestBacktestOrder, hitTestDrawing, hitTestResizeHandle, saveDrawings, updateLocalBacktestPositionLine]);
 
   useEffect(() => {
     async function fetchKlines() {
@@ -2784,6 +3141,14 @@ export default function TradingViewReplayChart({
     }
   };
 
+  const captureBacktestSnapshot = async () => {
+    try {
+      return await captureChartSnapshot(wrapperRef.current, chartTheme.background);
+    } catch {
+      return null;
+    }
+  };
+
   const handleOpenBacktestPosition = async ({
     side,
     orderType = 'market',
@@ -2795,8 +3160,8 @@ export default function TradingViewReplayChart({
   }) => {
     const fillPrice = getPositiveNumber(entryPrice) ?? getPositiveNumber(executionPrice);
 
-    if (orderType === 'conditional' && getPositiveNumber(entryPrice) == null) {
-      setBacktestError('Set an entry trigger price for a conditional order.');
+    if (['conditional', 'limit', 'trigger'].includes(orderType) && getPositiveNumber(entryPrice) == null) {
+      setBacktestError('Set an entry price for a pending order.');
       return;
     }
 
@@ -2813,7 +3178,7 @@ export default function TradingViewReplayChart({
         ...(backtestAccount?.openPositions ?? []).map((position) => position.id),
         ...(backtestAccount?.pendingPositions ?? []).map((position) => position.id),
       ]);
-      const snapshot = await captureChartSnapshot(wrapperRef.current, chartTheme.background);
+      const snapshot = await captureBacktestSnapshot();
       const response = await axios.post('/market-backtest/positions', {
         symbol,
         session_id: backtestAccount?.activeSession?.id,
@@ -2846,6 +3211,27 @@ export default function TradingViewReplayChart({
     } finally {
       setIsBacktestLoading(false);
     }
+  };
+
+  quickOpenBacktestPositionRef.current = (side) => {
+    const maxMargin = getMaxBacktestMarginForCash(
+      backtestAccountRef.current?.cashBalance,
+      1,
+      backtestAccountRef.current?.feeRate ?? 0.0004
+    );
+    const notional = maxMargin == null ? 1000 : Math.max(Math.min(1000, maxMargin), 0);
+
+    if (notional < 1) {
+      setBacktestError('Insufficient paper balance for the minimum 1 USDT margin plus entry fee.');
+      return;
+    }
+
+    handleOpenBacktestPosition({
+      side,
+      orderType: 'market',
+      notional,
+      leverage: 1,
+    });
   };
 
   const uploadBacktestSnapshot = async (positionId, type, snapshot) => {
@@ -2924,7 +3310,7 @@ export default function TradingViewReplayChart({
     }
 
     try {
-      const snapshot = await captureChartSnapshot(wrapperRef.current, chartTheme.background);
+      const snapshot = await captureBacktestSnapshot();
       const response = await axios.post(`/market-backtest/positions/${positionId}/trigger`, {
         price: triggerPrice,
         executed_at_time: entryTime,
@@ -2945,6 +3331,8 @@ export default function TradingViewReplayChart({
     }
   };
 
+  triggerBacktestPositionRef.current = handleTriggerBacktestPosition;
+
   const handleCancelBacktestPosition = async (positionId) => {
     if (!positionId) return;
 
@@ -2960,6 +3348,8 @@ export default function TradingViewReplayChart({
       setIsBacktestLoading(false);
     }
   };
+
+  cancelBacktestPositionRef.current = handleCancelBacktestPosition;
 
   const handleCloseBacktestPosition = async (
     positionId,
@@ -2980,7 +3370,7 @@ export default function TradingViewReplayChart({
     }
 
     try {
-      const snapshot = await captureChartSnapshot(wrapperRef.current, chartTheme.background);
+      const snapshot = await captureBacktestSnapshot();
       const response = await axios.post(`/market-backtest/positions/${positionId}/close`, {
         price: exitPrice,
         executed_at_time: closeTime,
@@ -3000,6 +3390,8 @@ export default function TradingViewReplayChart({
       }
     }
   };
+
+  closeBacktestPositionRef.current = handleCloseBacktestPosition;
 
   const handleResetBacktestAccount = async (startingBalance = null) => {
     setIsBacktestLoading(true);
@@ -3054,7 +3446,7 @@ export default function TradingViewReplayChart({
       for (const item of triggeredEntries) {
         if (cancelled) return;
         autoTriggeredPositionRef.current.add(item.key);
-        const didOpen = await handleTriggerBacktestPosition(item.id, item.entryPrice, candleTime, { silent: true });
+        const didOpen = await triggerBacktestPositionRef.current?.(item.id, item.entryPrice, candleTime, { silent: true });
         if (!didOpen) {
           autoTriggeredPositionRef.current.delete(item.key);
         }
@@ -3130,7 +3522,7 @@ export default function TradingViewReplayChart({
       for (const item of triggeredPositions) {
         if (cancelled) return;
         autoClosedPositionRef.current.add(item.key);
-        const didClose = await handleCloseBacktestPosition(item.id, item.exitPrice, candleTime, { silent: true });
+        const didClose = await closeBacktestPositionRef.current?.(item.id, item.exitPrice, candleTime, { silent: true });
         if (!didClose) {
           autoClosedPositionRef.current.delete(item.key);
         }
@@ -3194,6 +3586,7 @@ export default function TradingViewReplayChart({
             chartTheme={chartTheme}
             overlaySize={overlaySize}
             renderedDrawings={renderedDrawings}
+            renderedBacktestOrders={renderedBacktestOrders}
             selectedDrawingId={selectedDrawingId}
             textInput={textInput}
             textDraft={textDraft}
@@ -3268,6 +3661,8 @@ export default function TradingViewReplayChart({
             onCloseBacktestPosition={handleCloseBacktestPosition}
             onCancelBacktestPosition={handleCancelBacktestPosition}
             onResetBacktestAccount={handleResetBacktestAccount}
+            orderLineDraftPatch={orderLineDraftPatch}
+            onBacktestOrderDraftChange={setBacktestOrderDraft}
             chartTheme={chartTheme}
           />
         </div>

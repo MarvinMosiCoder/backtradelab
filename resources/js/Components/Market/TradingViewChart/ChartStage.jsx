@@ -199,6 +199,7 @@ function getPositionGeometry(drawing) {
     targetY,
     stopY,
     entryY: p1.y,
+    positionRect: normalizeVisibleRect({ x: left, y: Math.min(targetY, stopY) }, { x: right, y: Math.max(targetY, stopY) }),
     profitRect: normalizeVisibleRect({ x: left, y: p1.y }, { x: right, y: targetY }),
     lossRect: normalizeVisibleRect({ x: left, y: p1.y }, { x: right, y: stopY }),
     currentRect: pCurrent
@@ -328,6 +329,99 @@ function PositionPriceBadge({ item, overlayWidth, overlayHeight }) {
     >
       {item.label}
     </text>
+  );
+}
+
+function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartTheme }) {
+  if (!renderedBacktestOrders.length) return null;
+
+  const isDark = chartTheme?.mode !== 'light';
+  const badgeFill = isDark ? 'rgba(21, 22, 23, 0.96)' : 'rgba(255, 255, 255, 0.96)';
+  const textFill = isDark ? '#f8fafc' : '#0f172a';
+  const x2 = Math.max(overlaySize.width - 96, 0);
+
+  return (
+    <svg
+      className="pointer-events-none absolute inset-0 z-[11]"
+      width={overlaySize.width}
+      height={overlaySize.height}
+      style={{ width: '100%', height: '100%' }}
+    >
+      {renderedBacktestOrders.map((item) => {
+        const badgeWidth = Math.min(Math.max(item.label.length * 6.4 + 22, 82), 180);
+        const badgeX = Math.min(Math.max(8, overlaySize.width - badgeWidth - 8), Math.max(8, overlaySize.width - badgeWidth - 8));
+        const badgeY = Math.min(Math.max(item.y - 11, 4), Math.max(overlaySize.height - 24, 4));
+
+        return (
+          <g key={item.id}>
+            <line
+              x1={0}
+              y1={item.y}
+              x2={x2}
+              y2={item.y}
+              stroke={item.color}
+              strokeWidth={1.5}
+              strokeDasharray={item.dashed ? '7,5' : undefined}
+              opacity="0.95"
+            />
+            <rect
+              x={badgeX}
+              y={badgeY}
+              width={badgeWidth}
+              height={22}
+              rx={2}
+              fill={badgeFill}
+              stroke={item.color}
+              strokeWidth="1"
+            />
+            <text
+              x={badgeX + badgeWidth - 8}
+              y={badgeY + 15}
+              textAnchor="end"
+              fill={textFill}
+              fontSize="11"
+              fontWeight="700"
+            >
+              {item.label}
+            </text>
+            <rect
+              x={Math.max(overlaySize.width - 14, 4)}
+              y={item.y - 5}
+              width={10}
+              height={10}
+              rx={2}
+              fill={chartTheme?.background ?? '#151617'}
+              stroke={item.color}
+              strokeWidth={2}
+            />
+            {item.canCancel && (
+              <>
+                <rect
+                  x={Math.max(overlaySize.width - 42, 4)}
+                  y={item.y - 8}
+                  width={16}
+                  height={16}
+                  rx={2}
+                  fill={chartTheme?.background ?? '#151617'}
+                  stroke="#ef4444"
+                  strokeWidth={1.5}
+                />
+                <text
+                  x={Math.max(overlaySize.width - 34, 12)}
+                  y={item.y + 4}
+                  textAnchor="middle"
+                  fill="#ef4444"
+                  fontSize="12"
+                  fontWeight="800"
+                >
+                  x
+                </text>
+              </>
+            )}
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
@@ -683,7 +777,6 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   stroke={stroke}
                   strokeWidth={strokeWidth}
                   strokeDasharray={rectDashArray}
-                  rx={4}
                 />
                 {labelText && !d.id.startsWith('temp-') && (
                   <text
@@ -849,6 +942,7 @@ export default function ChartStage({
   chartTheme,
   overlaySize,
   renderedDrawings,
+  renderedBacktestOrders,
   selectedDrawingId,
   textInput,
   textDraft,
@@ -890,6 +984,12 @@ export default function ChartStage({
       <DrawingOverlay
         renderedDrawings={renderedDrawings}
         selectedDrawingId={selectedDrawingId}
+        overlaySize={overlaySize}
+        chartTheme={chartTheme}
+      />
+
+      <BacktestOrderOverlay
+        renderedBacktestOrders={renderedBacktestOrders}
         overlaySize={overlaySize}
         chartTheme={chartTheme}
       />

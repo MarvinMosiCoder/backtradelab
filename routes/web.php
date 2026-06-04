@@ -93,6 +93,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/market-backtest/sessions', [MarketBacktestController::class, 'startSession'])->name('market-backtest.sessions.start');
     Route::post('/market-backtest/sessions/{session}/end', [MarketBacktestController::class, 'endSession'])->name('market-backtest.sessions.end');
     Route::post('/market-backtest/positions', [MarketBacktestController::class, 'openPosition'])->name('market-backtest.positions.open');
+    Route::put('/market-backtest/positions/{position}/risk', [MarketBacktestController::class, 'updatePositionRisk'])->name('market-backtest.positions.risk');
     Route::post('/market-backtest/positions/{position}/trigger', [MarketBacktestController::class, 'triggerPosition'])->name('market-backtest.positions.trigger');
     Route::post('/market-backtest/positions/{position}/cancel', [MarketBacktestController::class, 'cancelPosition'])->name('market-backtest.positions.cancel');
     Route::post('/market-backtest/positions/{position}/close', [MarketBacktestController::class, 'closePosition'])->name('market-backtest.positions.close');
