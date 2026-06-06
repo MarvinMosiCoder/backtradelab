@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Bold,
   BoxSelect,
   ChevronDown,
   ChartNoAxesCombined,
   Copy,
   Crosshair,
   Gauge,
+  Italic,
   LocateFixed,
   MousePointer2,
   MoveRight,
@@ -168,6 +170,7 @@ function TopMenuButton({ icon: Icon, children, active, disabled, onClick, classN
 const TOOL_BUTTONS = [
   { type: 'line', label: 'Line', icon: Slash },
   { type: 'horizontal-ray', label: 'H Ray', icon: MoveRight },
+  { type: 'path', label: 'Path', icon: Slash },
   { type: 'fib-retracement', label: 'Fib Retrace', icon: Crosshair },
   { type: 'fib-extension', label: 'Fib Extension', icon: ChartNoAxesCombined },
   { type: 'long-position', label: 'Long', icon: TrendingUp },
@@ -179,7 +182,7 @@ const TOOL_BUTTONS = [
 ];
 
 const TOOL_GROUPS = [
-  { name: 'Trend Lines', tools: ['line', 'horizontal-ray'] },
+  { name: 'Trend Lines', tools: ['line', 'horizontal-ray', 'path'] },
   { name: 'Fibonacci', tools: ['fib-retracement', 'fib-extension'] },
   { name: 'Forecasting', tools: ['long-position', 'short-position', 'forecast'] },
   { name: 'Geometric Shape', tools: ['measure', 'rect'] },
@@ -191,10 +194,10 @@ const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
   [toolButton.type]: toolButton.label,
 }), {});
 
-const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'rect', 'long-position', 'short-position', 'forecast', 'measure'];
-const LINE_STYLE_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'rect'];
-const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect'];
-const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
+const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'rect', 'long-position', 'short-position', 'forecast', 'measure'];
+const LINE_STYLE_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'rect'];
+const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect'];
+const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
 
 function normalizeHexColor(value) {
   if (typeof value !== 'string') return null;
@@ -227,6 +230,8 @@ function TopToolEditorBar({
   activeLineStyle,
   activeLabelText,
   activeText,
+  activeTextBold,
+  activeTextItalic,
   activeLabelVertical,
   activeLabelHorizontal,
   canEditWidth,
@@ -438,6 +443,39 @@ function TopToolEditorBar({
             )}
           </div>
         )}
+
+        <div className="relative">
+          <TopMenuButton active={openMenu === 'text-style'} onClick={() => toggleMenu('text-style')} chartTheme={chartTheme}>
+            Style
+          </TopMenuButton>
+          {openMenu === 'text-style' && (
+            <div className={menuPanelClass}>
+              <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Text Style</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onDrawingLabelChange({ textBold: !activeTextBold })}
+                  className={`flex h-9 items-center justify-center gap-2 rounded border px-2 text-xs font-medium ${editorOptionClass(activeTextBold)}`}
+                  title="Bold text"
+                  aria-label="Bold text"
+                >
+                  <Bold size={14} />
+                  Bold
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDrawingLabelChange({ textItalic: !activeTextItalic })}
+                  className={`flex h-9 items-center justify-center gap-2 rounded border px-2 text-xs font-medium ${editorOptionClass(activeTextItalic)}`}
+                  title="Italic text"
+                  aria-label="Italic text"
+                >
+                  <Italic size={14} />
+                  Italic
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {canEditLabel && (
           <div className="relative">
@@ -864,6 +902,8 @@ export default function ReplayPanel({
   const activeLineStyle = selectedDrawing?.lineStyle ?? editorSettings.lineStyle ?? 'solid';
   const activeLabelText = selectedDrawing?.labelText ?? editorSettings.labelText ?? '';
   const activeText = selectedDrawing?.text ?? activeLabelText;
+  const activeTextBold = Boolean(selectedDrawing?.textBold ?? editorSettings.textBold ?? false);
+  const activeTextItalic = Boolean(selectedDrawing?.textItalic ?? editorSettings.textItalic ?? false);
   const activeLabelVertical = selectedDrawing?.labelVertical ?? editorSettings.labelVertical ?? 'top';
   const activeLabelHorizontal = selectedDrawing?.labelHorizontal ?? editorSettings.labelHorizontal ?? 'center';
   const canEditWidth = WIDTH_TOOL_TYPES.includes(editorType);
@@ -1637,6 +1677,8 @@ export default function ReplayPanel({
           activeLineStyle={activeLineStyle}
           activeLabelText={activeLabelText}
           activeText={activeText}
+          activeTextBold={activeTextBold}
+          activeTextItalic={activeTextItalic}
           activeLabelVertical={activeLabelVertical}
           activeLabelHorizontal={activeLabelHorizontal}
           canEditWidth={canEditWidth}

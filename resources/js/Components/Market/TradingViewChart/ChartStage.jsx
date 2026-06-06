@@ -6,6 +6,7 @@ import {
   colorToRgba,
   isHorizontalRayDrawing,
   isLineLikeDrawing,
+  isPathDrawing,
   isPositionDrawing,
   normalizeVisibleRect,
 } from './utils';
@@ -131,7 +132,7 @@ function getFibonacciLevels(drawing, overlayWidth) {
   });
 }
 
-function FibLevelBadge({ item, overlayHeight, chartTheme }) {
+function FibLevelBadge({ item, overlayHeight, chartTheme, textWeight = '600', textStyle }) {
   const labelWidth = Math.min(Math.max(item.label.length * 6.2 + 16, 76), FIB_LABEL_WIDTH);
   const x = item.labelX;
   const y = Math.min(Math.max(item.y - 10, 4), Math.max(overlayHeight - 24, 4));
@@ -157,7 +158,8 @@ function FibLevelBadge({ item, overlayHeight, chartTheme }) {
         textAnchor="end"
         fill={textFill}
         fontSize="11"
-        fontWeight="600"
+        fontWeight={textWeight}
+        fontStyle={textStyle}
       >
         {item.label}
       </text>
@@ -284,6 +286,96 @@ function getLineLabelPosition(drawing) {
   };
 }
 
+function getLineLabelGapSegments(start, end, labelText, drawing) {
+  if (
+    !labelText ||
+    (drawing.labelHorizontal ?? 'center') !== 'center' ||
+    (drawing.labelVertical ?? 'top') !== 'middle'
+  ) {
+    return null;
+  }
+
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (!Number.isFinite(length) || length < 12) return null;
+
+  const textWidth = Math.min(Math.max(labelText.length * 6 + 10, 24), 160);
+  const halfGap = Math.min(textWidth / 2, Math.max(length / 2 - 3, 0));
+  if (halfGap <= 0) return null;
+
+  const unitX = dx / length;
+  const unitY = dy / length;
+  const center = {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  };
+
+  return [
+    {
+      x1: start.x,
+      y1: start.y,
+      x2: center.x - unitX * halfGap,
+      y2: center.y - unitY * halfGap,
+    },
+    {
+      x1: center.x + unitX * halfGap,
+      y1: center.y + unitY * halfGap,
+      x2: end.x,
+      y2: end.y,
+    },
+  ];
+}
+
+function buildPathData(points) {
+  if (!Array.isArray(points) || !points.length) return '';
+
+  return points
+    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+    .join(' ');
+}
+
+function getPathLabelPosition(drawing) {
+  const points = drawing.screen?.points ?? [];
+  if (!points.length) return null;
+
+  const horizontal = drawing.labelHorizontal ?? 'center';
+  const vertical = drawing.labelVertical ?? 'top';
+  const index =
+    horizontal === 'left'
+      ? 0
+      : horizontal === 'right'
+        ? points.length - 1
+        : Math.floor((points.length - 1) / 2);
+  const anchor = points[index];
+  const yOffset =
+    vertical === 'top'
+      ? -10
+      : vertical === 'bottom'
+        ? 18
+        : 4;
+  const textAnchor =
+    horizontal === 'left'
+      ? 'start'
+      : horizontal === 'right'
+        ? 'end'
+        : 'middle';
+
+  return {
+    x: anchor.x,
+    y: anchor.y + yOffset,
+    textAnchor,
+  };
+}
+
+function getDrawingTextWeight(drawing) {
+  return drawing?.textBold ? '800' : '600';
+}
+
+function getDrawingTextStyle(drawing) {
+  return drawing?.textItalic ? 'italic' : undefined;
+}
+
 function getBoxLabelPosition(rect, drawing) {
   const horizontal = drawing.labelHorizontal ?? 'center';
   const vertical = drawing.labelVertical ?? 'top';
@@ -309,7 +401,7 @@ function getBoxLabelPosition(rect, drawing) {
   return { x, y, textAnchor };
 }
 
-function PositionPriceBadge({ item, overlayWidth, overlayHeight }) {
+function PositionPriceBadge({ item, overlayWidth, overlayHeight, textWeight = '700', textStyle }) {
   const labelWidth = Math.min(Math.max(item.label.length * 6.5 + 16, 72), 132);
   const x = Math.max(overlayWidth - labelWidth / 2 - 6, 8);
   const y = Math.min(Math.max(item.y - 11, 8), Math.max(overlayHeight - 30, 8));
@@ -321,7 +413,8 @@ function PositionPriceBadge({ item, overlayWidth, overlayHeight }) {
       textAnchor="middle"
       fill={item.color}
       fontSize="11"
-      fontWeight="700"
+      fontWeight={textWeight}
+      fontStyle={textStyle}
       paintOrder="stroke"
       stroke="rgba(21, 22, 23, 0.95)"
       strokeWidth="3"
@@ -447,6 +540,10 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
     resizeHandles.push(selectedDrawing.screen.p1, geometry.targetPoint, geometry.stopPoint);
   }
 
+  if (isPathDrawing(selectedDrawing)) {
+    resizeHandles.push(...(selectedDrawing.screen.points ?? []));
+  }
+
   if (selectedDrawing?.type === 'rect') {
     const { p1, p2 } = selectedDrawing.screen;
     const midX = (p1.x + p2.x) / 2;
@@ -478,6 +575,67 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
           const strokeWidth = d.id.startsWith('temp-')
             ? (d.strokeWidth ?? 1)
             : Math.max(d.strokeWidth ?? 1, 1);
+          const textWeight = getDrawingTextWeight(d);
+          const textStyle = getDrawingTextStyle(d);
+
+          if (isPathDrawing(d)) {
+            const pathPoints = [
+              ...(d.screen.points ?? []),
+              ...(d.screen.previewPoint ? [d.screen.previewPoint] : []),
+            ];
+            const pathData = buildPathData(pathPoints);
+            const labelText = d.labelText?.trim();
+            const labelPosition = labelText ? getPathLabelPosition(d) : null;
+            const pathDashArray = d.id.startsWith('temp-')
+              ? '5,5'
+              : d.lineStyle === 'dashed'
+                ? '8,5'
+                : undefined;
+
+            return (
+              <g key={d.id}>
+                {pathData && (
+                  <path
+                    d={pathData}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={pathDashArray}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                  />
+                )}
+                {(d.screen.points ?? []).map((point, index) => (
+                  <circle
+                    key={`${d.id}-point-${index}`}
+                    cx={point.x}
+                    cy={point.y}
+                    r={3}
+                    fill={stroke}
+                    stroke={chartTheme?.background ?? '#151617'}
+                    strokeWidth={1.5}
+                  />
+                ))}
+                {labelText && !d.id.startsWith('temp-') && labelPosition && (
+                  <text
+                    x={labelPosition.x}
+                    y={labelPosition.y}
+                    textAnchor={labelPosition.textAnchor}
+                    fill="#ffffff"
+                    fontSize="12"
+                    fontWeight={textWeight}
+                    fontStyle={textStyle}
+                    paintOrder="stroke"
+                    stroke="rgba(15, 23, 42, 0.95)"
+                    strokeWidth="4"
+                    strokeLinejoin="round"
+                  >
+                    {labelText}
+                  </text>
+                )}
+              </g>
+            );
+          }
 
           if (isLineLikeDrawing(d)) {
             const lineEnd = d.screen.rayEnd ?? d.screen.p2;
@@ -485,6 +643,16 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
             const isDashedLine = d.lineStyle === 'dashed';
             const labelText = d.labelText?.trim();
             const labelPosition = labelText ? getLineLabelPosition(d) : null;
+            const lineGapSegments = getLineLabelGapSegments(d.screen.p1, lineEnd, labelText, d);
+            const lineDashArray = d.id.startsWith('temp-')
+              ? '5,5'
+              : d.type === 'forecast'
+                ? '8,5'
+                : d.type === 'measure'
+                  ? '4,4'
+                  : isDashedLine
+                    ? '8,5'
+                    : undefined;
             const midpoint = {
               x: (d.screen.p1.x + lineEnd.x) / 2,
               y: (d.screen.p1.y + lineEnd.y) / 2,
@@ -540,6 +708,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                           item={item}
                           overlayHeight={overlaySize.height}
                           chartTheme={chartTheme}
+                          textWeight={textWeight}
+                          textStyle={textStyle}
                         />
                       )}
                     </g>
@@ -551,7 +721,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                       textAnchor={labelPosition.textAnchor}
                       fill="#ffffff"
                       fontSize="12"
-                      fontWeight="600"
+                      fontWeight={textWeight}
+                      fontStyle={textStyle}
                       paintOrder="stroke"
                       stroke="rgba(15, 23, 42, 0.95)"
                       strokeWidth="4"
@@ -566,25 +737,30 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
 
             return (
               <g key={d.id}>
-                <line
-                  x1={d.screen.p1.x}
-                  y1={d.screen.p1.y}
-                  x2={lineEnd.x}
-                  y2={lineEnd.y}
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={
-                    d.id.startsWith('temp-')
-                      ? '5,5'
-                      : d.type === 'forecast'
-                        ? '8,5'
-                        : d.type === 'measure'
-                          ? '4,4'
-                          : isDashedLine
-                            ? '8,5'
-                            : undefined
-                  }
-                />
+                {lineGapSegments ? (
+                  lineGapSegments.map((segment, index) => (
+                    <line
+                      key={`${d.id}-line-segment-${index}`}
+                      x1={segment.x1}
+                      y1={segment.y1}
+                      x2={segment.x2}
+                      y2={segment.y2}
+                      stroke={stroke}
+                      strokeWidth={strokeWidth}
+                      strokeDasharray={lineDashArray}
+                    />
+                  ))
+                ) : (
+                  <line
+                    x1={d.screen.p1.x}
+                    y1={d.screen.p1.y}
+                    x2={lineEnd.x}
+                    y2={lineEnd.y}
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={lineDashArray}
+                  />
+                )}
                 {d.type === 'forecast' && (
                   <polygon
                     points={getArrowHeadPoints(d.screen.p1, d.screen.p2)}
@@ -603,7 +779,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                     y={midpoint.y - 10}
                     fill="#ffffff"
                     fontSize="12"
-                    fontWeight="600"
+                    fontWeight={textWeight}
+                    fontStyle={textStyle}
                     paintOrder="stroke"
                     stroke="rgba(15, 23, 42, 0.95)"
                     strokeWidth="4"
@@ -619,7 +796,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                     textAnchor={labelPosition.textAnchor}
                     fill="#ffffff"
                     fontSize="12"
-                    fontWeight="600"
+                    fontWeight={textWeight}
+                    fontStyle={textStyle}
                     paintOrder="stroke"
                     stroke="rgba(15, 23, 42, 0.95)"
                     strokeWidth="4"
@@ -730,7 +908,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                       y={geometry.isLong ? geometry.targetY + 18 : geometry.targetY - 10}
                       fill="#ffffff"
                       fontSize="12"
-                      fontWeight="600"
+                      fontWeight={textWeight}
+                      fontStyle={textStyle}
                       paintOrder="stroke"
                       stroke="rgba(15, 23, 42, 0.95)"
                       strokeWidth="4"
@@ -744,6 +923,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                         item={item}
                         overlayWidth={overlaySize.width}
                         overlayHeight={overlaySize.height}
+                        textWeight={d.textBold ? '800' : '700'}
+                        textStyle={textStyle}
                       />
                     ))}
                   </>
@@ -785,7 +966,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                     textAnchor={labelPosition.textAnchor}
                     fill="#ffffff"
                     fontSize="12"
-                    fontWeight="600"
+                    fontWeight={textWeight}
+                    fontStyle={textStyle}
                     paintOrder="stroke"
                     stroke="rgba(15, 23, 42, 0.95)"
                     strokeWidth="4"
@@ -833,6 +1015,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                 className="text-xs font-semibold"
                 style={{
                   color: d.color ?? '#ffffff',
+                  fontWeight: d.textBold ? 800 : 600,
+                  fontStyle: d.textItalic ? 'italic' : undefined,
                   textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)',
                 }}
               >

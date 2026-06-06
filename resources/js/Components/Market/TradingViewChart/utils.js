@@ -273,6 +273,10 @@ export function isPositionDrawing(drawing) {
   return ['long-position', 'short-position'].includes(drawing?.type);
 }
 
+export function isPathDrawing(drawing) {
+  return drawing?.type === 'path';
+}
+
 export function offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical) {
   if (isTwoPointDrawing(drawing)) {
     const nextDrawing = {
@@ -296,6 +300,13 @@ export function offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical) {
     return {
       ...drawing,
       point: offsetPoint(drawing.point, deltaTime, deltaPrice, deltaLogical),
+    };
+  }
+
+  if (isPathDrawing(drawing)) {
+    return {
+      ...drawing,
+      points: (drawing.points ?? []).map((point) => offsetPoint(point, deltaTime, deltaPrice, deltaLogical)),
     };
   }
 

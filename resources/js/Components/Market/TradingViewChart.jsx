@@ -27,6 +27,7 @@ import {
   findNearestCandleIndex,
   isHorizontalRayDrawing,
   isLineLikeDrawing,
+  isPathDrawing,
   isPositionDrawing,
   isTwoPointDrawing,
   normalizeApiCandles,
@@ -80,9 +81,12 @@ const TWO_POINT_TOOL_TYPES = [
   'measure',
 ];
 
+const PATH_TOOL_TYPE = 'path';
+
 const PRESET_ENABLED_TOOL_TYPES = [
   'line',
   'horizontal-ray',
+  'path',
   'fib-retracement',
   'fib-extension',
   'forecast',
@@ -684,6 +688,14 @@ export default function TradingViewReplayChart({
       settings.lineStyle = drawing.lineStyle;
     }
 
+    if (typeof drawing.textBold === 'boolean') {
+      settings.textBold = drawing.textBold;
+    }
+
+    if (typeof drawing.textItalic === 'boolean') {
+      settings.textItalic = drawing.textItalic;
+    }
+
     if (typeof drawing.labelText === 'string') {
       settings.labelText = drawing.labelText;
     }
@@ -943,6 +955,10 @@ export default function TradingViewReplayChart({
         return [drawing.point?.time];
       }
 
+      if (isPathDrawing(drawing)) {
+        return (drawing.points ?? []).map((point) => point?.time);
+      }
+
       return [];
     }).filter((time) => Number.isFinite(Number(time))).map(Number);
   }, []);
@@ -1149,6 +1165,19 @@ export default function TradingViewReplayChart({
         return { ...drawing, screen: { p } };
       }
 
+      if (isPathDrawing(drawing)) {
+        const points = (drawing.points ?? []).map((point) => toScreen(point));
+        if (points.length < 1 || points.some((point) => !point)) return null;
+        const previewPoint = drawing.previewPoint ? toScreen(drawing.previewPoint) : null;
+        return {
+          ...drawing,
+          screen: {
+            points,
+            ...(previewPoint ? { previewPoint } : {}),
+          },
+        };
+      }
+
       return null;
     }).filter(Boolean);
   }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop, visibleCandles]);
@@ -1325,6 +1354,17 @@ export default function TradingViewReplayChart({
         const { p } = d.screen;
         if (Math.abs(x - p.x) <= 80 && Math.abs(y - p.y) <= 24) return d.id;
       }
+
+      if (isPathDrawing(d)) {
+        const points = d.screen.points ?? [];
+        for (let index = 1; index < points.length; index += 1) {
+          if (distanceToSegment(point, points[index - 1], points[index]) <= 8) return d.id;
+        }
+
+        if (points.some((pathPoint) => Math.abs(x - pathPoint.x) <= 8 && Math.abs(y - pathPoint.y) <= 8)) {
+          return d.id;
+        }
+      }
     }
 
     return null;
@@ -1382,6 +1422,12 @@ export default function TradingViewReplayChart({
         { handle: 'end', point: selected.screen.p2 },
         { handle: 'stop', point: selected.screen.pStop }
       );
+    }
+
+    if (isPathDrawing(selected)) {
+      (selected.screen.points ?? []).forEach((point, index) => {
+        handles.push({ handle: `point:${index}`, point });
+      });
     }
 
     if (selected.type === 'rect') {
@@ -1957,6 +2003,29 @@ export default function TradingViewReplayChart({
     return true;
   }, [getKeyboardPriceStep, saveDrawings, timeframe]);
 
+  const handleFinishPathDrawing = useCallback(() => {
+    const currentTemp = tempDrawingRef.current;
+    if (!isPathDrawing(currentTemp)) return false;
+
+    if ((currentTemp.points ?? []).length < 2) {
+      tempDrawingRef.current = null;
+      setTempDrawing(null);
+      return false;
+    }
+
+    const completed = {
+      ...currentTemp,
+      id: `drawing-${Date.now()}`,
+    };
+    delete completed.previewPoint;
+
+    appendDrawing(completed);
+    tempDrawingRef.current = null;
+    setTempDrawing(null);
+    setTool(null);
+    return true;
+  }, [appendDrawing]);
+
   useEffect(() => {
     const handleKeyDown = (event) => {
       const target = event.target;
@@ -2010,6 +2079,12 @@ export default function TradingViewReplayChart({
         }
       }
 
+      if (event.key === 'Enter') {
+        if (handleFinishPathDrawing()) {
+          event.preventDefault();
+        }
+      }
+
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingIdRef.current) {
         event.preventDefault();
         const next = drawingsRef.current.filter((d) => d.id !== selectedDrawingIdRef.current);
@@ -2018,6 +2093,7 @@ export default function TradingViewReplayChart({
       }
 
       if (event.key === 'Escape') {
+        tempDrawingRef.current = null;
         setTempDrawing(null);
         setTool(null);
         setTextInput(null);
@@ -2045,7 +2121,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [allCandles, handleDuplicateSelectedDrawing, handleNudgeSelectedDrawing, replayIndex, replayMode, saveDrawings]);
+  }, [allCandles, handleDuplicateSelectedDrawing, handleFinishPathDrawing, handleNudgeSelectedDrawing, replayIndex, replayMode, saveDrawings]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -2140,6 +2216,41 @@ export default function TradingViewReplayChart({
         return;
       }
 
+      if (toolRef.current === PATH_TOOL_TYPE) {
+        const coords = getChartCoordinates(x, y);
+        if (!coords) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const currentTemp = tempDrawingRef.current;
+        const savedToolSettings = getToolSettingsForType(PATH_TOOL_TYPE);
+        const nextTemp = isPathDrawing(currentTemp)
+          ? {
+              ...currentTemp,
+              points: [...(currentTemp.points ?? []), coords],
+              previewPoint: coords,
+            }
+          : {
+              id: `temp-${Date.now()}`,
+              type: PATH_TOOL_TYPE,
+              points: [coords],
+              previewPoint: coords,
+              strokeWidth: savedToolSettings.strokeWidth ?? 1,
+              lineStyle: savedToolSettings.lineStyle ?? 'solid',
+              color: savedToolSettings.color ?? drawingColorRef.current,
+              labelText: savedToolSettings.labelText ?? '',
+              labelVertical: savedToolSettings.labelVertical ?? 'top',
+              labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
+              textBold: Boolean(savedToolSettings.textBold),
+              textItalic: Boolean(savedToolSettings.textItalic),
+            };
+
+        tempDrawingRef.current = nextTemp;
+        setTempDrawing(nextTemp);
+        return;
+      }
+
       if (TWO_POINT_TOOL_TYPES.includes(toolRef.current)) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
@@ -2162,6 +2273,8 @@ export default function TradingViewReplayChart({
             labelText: savedToolSettings.labelText ?? '',
             labelVertical: savedToolSettings.labelVertical ?? 'top',
             labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
+            textBold: Boolean(savedToolSettings.textBold),
+            textItalic: Boolean(savedToolSettings.textItalic),
           });
         } else {
           const endPoint = currentTemp.type === 'horizontal-ray'
@@ -2188,6 +2301,8 @@ export default function TradingViewReplayChart({
             labelText: currentTemp.labelText ?? '',
             labelVertical: currentTemp.labelVertical ?? 'top',
             labelHorizontal: currentTemp.labelHorizontal ?? 'center',
+            textBold: Boolean(currentTemp.textBold),
+            textItalic: Boolean(currentTemp.textItalic),
           };
 
           if (currentTemp.type === 'fib-extension') {
@@ -2237,6 +2352,8 @@ export default function TradingViewReplayChart({
           let anchor;
           if (isTwoPointDrawing(drawing)) {
             anchor = drawing.start;
+          } else if (isPathDrawing(drawing)) {
+            anchor = drawing.points?.[0];
           } else if (drawing.type === 'text') {
             anchor = drawing.point;
           }
@@ -2284,6 +2401,22 @@ export default function TradingViewReplayChart({
         return;
       }
 
+      if (toolRef.current === PATH_TOOL_TYPE && isPathDrawing(tempDrawingRef.current)) {
+        const coords = getChartCoordinates(x, y);
+        if (!coords) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const nextTemp = {
+          ...tempDrawingRef.current,
+          previewPoint: coords,
+        };
+        tempDrawingRef.current = nextTemp;
+        setTempDrawing(nextTemp);
+        return;
+      }
+
       if (resizeDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
@@ -2301,6 +2434,15 @@ export default function TradingViewReplayChart({
           }
         } else if (isLineLikeDrawing(resized)) {
           resized[handle] = coords;
+        }
+
+        if (isPathDrawing(resized) && handle.startsWith('point:')) {
+          const index = Number(handle.slice('point:'.length));
+          if (Number.isInteger(index) && Array.isArray(resized.points) && resized.points[index]) {
+            resized.points = resized.points.map((point, pointIndex) => (
+              pointIndex === index ? coords : point
+            ));
+          }
         }
 
         if (isPositionDrawing(resized)) {
@@ -2433,16 +2575,26 @@ export default function TradingViewReplayChart({
       }
     };
 
+    const handleDoubleClick = (event) => {
+      if (toolRef.current !== PATH_TOOL_TYPE) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      handleFinishPathDrawing();
+    };
+
     el.addEventListener('mousedown', handleMouseDown, true);
+    el.addEventListener('dblclick', handleDoubleClick, true);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
 
     return () => {
       el.removeEventListener('mousedown', handleMouseDown, true);
+      el.removeEventListener('dblclick', handleDoubleClick, true);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, handleUpdateBacktestPositionRisk, hitTestBacktestOrder, hitTestDrawing, hitTestResizeHandle, saveDrawings, updateLocalBacktestPositionLine]);
+  }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, handleFinishPathDrawing, handleUpdateBacktestPositionRisk, hitTestBacktestOrder, hitTestDrawing, hitTestResizeHandle, saveDrawings, updateLocalBacktestPositionLine]);
 
   useEffect(() => {
     async function fetchKlines() {
@@ -2829,12 +2981,16 @@ export default function TradingViewReplayChart({
       text: textDraft.trim(),
       color: textSettings.color ?? drawingColor,
       labelText: textDraft.trim(),
+      textBold: Boolean(textSettings.textBold),
+      textItalic: Boolean(textSettings.textItalic),
     };
 
     appendDrawing(drawing);
     saveToolSettingsForType('text', {
       color: drawing.color,
       labelText: drawing.text,
+      textBold: drawing.textBold,
+      textItalic: drawing.textItalic,
     });
 
     setTextInput(null);
@@ -2884,7 +3040,7 @@ export default function TradingViewReplayChart({
 
     const next = drawingsRef.current.map((drawing) => {
       if (drawing.id !== selectedId) return drawing;
-      if (!isLineLikeDrawing(drawing) && !isPositionDrawing(drawing) && drawing.type !== 'rect') return drawing;
+      if (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && drawing.type !== 'rect') return drawing;
 
       return {
         ...drawing,
@@ -2913,7 +3069,7 @@ export default function TradingViewReplayChart({
 
     const next = drawingsRef.current.map((drawing) => {
       if (drawing.id !== selectedId) return drawing;
-      if (!isLineLikeDrawing(drawing) && drawing.type !== 'rect') return drawing;
+      if (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && drawing.type !== 'rect') return drawing;
 
       return {
         ...drawing,
@@ -2958,7 +3114,13 @@ export default function TradingViewReplayChart({
     if (!targetType) return;
 
     const settingsUpdate = targetType === 'text'
-      ? { labelText: updates.labelText ?? updates.text ?? '' }
+      ? {
+          ...(updates.labelText !== undefined || updates.text !== undefined
+            ? { labelText: updates.labelText ?? updates.text ?? '' }
+            : {}),
+          ...(updates.textBold !== undefined ? { textBold: Boolean(updates.textBold) } : {}),
+          ...(updates.textItalic !== undefined ? { textItalic: Boolean(updates.textItalic) } : {}),
+        }
       : updates;
 
     saveToolSettingsForType(targetType, settingsUpdate);
@@ -2976,7 +3138,7 @@ export default function TradingViewReplayChart({
     const next = drawingsRef.current.map((drawing) => {
       if (
         drawing.id !== selectedId ||
-        (!isLineLikeDrawing(drawing) && drawing.type !== 'rect' && drawing.type !== 'text')
+        (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && drawing.type !== 'rect' && drawing.type !== 'text')
       ) {
         return drawing;
       }
