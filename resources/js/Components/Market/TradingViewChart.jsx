@@ -40,6 +40,8 @@ const DEFAULT_CANDLE_COLORS = {
   down: '#ef5350',
 };
 
+const MAX_DRAWING_UNDO_STEPS = 25;
+
 const CHART_THEMES = {
   dark: {
     mode: 'dark',
@@ -67,6 +69,27 @@ const CHART_THEMES = {
 
 function resolveChartTheme(adminTheme) {
   return adminTheme === 'bg-skin-black' ? CHART_THEMES.dark : CHART_THEMES.light;
+}
+
+function ChartDotsLoader({ isDark }) {
+  const mutedDotClass = isDark ? 'bg-gray-500' : 'bg-slate-400';
+  const brightDotClass = isDark ? 'bg-gray-200' : 'bg-slate-700';
+
+  return (
+    <div className="flex items-center gap-2" aria-label="Loading" role="status">
+      <span className={`h-2 w-2 rounded-full ${brightDotClass} chart-dot-loader chart-dot-loader-1`} />
+      <span className={`h-2 w-2 rounded-full ${mutedDotClass} chart-dot-loader chart-dot-loader-2`} />
+      <span className={`h-2 w-2 rounded-full ${brightDotClass} chart-dot-loader chart-dot-loader-3`} />
+    </div>
+  );
+}
+
+function cloneDrawingsForHistory(drawings) {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(drawings);
+  }
+
+  return JSON.parse(JSON.stringify(drawings));
 }
 
 const TWO_POINT_TOOL_TYPES = [
@@ -367,6 +390,7 @@ export default function TradingViewReplayChart({
   const cancelBacktestPositionRef = useRef(null);
   const triggerBacktestPositionRef = useRef(null);
   const closeBacktestPositionRef = useRef(null);
+  const drawingUndoStackRef = useRef([]);
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [exchange, setExchange] = useState(initialExchange);
@@ -908,6 +932,57 @@ export default function TradingViewReplayChart({
 
     persistDrawingsToServer(nextDrawings).catch(() => {});
   }, [exchange, marketCategory, persistDrawingsToServer, symbol]);
+
+  const getDrawingScope = useCallback(() => {
+    return `${exchange}:${marketCategory}:${symbol}`;
+  }, [exchange, marketCategory, symbol]);
+
+  const pushDrawingUndoSnapshot = useCallback((selectedId = selectedDrawingIdRef.current) => {
+    if (!drawingsRef.current.length) return;
+
+    drawingUndoStackRef.current = [
+      ...drawingUndoStackRef.current,
+      {
+        scope: getDrawingScope(),
+        drawings: cloneDrawingsForHistory(drawingsRef.current),
+        selectedDrawingId: selectedId,
+      },
+    ].slice(-MAX_DRAWING_UNDO_STEPS);
+  }, [getDrawingScope]);
+
+  const handleUndoDrawings = useCallback(() => {
+    const currentScope = getDrawingScope();
+    const stack = drawingUndoStackRef.current;
+    let snapshotIndex = -1;
+
+    for (let index = stack.length - 1; index >= 0; index -= 1) {
+      if (stack[index].scope === currentScope) {
+        snapshotIndex = index;
+        break;
+      }
+    }
+
+    if (snapshotIndex === -1) return false;
+
+    const [snapshot] = stack.splice(snapshotIndex, 1);
+    drawingUndoStackRef.current = stack;
+
+    saveDrawings(snapshot.drawings);
+    const restoredSelectedId = snapshot.drawings.some((drawing) => drawing.id === snapshot.selectedDrawingId)
+      ? snapshot.selectedDrawingId
+      : null;
+
+    setSelectedDrawingId(restoredSelectedId);
+    setTempDrawing(null);
+    setTextInput(null);
+    setTool(null);
+
+    return true;
+  }, [getDrawingScope, saveDrawings]);
+
+  useEffect(() => {
+    drawingUndoStackRef.current = [];
+  }, [exchange, marketCategory, symbol]);
 
   const appendDrawing = useCallback((drawing) => {
     const next = [...drawingsRef.current, drawing];
@@ -2073,6 +2148,12 @@ export default function TradingViewReplayChart({
         }
       }
 
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        if (handleUndoDrawings()) {
+          event.preventDefault();
+        }
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'd') {
         if (handleDuplicateSelectedDrawing()) {
           event.preventDefault();
@@ -2087,6 +2168,7 @@ export default function TradingViewReplayChart({
 
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingIdRef.current) {
         event.preventDefault();
+        pushDrawingUndoSnapshot(selectedDrawingIdRef.current);
         const next = drawingsRef.current.filter((d) => d.id !== selectedDrawingIdRef.current);
         saveDrawings(next);
         setSelectedDrawingId(null);
@@ -2121,7 +2203,7 @@ export default function TradingViewReplayChart({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [allCandles, handleDuplicateSelectedDrawing, handleFinishPathDrawing, handleNudgeSelectedDrawing, replayIndex, replayMode, saveDrawings]);
+  }, [allCandles, handleDuplicateSelectedDrawing, handleFinishPathDrawing, handleNudgeSelectedDrawing, handleUndoDrawings, pushDrawingUndoSnapshot, replayIndex, replayMode, saveDrawings]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -3011,6 +3093,7 @@ export default function TradingViewReplayChart({
   };
 
   const handleClearDrawings = () => {
+    pushDrawingUndoSnapshot(selectedDrawingIdRef.current);
     saveDrawings([]);
     setSelectedDrawingId(null);
   };
@@ -3018,6 +3101,7 @@ export default function TradingViewReplayChart({
   const handleDeleteSelectedDrawing = () => {
     if (!selectedDrawingId) return;
 
+    pushDrawingUndoSnapshot(selectedDrawingId);
     const next = drawings.filter((d) => d.id !== selectedDrawingId);
     saveDrawings(next);
     setSelectedDrawingId(null);
@@ -3771,10 +3855,7 @@ export default function TradingViewReplayChart({
               style={{ backgroundColor: chartTheme.overlay }}
             >
               {loading ? (
-                <div
-                  className="h-9 w-9 animate-spin rounded-full border-2 border-slate-500 border-t-white"
-                  aria-label="Loading"
-                />
+                <ChartDotsLoader isDark={chartTheme.mode === 'dark'} />
               ) : error}
             </div>
           )}

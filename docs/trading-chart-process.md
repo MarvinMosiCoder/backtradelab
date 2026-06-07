@@ -467,6 +467,8 @@ The chart has visible time labels, a right price scale, and enabled native pan/z
 
 Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, fullscreen background, text-input popover, and the background color used when entry/exit snapshots are captured. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, preset controls, grouped drawing tools, and backtest account fields/cards so the controls remain readable in both dark and white themes.
 
+The chart loading overlay uses a compact three-dot bouncing loader in `TradingViewChart.jsx`, styled by the scoped `chart-dot-loader` classes in `resources/css/app.css`. It follows the admin template's three-dot loading language while using smaller dots and a shorter bounce so it fits inside the chart workspace.
+
 The Lightweight Charts TradingView attribution logo is disabled in chart layout options. `ChartStage.jsx` renders the configured application logo from `/applogo` in the bottom-left chart position as the BacktradeLab chart brand mark.
 
 | Admin Theme | Chart Background | Notes |
@@ -792,6 +794,7 @@ Line, path, Fibonacci, measure, forecast, box, text, and position drawings suppo
 | `Delete` | Delete selected drawing |
 | `Backspace` | Delete selected drawing |
 | `Enter` | Finish the active path drawing |
+| `Ctrl` / `Cmd` + `Z` | Undo the last drawing delete or clear action for the active symbol |
 | `Ctrl` / `Cmd` + `D` | Duplicate selected drawing |
 | `Space` | Start replay if needed, then toggle play/pause |
 | `Alt` + `L` | Quick-open a market long position using the current execution price and the smaller of `1000` margin or fee-adjusted available cash |
@@ -891,6 +894,6 @@ The chart now includes:
 13. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
 14. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
 15. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
-16. Admin-theme-aligned chart background, grid, axis text, borders, loading overlay, fullscreen shell, chart control surfaces, and snapshot background.
+16. Admin-theme-aligned chart background, grid, axis text, borders, compact three-dot loading overlay, fullscreen shell, chart control surfaces, and snapshot background.
 17. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
 18. Fullscreen chart mode.
