@@ -465,7 +465,7 @@ The chart uses:
 
 The chart has visible time labels, a right price scale, and enabled native pan/zoom behavior.
 
-Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, fullscreen background, text-input popover, and the background color used when entry/exit snapshots are captured. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, preset controls, grouped drawing tools, and backtest account fields/cards so the controls remain readable in both dark and white themes.
+Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, fullscreen background, text-input popover, and the background color used when entry/exit snapshots are captured. The chart grid intentionally uses low-opacity RGBA colors so the grid boxes stay visible without competing with candles: dark mode uses `rgba(148, 163, 184, 0.05)`, and white mode uses `rgba(100, 116, 139, 0.08)`. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, preset controls, grouped drawing tools, and backtest account fields/cards so the controls remain readable in both dark and white themes.
 
 The chart loading overlay uses a compact three-dot bouncing loader in `TradingViewChart.jsx`, styled by the scoped `chart-dot-loader` classes in `resources/css/app.css`. It follows the admin template's three-dot loading language while using smaller dots and a shorter bounce so it fits inside the chart workspace.
 
@@ -473,8 +473,8 @@ The Lightweight Charts TradingView attribution logo is disabled in chart layout 
 
 | Admin Theme | Chart Background | Notes |
 |-------------|------------------|-------|
-| `bg-skin-black` | Dark `#151617` chart, `#242627` chart panels | Matches the sidebar black and authenticated admin navbar black |
-| Other theme classes | White `#ffffff` | Uses light grid, axis text, borders, and loading overlay |
+| `bg-skin-black` | Dark `#151617` chart, `#242627` chart panels | Matches the sidebar black and authenticated admin navbar black, with softened `0.05` opacity grid lines |
+| Other theme classes | White `#ffffff` | Uses softened `0.08` opacity grid lines, light axis text, borders, and loading overlay |
 
 `Market.jsx` lets the chart content determine the page height. It should not reserve a fixed multi-viewport wrapper height around `TradingViewChart`, otherwise the market page shows a large blank area below the chart. The authenticated layout's `AppContent.jsx` content area is also dynamic rather than fixed to `600px`, so the chart panel can size naturally without overflowing a hardcoded container.
 
