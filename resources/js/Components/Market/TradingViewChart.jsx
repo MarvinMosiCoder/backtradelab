@@ -39,6 +39,9 @@ const DEFAULT_CANDLE_COLORS = {
   up: '#26a69a',
   down: '#ef5350',
 };
+const DEFAULT_CANDLE_SIZE = 8;
+const MIN_CANDLE_SIZE = 3;
+const MAX_CANDLE_SIZE = 24;
 
 const MAX_DRAWING_UNDO_STEPS = 25;
 
@@ -411,6 +414,17 @@ export default function TradingViewReplayChart({
       return DEFAULT_CANDLE_COLORS;
     }
   });
+  const [candleSize, setCandleSize] = useState(() => {
+    if (typeof window === 'undefined') {
+      return DEFAULT_CANDLE_SIZE;
+    }
+
+    const stored = Number(localStorage.getItem('market-chart-candle-size'));
+
+    return Number.isFinite(stored)
+      ? Math.min(Math.max(stored, MIN_CANDLE_SIZE), MAX_CANDLE_SIZE)
+      : DEFAULT_CANDLE_SIZE;
+  });
   const [symbols, setSymbols] = useState([]);
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolError, setSymbolError] = useState('');
@@ -542,6 +556,10 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     localStorage.setItem('market-chart-candle-colors', JSON.stringify(candleColors));
   }, [candleColors]);
+
+  useEffect(() => {
+    localStorage.setItem('market-chart-candle-size', String(candleSize));
+  }, [candleSize]);
 
   useEffect(() => {
     if (!isFullscreen || typeof document === 'undefined') return undefined;
@@ -1608,6 +1626,7 @@ export default function TradingViewReplayChart({
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 8,
+        barSpacing: candleSize,
       },
       handleScroll: true,
       handleScale: true,
@@ -1808,6 +1827,16 @@ export default function TradingViewReplayChart({
       volumeSeriesRef.current = null;
     };
   }, [scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    chart.timeScale().applyOptions({
+      barSpacing: candleSize,
+    });
+    scheduleOverlayRender();
+  }, [candleSize, scheduleOverlayRender]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -3810,12 +3839,14 @@ export default function TradingViewReplayChart({
         currentPrice={currentPrice}
         selectedReplayPrice={selectedReplayPrice}
         candleColors={candleColors}
+        candleSize={candleSize}
         onSymbolChange={handleSymbolChange}
         onCategoryChange={setMarketCategory}
         onAddSymbol={handleAddSymbol}
         onTimeframeChange={setTimeframe}
         onToggleReplayMode={toggleReplayMode}
         onCandleColorChange={setCandleColors}
+        onCandleSizeChange={setCandleSize}
         chartTheme={chartTheme}
       />
 

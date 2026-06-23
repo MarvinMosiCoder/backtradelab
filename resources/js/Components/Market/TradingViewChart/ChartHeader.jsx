@@ -17,12 +17,14 @@ export default function ChartHeader({
   currentPrice,
   selectedReplayPrice,
   candleColors,
+  candleSize,
   onSymbolChange,
   onCategoryChange,
   onAddSymbol,
   onTimeframeChange,
   onToggleReplayMode,
   onCandleColorChange,
+  onCandleSizeChange,
   chartTheme,
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -89,10 +91,14 @@ export default function ChartHeader({
     setSymbolSearch('');
     setIsAddOpen(false);
   };
+  const handleCandleSizeChange = (value) => {
+    const nextSize = Math.min(Math.max(Number(value) || 8, 3), 24);
+    onCandleSizeChange(nextSize);
+  };
 
   return (
     <div className="relative z-40 rounded-lg border p-3" style={panelStyle}>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(105px,0.45fr)_minmax(115px,0.45fr)_minmax(130px,0.55fr)_minmax(140px,0.55fr)_minmax(0,0.65fr)]">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(105px,0.45fr)_minmax(115px,0.45fr)_minmax(130px,0.55fr)_minmax(190px,0.75fr)_minmax(0,0.55fr)]">
         <div className="relative">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -235,7 +241,7 @@ export default function ChartHeader({
 
         <div>
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Candles</label>
-          <div className={`${fieldClass} flex w-full items-center gap-2`}>
+          <div className={`${fieldClass} flex w-full items-center gap-2 px-2`}>
             <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bull candle color">
               G
               <input
@@ -259,6 +265,19 @@ export default function ChartHeader({
                 }))}
                 className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
               />
+            </label>
+            <label className={`flex min-w-0 flex-1 items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Candle size">
+              Size
+              <input
+                type="range"
+                min="3"
+                max="24"
+                step="1"
+                value={candleSize}
+                onChange={(event) => handleCandleSizeChange(event.target.value)}
+                className="min-w-0 flex-1 accent-emerald-500"
+              />
+              <span className="w-5 text-right tabular-nums">{candleSize}</span>
             </label>
           </div>
         </div>
