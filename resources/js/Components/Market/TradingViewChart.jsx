@@ -48,13 +48,13 @@ const MAX_DRAWING_UNDO_STEPS = 25;
 const CHART_THEMES = {
   dark: {
     mode: 'dark',
-    background: '#151617',
-    panel: '#242627',
-    panelControl: '#151617',
+    background: '#0b0d10',
+    panel: '#151617',
+    panelControl: '#0f1115',
     text: '#d1d4dc',
-    grid: 'rgba(148, 163, 184, 0.05)',
-    border: '#31363F',
-    overlay: 'rgba(21, 22, 23, 0.72)',
+    grid: 'rgba(148, 163, 184, 0.06)',
+    border: '#252a32',
+    overlay: 'rgba(11, 13, 16, 0.78)',
     selectedPriceLine: '#e5e7eb',
   },
   light: {
@@ -389,6 +389,7 @@ export default function TradingViewReplayChart({
   const autoClosedPositionRef = useRef(new Set());
   const autoTriggeredPositionRef = useRef(new Set());
   const pendingVisibleLogicalRangeRef = useRef(null);
+  const pendingVisibleViewRef = useRef(null);
   const quickOpenBacktestPositionRef = useRef(null);
   const cancelBacktestPositionRef = useRef(null);
   const triggerBacktestPositionRef = useRef(null);
@@ -1900,6 +1901,7 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !allCandles.length) return;
+    if (pendingVisibleViewRef.current || pendingVisibleLogicalRangeRef.current) return;
 
     isProgrammaticRangeChangeRef.current = true;
     chart.timeScale().fitContent();
@@ -1912,10 +1914,45 @@ export default function TradingViewReplayChart({
 
   useEffect(() => {
     const chart = chartRef.current;
+    const pendingView = pendingVisibleViewRef.current;
+    if (!chart || !pendingView || !visibleCandles.length) return;
+    if (pendingVisibleLogicalRangeRef.current) return;
+
+    pendingVisibleViewRef.current = null;
+    isProgrammaticRangeChangeRef.current = true;
+
+    const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+    const centerLogical = estimateDrawingLogicalFromTime(
+      visibleCandles,
+      pendingView.centerTime,
+      intervalSeconds
+    );
+    const span = Math.max(Number(pendingView.logicalSpan) || 0, 6);
+
+    if (Number.isFinite(centerLogical)) {
+      chart.timeScale().setVisibleLogicalRange({
+        from: centerLogical - (span / 2),
+        to: centerLogical + (span / 2),
+      });
+    } else if (pendingView.timeRange?.from != null && pendingView.timeRange?.to != null) {
+      chart.timeScale().setVisibleRange(pendingView.timeRange);
+    } else {
+      chart.timeScale().fitContent();
+    }
+
+    requestAnimationFrame(() => {
+      isProgrammaticRangeChangeRef.current = false;
+      scheduleOverlayRender();
+    });
+  }, [scheduleOverlayRender, timeframe, visibleCandles.length]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
     const pendingRange = pendingVisibleLogicalRangeRef.current;
     if (!chart || !pendingRange || !visibleCandles.length) return;
 
     pendingVisibleLogicalRangeRef.current = null;
+    pendingVisibleViewRef.current = null;
     isProgrammaticRangeChangeRef.current = true;
     chart.timeScale().setVisibleLogicalRange(pendingRange);
 
@@ -2734,8 +2771,8 @@ export default function TradingViewReplayChart({
           ? replayIndex / (allCandles.length - 1)
           : 0.3;
       let hasUsableCache = false;
+      const hasVisibleChartData = allCandles.length > 0 || visibleCandlesRef.current.length > 0;
 
-      setLoading(true);
       setError('');
       setIsPlaying(false);
       setFollowReplay(!shouldFrameDrawings);
@@ -2881,6 +2918,9 @@ export default function TradingViewReplayChart({
           end: params.get('end') ?? 'latest',
         });
         const cachedCandles = candleCacheRef.current.get(cacheKey)?.candles;
+        const shouldBlockForCandles = !cachedCandles?.length && !hasVisibleChartData;
+
+        setLoading(shouldBlockForCandles);
 
         if (cachedCandles?.length) {
           hasUsableCache = true;
@@ -3816,39 +3856,68 @@ export default function TradingViewReplayChart({
     scheduleOverlayRender();
   };
 
+  const handleTimeframeChange = useCallback((nextTimeframe) => {
+    if (nextTimeframe === timeframe) return;
+
+    const timeScale = chartRef.current?.timeScale?.();
+    const visibleRange = timeScale?.getVisibleRange?.();
+    const logicalRange = timeScale?.getVisibleLogicalRange?.();
+
+    if (
+      visibleRange?.from != null
+      && visibleRange?.to != null
+      && Number.isFinite(Number(logicalRange?.from))
+      && Number.isFinite(Number(logicalRange?.to))
+    ) {
+      const fromTime = Number(visibleRange.from);
+      const toTime = Number(visibleRange.to);
+      pendingVisibleViewRef.current = {
+        timeRange: visibleRange,
+        centerTime: fromTime + ((toTime - fromTime) / 2),
+        logicalSpan: Math.max(Number(logicalRange.to) - Number(logicalRange.from), 6),
+      };
+    } else {
+      pendingVisibleViewRef.current = null;
+    }
+
+    setTimeframe(nextTimeframe);
+  }, [timeframe]);
+
+  const chartHeaderProps = {
+    symbol,
+    exchange,
+    marketCategory,
+    symbols,
+    availableSymbols,
+    isSavingSymbol,
+    isLoadingAvailableSymbols,
+    symbolError,
+    timeframe,
+    replayMode,
+    currentPrice,
+    selectedReplayPrice,
+    candleColors,
+    candleSize,
+    onSymbolChange: handleSymbolChange,
+    onCategoryChange: setMarketCategory,
+    onAddSymbol: handleAddSymbol,
+    onTimeframeChange: handleTimeframeChange,
+    onToggleReplayMode: toggleReplayMode,
+    onCandleColorChange: setCandleColors,
+    onCandleSizeChange: setCandleSize,
+    chartTheme,
+  };
+
   return (
     <div
       ref={fullscreenRef}
       className={
         isFullscreen
-          ? 'fixed inset-0 z-[9999] flex h-[100dvh] flex-col gap-3 overflow-hidden bg-black-screen-color p-4'
+          ? 'fixed inset-0 z-[9999] flex h-[100dvh] flex-col overflow-hidden bg-black-screen-color p-2'
           : 'space-y-4'
       }
     >
-      <ChartHeader
-        symbol={symbol}
-        exchange={exchange}
-        marketCategory={marketCategory}
-        symbols={symbols}
-        availableSymbols={availableSymbols}
-        isSavingSymbol={isSavingSymbol}
-        isLoadingAvailableSymbols={isLoadingAvailableSymbols}
-        symbolError={symbolError}
-        timeframe={timeframe}
-        replayMode={replayMode}
-        currentPrice={currentPrice}
-        selectedReplayPrice={selectedReplayPrice}
-        candleColors={candleColors}
-        candleSize={candleSize}
-        onSymbolChange={handleSymbolChange}
-        onCategoryChange={setMarketCategory}
-        onAddSymbol={handleAddSymbol}
-        onTimeframeChange={setTimeframe}
-        onToggleReplayMode={toggleReplayMode}
-        onCandleColorChange={setCandleColors}
-        onCandleSizeChange={setCandleSize}
-        chartTheme={chartTheme}
-      />
+      {!isFullscreen && <ChartHeader {...chartHeaderProps} />}
 
       <div className={isFullscreen ? 'min-h-0 flex-1' : 'min-h-0'}>
         <div className={`relative min-w-0 ${isFullscreen ? 'h-full' : ''}`}>
@@ -3872,6 +3941,14 @@ export default function TradingViewReplayChart({
             onCancelText={handleCancelText}
             onToggleFullscreen={handleToggleFullscreen}
           />
+
+          {isFullscreen && (
+            <ChartHeader
+              {...chartHeaderProps}
+              compact
+              className="pointer-events-auto absolute left-16 top-2 z-20 max-w-[calc(100%-7.5rem)]"
+            />
+          )}
 
           {(loading || error) && (
             <div

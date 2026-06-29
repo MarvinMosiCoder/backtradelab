@@ -26,6 +26,8 @@ export default function ChartHeader({
   onCandleColorChange,
   onCandleSizeChange,
   chartTheme,
+  compact = false,
+  className = '',
 }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
@@ -96,8 +98,86 @@ export default function ChartHeader({
     onCandleSizeChange(nextSize);
   };
 
+  if (compact) {
+    const compactFieldClass = `h-8 rounded-md border px-2 text-xs outline-none ${
+      isDark
+        ? 'border-gray-700 bg-black-table-color/95 text-white'
+        : 'border-gray-200 bg-white/95 text-gray-800'
+    }`;
+
+    return (
+      <div
+        className={`flex max-w-full flex-wrap items-center gap-2 rounded-md border p-2 shadow-xl backdrop-blur ${className}`}
+        style={panelStyle}
+      >
+        <select
+          value={`${exchange ?? 'bybit'}:${marketCategory ?? 'spot'}:${symbol}`}
+          onChange={(e) => onSymbolChange(e.target.value)}
+          className={`${compactFieldClass} w-44 max-w-[42vw]`}
+          title="Symbol"
+        >
+          {symbolOptions.map((item) => (
+            <option
+              key={buildSymbolKey(item)}
+              value={buildSymbolKey(item)}
+            >
+              {item.symbol} ({String(item.exchange ?? 'bybit').toUpperCase()} {String(item.category ?? 'spot').toUpperCase()})
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={marketCategory}
+          onChange={(e) => {
+            onCategoryChange(e.target.value);
+            setSymbolSearch('');
+          }}
+          className={`${compactFieldClass} w-24`}
+          title="Market"
+        >
+          <option value="linear">Futures</option>
+          <option value="spot">Spot</option>
+        </select>
+
+        <select
+          value={timeframe}
+          onChange={(e) => onTimeframeChange(e.target.value)}
+          className={`${compactFieldClass} w-20`}
+          title="Timeframe"
+        >
+          {TIMEFRAMES.map((tf) => (
+            <option key={tf.value} value={tf.value}>
+              {tf.label}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          onClick={onToggleReplayMode}
+          className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold ${
+            replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass
+          }`}
+          title={replayMode ? 'Back to live' : 'Start replay'}
+        >
+          {replayMode ? <X size={14} /> : <Play size={14} />}
+          <span className="hidden sm:inline">{replayMode ? 'Live' : 'Replay'}</span>
+        </button>
+
+        <div className="min-w-0 px-1">
+          <div className="truncate text-[10px] leading-none text-gray-400">
+            {replayMode ? 'Replay' : 'Price'}
+          </div>
+          <div className="truncate text-sm font-bold leading-tight text-green-500">
+            ${formatPrice(currentPrice)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative z-40 rounded-lg border p-3" style={panelStyle}>
+    <div className={`relative z-40 rounded-lg border p-3 ${className}`} style={panelStyle}>
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(105px,0.45fr)_minmax(115px,0.45fr)_minmax(130px,0.55fr)_minmax(190px,0.75fr)_minmax(0,0.55fr)]">
         <div className="relative">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Symbol</label>
