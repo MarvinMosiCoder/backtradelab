@@ -15,6 +15,7 @@ use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\MarketBacktestController;
 use App\Http\Controllers\MarketDrawingController;
+use App\Http\Controllers\MarketReplayProgressController;
 use App\Http\Controllers\MarketToolSettingController;
 use App\Http\Controllers\Users\ChangePasswordController;
 use App\Http\Controllers\Users\ForceChangePasswordController;
@@ -86,6 +87,8 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/market-drawings', [MarketDrawingController::class, 'update'])->name('market-drawings.update');
     Route::get('/market-tool-settings', [MarketToolSettingController::class, 'show'])->name('market-tool-settings.show');
     Route::put('/market-tool-settings', [MarketToolSettingController::class, 'update'])->name('market-tool-settings.update');
+    Route::get('/market-replay-progress', [MarketReplayProgressController::class, 'show'])->name('market-replay-progress.show');
+    Route::put('/market-replay-progress', [MarketReplayProgressController::class, 'update'])->name('market-replay-progress.update');
     Route::get('/market-backtest/account', [MarketBacktestController::class, 'show'])->name('market-backtest.show');
     Route::get('/market-backtest/report', [MarketBacktestController::class, 'report'])->name('market-backtest.report');
     Route::get('/market-backtest/report/export', [MarketBacktestController::class, 'exportReport'])->name('market-backtest.report.export');

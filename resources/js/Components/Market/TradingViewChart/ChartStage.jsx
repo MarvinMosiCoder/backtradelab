@@ -441,9 +441,13 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
       style={{ width: '100%', height: '100%' }}
     >
       {renderedBacktestOrders.map((item) => {
-        const badgeWidth = Math.min(Math.max(item.label.length * 6.4 + 22, 82), 180);
-        const badgeX = Math.min(Math.max(8, overlaySize.width - badgeWidth - 8), Math.max(8, overlaySize.width - badgeWidth - 8));
+        const estimatedTextWidth = item.label.length * 6.4;
+        const maxBadgeWidth = Math.max(40, Math.min(300, overlaySize.width - 16));
+        const badgeWidth = Math.min(Math.max(estimatedTextWidth + 22, 82), maxBadgeWidth);
+        const badgeX = Math.max(8, overlaySize.width - badgeWidth - 8);
         const badgeY = Math.min(Math.max(item.y - 11, 4), Math.max(overlaySize.height - 24, 4));
+        const availableTextWidth = Math.max(badgeWidth - 16, 1);
+        const shouldCompressText = estimatedTextWidth > availableTextWidth;
 
         return (
           <g key={item.id}>
@@ -453,7 +457,7 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
               x2={x2}
               y2={item.y}
               stroke={item.color}
-              strokeWidth={1.5}
+              strokeWidth={1}
               strokeDasharray={item.dashed ? '7,5' : undefined}
               opacity="0.95"
             />
@@ -474,6 +478,8 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
               fill={textFill}
               fontSize="11"
               fontWeight="700"
+              textLength={shouldCompressText ? availableTextWidth : undefined}
+              lengthAdjust={shouldCompressText ? 'spacingAndGlyphs' : undefined}
             >
               {item.label}
             </text>

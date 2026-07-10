@@ -39,7 +39,7 @@ const DEFAULT_CANDLE_COLORS = {
   up: '#26a69a',
   down: '#ef5350',
 };
-const DEFAULT_CANDLE_SIZE = 8;
+const DEFAULT_CANDLE_SIZE = 24;
 const MIN_CANDLE_SIZE = 3;
 const MAX_CANDLE_SIZE = 24;
 
@@ -275,6 +275,40 @@ function formatOverlayPrice(value) {
   });
 }
 
+function formatOverlayPnl(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+
+  return Math.abs(number).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function estimatePositionNetPnl(position, exitPrice, feeRate = 0.0004) {
+  const entryPrice = Number(position?.entryPrice);
+  const quantity = Number(position?.quantity);
+  const exit = Number(exitPrice);
+  const entryFee = Number(position?.entryFee ?? 0);
+  const normalizedFeeRate = Number.isFinite(Number(feeRate)) ? Number(feeRate) : 0.0004;
+
+  if (
+    !Number.isFinite(entryPrice)
+    || !Number.isFinite(quantity)
+    || quantity <= 0
+    || !Number.isFinite(exit)
+  ) {
+    return null;
+  }
+
+  const grossPnl = position.side === 'short'
+    ? (entryPrice - exit) * quantity
+    : (exit - entryPrice) * quantity;
+  const exitFee = Math.abs(exit * quantity) * normalizedFeeRate;
+
+  return grossPnl - (Number.isFinite(entryFee) ? entryFee : 0) - exitFee;
+}
+
 function getMaxBacktestMarginForCash(cashBalance, leverage = 1, feeRate = 0.0004) {
   const cash = Number(cashBalance);
   const leverageValue = Number(leverage);
@@ -395,6 +429,8 @@ export default function TradingViewReplayChart({
   const triggerBacktestPositionRef = useRef(null);
   const closeBacktestPositionRef = useRef(null);
   const drawingUndoStackRef = useRef([]);
+  const restoredReplayProgressKeyRef = useRef(null);
+  const latestReplayProgressRef = useRef(null);
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [exchange, setExchange] = useState(initialExchange);
@@ -420,7 +456,8 @@ export default function TradingViewReplayChart({
       return DEFAULT_CANDLE_SIZE;
     }
 
-    const stored = Number(localStorage.getItem('market-chart-candle-size'));
+    const storedValue = localStorage.getItem('market-chart-candle-size');
+    const stored = storedValue == null ? Number.NaN : Number(storedValue);
 
     return Number.isFinite(stored)
       ? Math.min(Math.max(stored, MIN_CANDLE_SIZE), MAX_CANDLE_SIZE)
@@ -445,6 +482,8 @@ export default function TradingViewReplayChart({
   const [followReplay, setFollowReplay] = useState(true);
 
   const [selectedReplayPrice, setSelectedReplayPrice] = useState(null);
+  const [savedReplayProgress, setSavedReplayProgress] = useState(null);
+  const [replayProgressLoadedKey, setReplayProgressLoadedKey] = useState(null);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -460,6 +499,8 @@ export default function TradingViewReplayChart({
   const [backtestError, setBacktestError] = useState('');
   const [backtestOrderDraft, setBacktestOrderDraft] = useState(null);
   const [orderLineDraftPatch, setOrderLineDraftPatch] = useState(null);
+  const [chartOrderAction, setChartOrderAction] = useState(null);
+  const [chartOrderRequest, setChartOrderRequest] = useState(null);
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: CHART_HEIGHT });
   const [overlayRenderVersion, setOverlayRenderVersion] = useState(0);
 
@@ -553,6 +594,114 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     selectedReplayPriceRef.current = selectedReplayPrice;
   }, [selectedReplayPrice]);
+
+  const replayProgressKey = `${exchange}:${marketCategory}:${symbol}`;
+  const replayProgressStorageKey = `market-replay-progress:${replayProgressKey}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    let localProgress = null;
+
+    setReplayProgressLoadedKey(null);
+    restoredReplayProgressKeyRef.current = null;
+
+    try {
+      localProgress = JSON.parse(localStorage.getItem(replayProgressStorageKey) ?? 'null');
+    } catch {}
+
+    axios.get('/market-replay-progress', {
+      params: { symbol, exchange, category: marketCategory },
+      headers: { Accept: 'application/json' },
+    }).then((response) => {
+      if (cancelled) return;
+      const serverProgress = response.data?.progress ?? null;
+      setSavedReplayProgress(localProgress ?? serverProgress);
+      setReplayProgressLoadedKey(replayProgressKey);
+
+      if (localProgress?.replay_time) {
+        const serverProgressPayload = {
+          ...localProgress,
+          client_saved_at: Number(localProgress.saved_at ?? Date.now()),
+        };
+        delete serverProgressPayload.saved_at;
+        axios.put('/market-replay-progress', serverProgressPayload).catch(() => {});
+      }
+    }).catch(() => {
+      if (cancelled) return;
+      setSavedReplayProgress(localProgress);
+      setReplayProgressLoadedKey(replayProgressKey);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [exchange, marketCategory, replayProgressKey, replayProgressStorageKey, symbol]);
+
+  useEffect(() => {
+    if (!replayMode || replayProgressLoadedKey !== replayProgressKey) return undefined;
+
+    const replayTime = allCandles[replayIndex]?.time;
+    if (!Number.isFinite(Number(replayTime))) return undefined;
+
+    const progress = {
+      symbol,
+      exchange,
+      category: marketCategory,
+      timeframe,
+      replay_time: Number(replayTime),
+      selected_price: selectedReplayPrice,
+      saved_at: Date.now(),
+    };
+
+    latestReplayProgressRef.current = progress;
+    try {
+      localStorage.setItem(replayProgressStorageKey, JSON.stringify(progress));
+    } catch {}
+
+    const timeout = setTimeout(() => {
+      const serverProgress = { ...progress, client_saved_at: progress.saved_at };
+      delete serverProgress.saved_at;
+      axios.put('/market-replay-progress', serverProgress).catch(() => {});
+    }, 500);
+
+    return () => clearTimeout(timeout);
+  }, [allCandles, exchange, marketCategory, replayIndex, replayMode, replayProgressKey, replayProgressLoadedKey, replayProgressStorageKey, selectedReplayPrice, symbol, timeframe]);
+
+  useEffect(() => {
+    const flushReplayProgress = (keepalive = false) => {
+      const progress = latestReplayProgressRef.current;
+      if (!progress) return;
+
+      const serverProgress = { ...progress, client_saved_at: progress.saved_at };
+      delete serverProgress.saved_at;
+
+      if (keepalive) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        fetch('/market-replay-progress', {
+          method: 'PUT',
+          keepalive: true,
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken ?? '',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify(serverProgress),
+        }).catch(() => {});
+        return;
+      }
+
+      axios.put('/market-replay-progress', serverProgress).catch(() => {});
+    };
+
+    const handlePageHide = () => flushReplayProgress(true);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      flushReplayProgress();
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('market-chart-candle-colors', JSON.stringify(candleColors));
@@ -1186,6 +1335,69 @@ export default function TradingViewReplayChart({
     }
   }, [allCandles]);
 
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return undefined;
+
+    const getPriceAction = (event) => {
+      if (
+        toolRef.current
+        || isReplayPricePickActiveRef.current
+        || event.target?.closest?.('[data-chart-ui], button, input, textarea, select')
+      ) {
+        return null;
+      }
+
+      const series = candleSeriesRef.current;
+      if (!series) return null;
+
+      const rect = el.getBoundingClientRect();
+      const y = event.clientY - rect.top;
+      if (y < 12 || y > rect.height - 28) return null;
+
+      const price = series.coordinateToPrice(y);
+      if (!Number.isFinite(Number(price))) return null;
+
+      return {
+        y,
+        price: Number(price),
+      };
+    };
+
+    const handlePriceHover = (event) => {
+      if (event.target?.closest?.('[data-chart-ui="order-price-action"]')) return;
+      setChartOrderAction(getPriceAction(event));
+    };
+
+    const handleMouseLeave = (event) => {
+      if (event.relatedTarget?.closest?.('[data-chart-ui="order-price-action"]')) return;
+      setChartOrderAction(null);
+    };
+
+    const handleContextMenu = (event) => {
+      const action = getPriceAction(event);
+      if (!action) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setChartOrderAction(action);
+      setChartOrderRequest({
+        id: Date.now(),
+        price: action.price,
+      });
+    };
+
+    el.addEventListener('mousemove', handlePriceHover);
+    el.addEventListener('mouseleave', handleMouseLeave);
+    el.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      el.removeEventListener('mousemove', handlePriceHover);
+      el.removeEventListener('mouseleave', handleMouseLeave);
+      el.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, []);
+
   const getDefaultPositionStop = useCallback((type, entry, target) => {
     const priceMove = Math.abs(target.price - entry.price);
     const stopPrice =
@@ -1289,6 +1501,13 @@ export default function TradingViewReplayChart({
 
       const kindLabel = kind === 'entry' ? (position.status === 'pending' ? 'ENTRY' : 'OPEN') : kind.toUpperCase();
       const sideLabel = position.side === 'short' ? 'SHORT' : 'LONG';
+      const positionPnl = kind === 'sl' || kind === 'tp'
+        ? estimatePositionNetPnl(position, value, backtestAccount?.feeRate)
+        : null;
+      const formattedPositionPnl = formatOverlayPnl(positionPnl);
+      const pnlLabel = formattedPositionPnl
+        ? `  PnL ${positionPnl >= 0 ? '+' : '-'}${formattedPositionPnl} ${backtestAccount?.quoteCurrency ?? 'USDT'}`
+        : '';
 
       return {
         id: options.id ?? `${position.status}:${position.id}:${kind}`,
@@ -1299,10 +1518,10 @@ export default function TradingViewReplayChart({
         price: value,
         y,
         dashed: options.dashed ?? position.status === 'pending',
-        color: kind === 'tp' ? '#22c55e' : kind === 'sl' ? '#ef4444' : '#f59e0b',
+        color: options.color ?? (kind === 'tp' ? '#22c55e' : kind === 'sl' ? '#ef4444' : '#f59e0b'),
         isDraft: Boolean(options.isDraft),
         canCancel: Boolean(options.canCancel),
-        label: options.label ?? `${sideLabel} ${kindLabel} ${formatOverlayPrice(value)}`,
+        label: options.label ?? `${sideLabel} ${kindLabel} ${formatOverlayPrice(value)}${pnlLabel}`,
       };
     };
     const draftEntryPrice = getPositiveNumber(
@@ -1324,6 +1543,9 @@ export default function TradingViewReplayChart({
           : draftEntryPrice * 1.01
         : null
     );
+    const draftProfit = formatOverlayPnl(backtestOrderDraft?.estimatedProfit);
+    const draftLoss = formatOverlayPnl(backtestOrderDraft?.estimatedLoss);
+    const draftQuoteCurrency = backtestOrderDraft?.quoteCurrency ?? 'USDT';
 
     return [
       ...(backtestOrderDraft?.visible
@@ -1355,7 +1577,7 @@ export default function TradingViewReplayChart({
                 id: 'draft:sl',
                 isDraft: true,
                 dashed: true,
-                label: `SL ${formatOverlayPrice(draftStopLoss)}`,
+                label: `SL ${formatOverlayPrice(draftStopLoss)}${draftLoss ? `  PnL -${draftLoss} ${draftQuoteCurrency}` : ''}`,
               }
             ),
             buildLine(
@@ -1370,7 +1592,7 @@ export default function TradingViewReplayChart({
                 id: 'draft:tp',
                 isDraft: true,
                 dashed: true,
-                label: `TP ${formatOverlayPrice(draftTakeProfit)}`,
+                label: `TP ${formatOverlayPrice(draftTakeProfit)}${draftProfit ? `  PnL +${draftProfit} ${draftQuoteCurrency}` : ''}`,
               }
             ),
           ]
@@ -1384,13 +1606,30 @@ export default function TradingViewReplayChart({
         ]),
       ...(backtestAccount?.openPositions ?? [])
         .filter((position) => position.symbol === symbol)
-        .flatMap((position) => [
-          buildLine({ ...position, status: 'open' }, 'entry', position.entryPrice, { dashed: false }),
-          buildLine({ ...position, status: 'open' }, 'sl', position.stopLoss, { dashed: false }),
-          buildLine({ ...position, status: 'open' }, 'tp', position.takeProfit, { dashed: false }),
-        ]),
+        .flatMap((position) => {
+          const openPosition = { ...position, status: 'open' };
+          const livePnl = estimatePositionNetPnl(
+            openPosition,
+            executionPrice,
+            backtestAccount?.feeRate
+          );
+          const formattedLivePnl = formatOverlayPnl(livePnl);
+          const livePnlLabel = formattedLivePnl
+            ? `  LIVE ${livePnl >= 0 ? '+' : '-'}${formattedLivePnl} ${backtestAccount?.quoteCurrency ?? 'USDT'}`
+            : '';
+
+          return [
+            buildLine(openPosition, 'entry', position.entryPrice, {
+              dashed: false,
+              color: livePnl == null ? '#f59e0b' : livePnl >= 0 ? '#22c55e' : '#ef4444',
+              label: `${position.side === 'short' ? 'SHORT' : 'LONG'} OPEN ${formatOverlayPrice(position.entryPrice)}${livePnlLabel}`,
+            }),
+            buildLine(openPosition, 'sl', position.stopLoss, { dashed: false }),
+            buildLine(openPosition, 'tp', position.takeProfit, { dashed: false }),
+          ];
+        }),
     ].filter(Boolean);
-  }, [backtestAccount, backtestOrderDraft, overlayRenderVersion, overlaySize.width, symbol]);
+  }, [backtestAccount, backtestOrderDraft, executionPrice, overlayRenderVersion, overlaySize.width, symbol]);
 
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
@@ -2746,14 +2985,24 @@ export default function TradingViewReplayChart({
 
   useEffect(() => {
     async function fetchKlines() {
+      if (replayProgressLoadedKey !== replayProgressKey) return;
+
       const requestId = fetchRequestIdRef.current + 1;
       fetchRequestIdRef.current = requestId;
       candleFetchAbortRef.current?.abort();
       const controller = new AbortController();
       candleFetchAbortRef.current = controller;
-      const wasInReplay = replayMode;
-      const previousSelectedReplayPrice = selectedReplayPriceRef.current;
-      const previousReplayTime = wasInReplay ? allCandles[replayIndex]?.time : null;
+      const shouldRestoreSavedReplay =
+        !replayMode
+        && restoredReplayProgressKeyRef.current !== replayProgressKey
+        && Number.isFinite(Number(savedReplayProgress?.replay_time));
+      const wasInReplay = replayMode || shouldRestoreSavedReplay;
+      const previousSelectedReplayPrice = shouldRestoreSavedReplay
+        ? savedReplayProgress?.selected_price
+        : selectedReplayPriceRef.current;
+      const previousReplayTime = shouldRestoreSavedReplay
+        ? Number(savedReplayProgress.replay_time)
+        : (replayMode ? allCandles[replayIndex]?.time : null);
       const drawingTimes = wasInReplay ? getDrawingTimes(drawingsRef.current) : [];
       const shouldFrameDrawings = wasInReplay && drawingTimes.length > 0;
       const anchorTimes = [
@@ -2874,6 +3123,9 @@ export default function TradingViewReplayChart({
 
           setReplayIndex(nextReplayIndex);
           setReplayMode(wasInReplay);
+          if (shouldRestoreSavedReplay) {
+            restoredReplayProgressKeyRef.current = replayProgressKey;
+          }
           setSelectedReplayPrice(
             wasInReplay
               ? previousSelectedReplayPrice ?? normalized[nextReplayIndex]?.close ?? null
@@ -3019,7 +3271,7 @@ export default function TradingViewReplayChart({
     return () => {
       candleFetchAbortRef.current?.abort();
     };
-  }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings]);
+  }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings, replayProgressKey, replayProgressLoadedKey, savedReplayProgress]);
 
   const startReplayMode = (startIndex = Math.max(0, Math.floor(allCandles.length * 0.3))) => {
     const nextIndex = Math.min(Math.max(0, startIndex), Math.max(0, allCandles.length - 1));
@@ -3035,14 +3287,14 @@ export default function TradingViewReplayChart({
     setIsPlaying(false);
 
     if (!replayMode) {
-      startReplayMode();
+      startReplayMode(replayIndex);
       return;
     }
 
+    // Going live changes only the current view. The last replay checkpoint
+    // remains persisted and is available the next time replay is opened.
     setReplayMode(false);
     setFollowReplay(true);
-    setReplayIndex(Math.max(0, allCandles.length - 1));
-    setSelectedReplayPrice(null);
     setTool(null);
     setTempDrawing(null);
     setTextInput(null);
@@ -3942,6 +4194,34 @@ export default function TradingViewReplayChart({
             onToggleFullscreen={handleToggleFullscreen}
           />
 
+          {chartOrderAction && !loading && !error && (
+            <button
+              type="button"
+              data-chart-ui="order-price-action"
+              onClick={() => setChartOrderRequest({
+                id: Date.now(),
+                price: chartOrderAction.price,
+              })}
+              onMouseLeave={(event) => {
+                if (wrapperRef.current?.contains(event.relatedTarget)) return;
+                setChartOrderAction(null);
+              }}
+              className={`absolute z-20 flex h-7 w-7 items-center justify-center rounded-full border p-0 text-base font-bold leading-none shadow-lg ${
+                chartTheme.mode === 'dark'
+                  ? 'border-gray-600 bg-skin-black text-white hover:bg-white hover:text-black'
+                  : 'border-slate-400 bg-white text-slate-900 hover:bg-slate-900 hover:text-white'
+              }`}
+              style={{
+                right: 58,
+                top: Math.max(4, chartOrderAction.y - 14),
+              }}
+              title={`Create order at ${formatOverlayPrice(chartOrderAction.price)}`}
+              aria-label={`Create order at ${formatOverlayPrice(chartOrderAction.price)}`}
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+          )}
+
           {isFullscreen && (
             <ChartHeader
               {...chartHeaderProps}
@@ -4013,6 +4293,7 @@ export default function TradingViewReplayChart({
             onCancelBacktestPosition={handleCancelBacktestPosition}
             onResetBacktestAccount={handleResetBacktestAccount}
             orderLineDraftPatch={orderLineDraftPatch}
+            orderEntryRequest={chartOrderRequest}
             onBacktestOrderDraftChange={setBacktestOrderDraft}
             chartTheme={chartTheme}
           />

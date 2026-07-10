@@ -859,6 +859,7 @@ export default function ReplayPanel({
   onCancelBacktestPosition,
   onResetBacktestAccount,
   orderLineDraftPatch,
+  orderEntryRequest,
   onBacktestOrderDraftChange,
   chartTheme,
   className = '',
@@ -873,6 +874,7 @@ export default function ReplayPanel({
   const [orderEntryPrice, setOrderEntryPrice] = useState('');
   const [orderStopLoss, setOrderStopLoss] = useState('');
   const [orderTakeProfit, setOrderTakeProfit] = useState('');
+  const [showOrderDraft, setShowOrderDraft] = useState(false);
   const [resetBalance, setResetBalance] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState(() => (
     getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
@@ -963,7 +965,20 @@ export default function ReplayPanel({
     }
   }, [orderLineDraftPatch]);
 
+  useEffect(() => {
+    const requestedPrice = getPositiveNumber(orderEntryRequest?.price);
+    if (!orderEntryRequest?.id || requestedPrice == null) return;
+
+    setOrderType('limit');
+    setOrderEntryPrice(String(Number(requestedPrice.toFixed(8))));
+    setShowOrderDraft(true);
+    setActiveGroup('backtest');
+  }, [orderEntryRequest]);
+
   const toggleGroup = (group) => {
+    if (group === 'backtest') {
+      setShowOrderDraft(false);
+    }
     setActiveGroup((currentGroup) => (currentGroup === group ? null : group));
   };
 
@@ -1006,11 +1021,25 @@ export default function ReplayPanel({
   const leverageValue = Number(orderLeverage);
   const isLeverageValid = Number.isFinite(leverageValue) && leverageValue >= 1 && leverageValue <= 125;
   const feeRate = Number(backtestAccount?.feeRate ?? 0.0004);
+  const plannedStopLoss = getPositiveNumber(orderStopLoss) ?? (
+    effectiveEntryPrice != null
+      ? orderSide === 'short'
+        ? effectiveEntryPrice * 1.01
+        : effectiveEntryPrice * 0.99
+      : null
+  );
+  const plannedTakeProfit = getPositiveNumber(orderTakeProfit) ?? (
+    effectiveEntryPrice != null
+      ? orderSide === 'short'
+        ? effectiveEntryPrice * 0.99
+        : effectiveEntryPrice * 1.01
+      : null
+  );
   const orderPlan = getOrderPlan({
     side: orderSide,
     entryPrice: effectiveEntryPrice,
-    stopLoss: orderStopLoss,
-    takeProfit: orderTakeProfit,
+    stopLoss: plannedStopLoss,
+    takeProfit: plannedTakeProfit,
     notional: quoteNotional,
     leverage: leverageValue,
     cashBalance: backtestMetrics.cashBalance,
@@ -1043,6 +1072,7 @@ export default function ReplayPanel({
       stopLoss: getPositiveNumber(orderStopLoss),
       takeProfit: getPositiveNumber(orderTakeProfit),
     });
+    setShowOrderDraft(false);
   };
   const resetBalanceValue = displayToQuoteAmount(resetBalance, displayCurrency, normalizedPhpRate);
   const canResetAccount =
@@ -1086,7 +1116,7 @@ export default function ReplayPanel({
 
   useEffect(() => {
     onBacktestOrderDraftChange?.({
-      visible: activeGroup === 'backtest',
+      visible: activeGroup === 'backtest' && showOrderDraft,
       orderType,
       side: orderSide,
       entryPrice: orderEntryPrice,
@@ -1094,6 +1124,9 @@ export default function ReplayPanel({
       takeProfit: orderTakeProfit,
       effectiveEntryPrice,
       isPendingOrder,
+      estimatedProfit: orderPlan?.estimatedProfit ?? null,
+      estimatedLoss: orderPlan?.estimatedLoss ?? null,
+      quoteCurrency,
     });
   }, [
     activeGroup,
@@ -1101,10 +1134,14 @@ export default function ReplayPanel({
     isPendingOrder,
     onBacktestOrderDraftChange,
     orderEntryPrice,
+    orderPlan?.estimatedLoss,
+    orderPlan?.estimatedProfit,
     orderSide,
     orderStopLoss,
     orderTakeProfit,
     orderType,
+    quoteCurrency,
+    showOrderDraft,
   ]);
 
   return (
