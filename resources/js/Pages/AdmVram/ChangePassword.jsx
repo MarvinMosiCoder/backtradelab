@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { ArrowLeft, Check, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, X } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
@@ -30,6 +30,7 @@ function PasswordField({ label, name, value, onChange, autoComplete, error }) {
 }
 
 export default function ChangePassword() {
+    const { auth } = usePage().props;
     const { theme } = useTheme();
     const isDark = theme === 'bg-skin-black';
     const [form, setForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
@@ -47,7 +48,8 @@ export default function ChangePassword() {
     }), [form.new_password]);
     const isStrong = Object.values(checks).every(Boolean);
     const matches = form.confirm_password !== '' && form.new_password === form.confirm_password;
-    const canSubmit = form.current_password && isStrong && matches && !loading;
+    const needsCurrentPassword = auth?.user?.password_login_enabled !== false;
+    const canSubmit = (!needsCurrentPassword || form.current_password) && isStrong && matches && !loading;
 
     useEffect(() => {
         if (!showSuccess) return undefined;
@@ -122,7 +124,7 @@ export default function ChangePassword() {
                     <form onSubmit={handleSubmit} className="p-6 sm:p-10">
                         <div className="mb-7"><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#2962ff]"><KeyRound size={15} /> Account security</div><h2 className="mt-2 text-2xl font-bold">Change password</h2><p className="mt-2 text-xs text-[#787b86]">Enter your current password and choose a strong replacement.</p></div>
                         <div className="space-y-4">
-                            <PasswordField label="Current password" name="current_password" value={form.current_password} onChange={handleChange} autoComplete="current-password" />
+                            {needsCurrentPassword && <PasswordField label="Current password" name="current_password" value={form.current_password} onChange={handleChange} autoComplete="current-password" />}
                             <PasswordField label="New password" name="new_password" value={form.new_password} onChange={handleChange} autoComplete="new-password" />
                             <div className={`grid gap-2 rounded-lg border p-3 sm:grid-cols-2 ${isDark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50'}`}>
                                 {criteria.map(([key, label]) => <div key={key} className={`flex items-center gap-2 text-[11px] ${checks[key] ? 'text-emerald-400' : 'text-[#787b86]'}`}><span className={`flex h-4 w-4 items-center justify-center rounded-full ${checks[key] ? 'bg-emerald-500/15' : 'bg-slate-500/10'}`}>{checks[key] ? <Check size={11} /> : <X size={10} />}</span>{label}</div>)}

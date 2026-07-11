@@ -53,6 +53,13 @@ class LoginController extends Controller
             return redirect('login')->withErrors(['message' => $error]);
         }
 
+        if ($users && $users->password_login_enabled === false) {
+            $providerName = ucfirst($users->social_provider ?: 'social');
+            return redirect('login')->withErrors([
+                'message' => "This account currently uses {$providerName} sign-in. Sign in with {$providerName}, then create a local password from Profile → Change password if you want email/password access.",
+            ])->onlyInput('email');
+        }
+
         if (Auth::attempt($credentials)) {
             $this->completeLogin($request, Auth::user(), $session_details);
             return redirect()->intended('dashboard');
@@ -97,6 +104,13 @@ class LoginController extends Controller
                 'message' => 'No active admin-created account exists for '.$email.'. Please contact Administrator!',
             ]);
         }
+
+        $usesTemporaryPassword = \Hash::check('qwerty', $users->password);
+        $users->forceFill([
+            'social_provider' => $provider,
+            'social_provider_id' => (string) $socialUser->getId(),
+            'password_login_enabled' => $usesTemporaryPassword ? false : (bool) $users->password_login_enabled,
+        ])->save();
 
         Auth::login($users);
         $this->completeLogin($request, $users, $session_details, true);

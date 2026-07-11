@@ -431,7 +431,8 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
   const isDark = chartTheme?.mode !== 'light';
   const badgeFill = isDark ? 'rgba(21, 22, 23, 0.96)' : 'rgba(255, 255, 255, 0.96)';
   const textFill = isDark ? '#f8fafc' : '#0f172a';
-  const x2 = Math.max(overlaySize.width - 96, 0);
+  const priceScaleGap = 96;
+  const x2 = Math.max(overlaySize.width - priceScaleGap, 0);
 
   return (
     <svg
@@ -442,9 +443,9 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
     >
       {renderedBacktestOrders.map((item) => {
         const estimatedTextWidth = item.label.length * 6.4;
-        const maxBadgeWidth = Math.max(40, Math.min(300, overlaySize.width - 16));
+        const maxBadgeWidth = Math.max(40, Math.min(300, overlaySize.width - priceScaleGap - 16));
         const badgeWidth = Math.min(Math.max(estimatedTextWidth + 22, 82), maxBadgeWidth);
-        const badgeX = Math.max(8, overlaySize.width - badgeWidth - 8);
+        const badgeX = Math.max(8, overlaySize.width - priceScaleGap - badgeWidth - 8);
         const badgeY = Math.min(Math.max(item.y - 11, 4), Math.max(overlaySize.height - 24, 4));
         const availableTextWidth = Math.max(badgeWidth - 16, 1);
         const shouldCompressText = estimatedTextWidth > availableTextWidth;
@@ -496,7 +497,7 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
             {item.canCancel && (
               <>
                 <rect
-                  x={Math.max(overlaySize.width - 42, 4)}
+                  x={Math.max(overlaySize.width - priceScaleGap - 28, 4)}
                   y={item.y - 8}
                   width={16}
                   height={16}
@@ -506,7 +507,7 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
                   strokeWidth={1.5}
                 />
                 <text
-                  x={Math.max(overlaySize.width - 34, 12)}
+                  x={Math.max(overlaySize.width - priceScaleGap - 20, 12)}
                   y={item.y + 4}
                   textAnchor="middle"
                   fill="#ef4444"
@@ -1188,7 +1189,7 @@ export default function ChartStage({
             ? 'grab'
           : tool || isReplayPricePickActive
             ? 'crosshair'
-            : 'grab',
+            : 'default',
       }}
     >
       <div ref={containerRef} className="absolute inset-0 z-0" />

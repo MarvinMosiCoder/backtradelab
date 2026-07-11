@@ -506,6 +506,7 @@ export default function TradingViewReplayChart({
   const [orderLineDraftPatch, setOrderLineDraftPatch] = useState(null);
   const [chartOrderAction, setChartOrderAction] = useState(null);
   const [chartOrderRequest, setChartOrderRequest] = useState(null);
+  const [orderDraftClearRequest, setOrderDraftClearRequest] = useState(null);
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: CHART_HEIGHT });
   const [overlayRenderVersion, setOverlayRenderVersion] = useState(0);
 
@@ -1541,6 +1542,8 @@ export default function TradingViewReplayChart({
               {
                 id: 'draft:entry',
                 isDraft: true,
+                canCancel: true,
+                cancelDraft: true,
                 dashed: true,
                 label: `${backtestOrderDraft.side === 'short' ? 'SHORT' : 'LONG'} ${backtestOrderDraft.isPendingOrder ? 'ORDER' : 'ENTRY'} ${formatOverlayPrice(draftEntryPrice)}`,
               }
@@ -1688,8 +1691,8 @@ export default function TradingViewReplayChart({
       const item = renderedBacktestOrders[i];
       const nearCancel =
         item.canCancel &&
-        x >= overlaySize.width - 44 &&
-        x <= overlaySize.width - 24 &&
+        x >= overlaySize.width - 124 &&
+        x <= overlaySize.width - 104 &&
         Math.abs(y - item.y) <= 12;
       const nearLine = Math.abs(y - item.y) <= 6 && x >= 0 && x <= overlaySize.width;
       const nearHandle =
@@ -2536,7 +2539,11 @@ export default function TradingViewReplayChart({
       if (backtestOrderHit?.action === 'cancel') {
         event.preventDefault();
         event.stopPropagation();
-        cancelBacktestPositionRef.current?.(backtestOrderHit.positionId);
+        if (backtestOrderHit.cancelDraft) {
+          setOrderDraftClearRequest({ id: Date.now() });
+        } else {
+          cancelBacktestPositionRef.current?.(backtestOrderHit.positionId);
+        }
         return;
       }
 
@@ -4156,7 +4163,7 @@ export default function TradingViewReplayChart({
       pendingVisibleViewRef.current = {
         timeRange: visibleRange,
         centerTime: fromTime + ((toTime - fromTime) / 2),
-        logicalSpan: Math.max(Number(logicalRange.to) - Number(logicalRange.from), 6),
+        logicalSpan: Math.max((Number(logicalRange.to) - Number(logicalRange.from)) * 0.72, 6),
       };
     } else {
       pendingVisibleViewRef.current = null;
@@ -4327,6 +4334,7 @@ export default function TradingViewReplayChart({
             onResetBacktestAccount={handleResetBacktestAccount}
             orderLineDraftPatch={orderLineDraftPatch}
             orderEntryRequest={chartOrderRequest}
+            orderDraftClearRequest={orderDraftClearRequest}
             onBacktestOrderDraftChange={setBacktestOrderDraft}
             chartTheme={chartTheme}
             overlayWidth={overlaySize.width}

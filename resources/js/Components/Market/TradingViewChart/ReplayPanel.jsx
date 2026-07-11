@@ -868,6 +868,7 @@ export default function ReplayPanel({
   onResetBacktestAccount,
   orderLineDraftPatch,
   orderEntryRequest,
+  orderDraftClearRequest,
   onBacktestOrderDraftChange,
   chartTheme,
   overlayWidth,
@@ -984,9 +985,22 @@ export default function ReplayPanel({
     setActiveGroup('backtest');
   }, [orderEntryRequest]);
 
+  useEffect(() => {
+    if (!orderDraftClearRequest?.id) return;
+    setShowOrderDraft(false);
+    setOrderEntryPrice('');
+    setOrderStopLoss('');
+    setOrderTakeProfit('');
+    onBacktestOrderDraftChange?.(null);
+  }, [onBacktestOrderDraftChange, orderDraftClearRequest]);
+
   const toggleGroup = (group) => {
-    if (group === 'backtest') {
+    if (activeGroup === 'backtest') {
       setShowOrderDraft(false);
+      setOrderEntryPrice('');
+      setOrderStopLoss('');
+      setOrderTakeProfit('');
+      onBacktestOrderDraftChange?.(null);
     }
     setActiveGroup((currentGroup) => (currentGroup === group ? null : group));
   };
@@ -1078,10 +1092,17 @@ export default function ReplayPanel({
       notional,
       leverage: leverageValue,
       entryPrice: effectiveEntryPrice,
-      stopLoss: getPositiveNumber(orderStopLoss),
-      takeProfit: getPositiveNumber(orderTakeProfit),
+      stopLoss: plannedStopLoss,
+      takeProfit: plannedTakeProfit,
     });
     setShowOrderDraft(false);
+  };
+  const removeOrderDraft = () => {
+    setShowOrderDraft(false);
+    setOrderEntryPrice('');
+    setOrderStopLoss('');
+    setOrderTakeProfit('');
+    onBacktestOrderDraftChange?.(null);
   };
   const resetBalanceValue = displayToQuoteAmount(resetBalance, displayCurrency, normalizedPhpRate);
   const canResetAccount =
@@ -1129,8 +1150,8 @@ export default function ReplayPanel({
       orderType,
       side: orderSide,
       entryPrice: orderEntryPrice,
-      stopLoss: orderStopLoss,
-      takeProfit: orderTakeProfit,
+      stopLoss: plannedStopLoss,
+      takeProfit: plannedTakeProfit,
       effectiveEntryPrice,
       isPendingOrder,
       estimatedProfit: orderPlan?.estimatedProfit ?? null,
@@ -1603,6 +1624,11 @@ export default function ReplayPanel({
                   Est loss {orderPlan?.estimatedLoss != null ? formatAccountMoney(orderPlan.estimatedLoss) : '---'}
                 </span>
               </div>
+              {showOrderDraft && (
+                <ControlButton icon={X} onClick={removeOrderDraft} variant="danger" className="w-full" chartTheme={chartTheme}>
+                  Remove Entry / SL / TP Plan
+                </ControlButton>
+              )}
             </div>
 
             <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>

@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
-import StatCard from "../../Components/Dashboard/StatCard";
-import ContentPanel from "../../Components/Table/ContentPanel";
 import TradingViewChart from "../../Components/Market/TradingViewChart";
 import { useTheme } from "../../Context/ThemeContext";
+import { Activity, UserCheck, UserMinus, Users } from 'lucide-react';
 
-const Dashboard = ({ customer, orders, devices, orders_count_wdate }) => {
+const Dashboard = ({ userMetrics = {} }) => {
     const { auth } = usePage().props;
     const { theme } = useTheme();
     const isDark = theme === 'bg-skin-black';
@@ -74,37 +73,18 @@ const Dashboard = ({ customer, orders, devices, orders_count_wdate }) => {
                     </div>
                 </div>
             ) : (
-                <ContentPanel marginBottom={2}>
-                    <div className="mb-4 rounded-lg">
-                        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-3">
-                            {auth.access.isView && auth.access.isRead && (
-                                <>
-                                    <StatCard
-                                        label="Request"
-                                        total={100}
-                                        gradient="linear-gradient(to bottom right, #134B70, #0891b2)"
-                                        value={100}
-                                        icon='<i class="fa fa-pie-chart"></i>'
-                                    />
-                                    <StatCard
-                                        label="Request"
-                                        total={100}
-                                        gradient="linear-gradient(to bottom right, #134B70, #0891b2)"
-                                        value={100}
-                                        icon='<i class="fa fa-pie-chart"></i>'
-                                    />
-                                    <StatCard
-                                        label="Request"
-                                        total={100}
-                                        gradient="linear-gradient(to bottom right, #134B70, #0891b2)"
-                                        value={100}
-                                        icon='<i class="fa fa-pie-chart"></i>'
-                                    />
-                                </>
-                            )}
-                        </div>
+                <div className={`space-y-5 ${isDark ? 'text-[#d1d4dc]' : 'text-slate-900'}`}>
+                    <div className={`overflow-hidden rounded-2xl border p-6 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-4"><div><div className="text-xs font-bold uppercase tracking-[.2em] text-[#2962ff]">Administration</div><h1 className="mt-2 text-3xl font-bold">System overview</h1><p className="mt-1 text-sm text-[#787b86]">Monitor user access and platform activity from one workspace.</p></div><div className="flex items-center gap-2 rounded-full bg-emerald-500/10 px-3 py-2 text-xs font-bold text-emerald-400"><Activity size={15}/><span className="h-2 w-2 rounded-full bg-emerald-400"/>System online</div></div>
                     </div>
-                </ContentPanel>
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[
+                        ['All users', userMetrics.total ?? 0, Users, '#2962ff'],
+                        ['Active users', userMetrics.active ?? 0, UserCheck, '#10b981'],
+                        ['Inactive users', userMetrics.inactive ?? 0, UserMinus, '#ef4444'],
+                        ['New this month', userMetrics.newThisMonth ?? 0, Activity, '#8b5cf6'],
+                    ].map(([label,value,Icon,color])=><div key={label} className={`rounded-xl border p-5 shadow-sm ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}><div className="flex items-center justify-between"><span className="text-xs font-semibold text-[#787b86]">{label}</span><span className="flex h-9 w-9 items-center justify-center rounded-lg" style={{backgroundColor:`${color}1f`,color}}><Icon size={18}/></span></div><div className="mt-4 text-3xl font-bold tabular-nums">{Number(value).toLocaleString()}</div></div>)}</div>
+                    <div className={`rounded-xl border p-5 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}><h2 className="text-sm font-bold">User health</h2><div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-500/10"><div className="h-full rounded-full bg-emerald-500" style={{width:`${userMetrics.total ? Math.round((userMetrics.active/userMetrics.total)*100) : 0}%`}}/></div><div className="mt-2 flex justify-between text-xs text-[#787b86]"><span>{userMetrics.active ?? 0} active accounts</span><span>{userMetrics.total ? Math.round((userMetrics.active/userMetrics.total)*100) : 0}% active</span></div></div>
+                </div>
             )}
         </>
     );

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Play, Plus, Search, Trash2, X } from 'lucide-react';
-import { TIMEFRAMES } from './constants';
+import { TIMEFRAMES, TIMEFRAME_SECONDS } from './constants';
 import { formatPrice } from './utils';
 
 export default function ChartHeader({
@@ -31,9 +31,21 @@ export default function ChartHeader({
   compact = false,
   className = '',
 }) {
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const isDark = chartTheme?.mode === 'dark';
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const candleSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+  const secondsRemaining = Math.max(0, candleSeconds - (Math.floor(clockNow / 1000) % candleSeconds));
+  const candleCountdown = [
+    Math.floor(secondsRemaining / 3600),
+    Math.floor((secondsRemaining % 3600) / 60),
+    secondsRemaining % 60,
+  ].map((value) => String(value).padStart(2, '0')).join(':');
   const panelStyle = {
     backgroundColor: chartTheme?.panel ?? (isDark ? '#242627' : '#ffffff'),
     borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb'),
@@ -130,7 +142,7 @@ export default function ChartHeader({
         </select>
 
         {currentSavedSymbol && (
-          <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-8 w-8 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10 disabled:opacity-40" title="Remove saved symbol">
+          <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-8 w-8 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10 disabled:opacity-40" aria-label="Remove saved symbol">
             <Trash2 size={14} />
           </button>
         )}
@@ -180,15 +192,16 @@ export default function ChartHeader({
           <div className="truncate text-sm font-bold leading-tight text-green-500">
             ${formatPrice(currentPrice)}
           </div>
+          {!replayMode && <div className="text-[9px] leading-none text-[#787b86]">Closes in {candleCountdown}</div>}
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`relative z-40 rounded-lg border p-3 ${className}`} style={panelStyle}>
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(105px,0.45fr)_minmax(115px,0.45fr)_minmax(130px,0.55fr)_minmax(190px,0.75fr)_minmax(0,0.55fr)]">
-        <div className="relative">
+    <div className={`relative z-40 rounded-lg border p-2 shadow-lg ${className}`} style={panelStyle}>
+      <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-12">
+        <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-6 xl:col-span-5">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <select
@@ -212,12 +225,11 @@ export default function ChartHeader({
               className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
             >
               <Plus size={14} />
-              {addButtonLabel}
+              <span className="max-w-24 truncate">{addButtonLabel}</span>
             </button>
             {currentSavedSymbol && (
-              <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-red-500/30 px-3 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-40" title={`Remove ${currentSavedSymbol.symbol}`}>
+              <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-40" aria-label={`Remove ${currentSavedSymbol.symbol}`}>
                 <Trash2 size={14} />
-                Remove
               </button>
             )}
           </div>
@@ -290,7 +302,7 @@ export default function ChartHeader({
           )}
         </div>
 
-        <div>
+        <div className="col-span-1 min-w-0 sm:col-span-4 lg:col-span-2">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Market</label>
           <select
             value={marketCategory}
@@ -305,7 +317,7 @@ export default function ChartHeader({
           </select>
         </div>
 
-        <div>
+        <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-2">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Timeframe</label>
           <select
             value={timeframe}
@@ -320,12 +332,12 @@ export default function ChartHeader({
           </select>
         </div>
 
-        <div>
+        <div className="col-span-2 min-w-0 sm:col-span-5 lg:col-span-2 xl:col-span-3">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Replay</label>
           <button
             type="button"
             onClick={onToggleReplayMode}
-            className={`flex h-9 w-full items-center justify-center gap-1.5 rounded-md px-3 text-sm font-semibold ${
+            className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-md px-4 text-sm font-semibold transition-colors ${
               replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass
             }`}
           >
@@ -334,7 +346,7 @@ export default function ChartHeader({
           </button>
         </div>
 
-        <div>
+        <div className="col-span-2 min-w-0 sm:col-span-8 lg:col-span-9">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Candles</label>
           <div className={`${fieldClass} flex w-full items-center gap-2 px-2`}>
             <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bull candle color">
@@ -377,7 +389,9 @@ export default function ChartHeader({
           </div>
         </div>
 
-        <div className="flex min-w-0 items-end lg:justify-end">
+        <div className="col-span-2 flex min-w-0 items-end justify-start rounded-md border px-3 py-1 sm:col-span-4 sm:justify-end lg:col-span-3"
+          style={{ borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb') }}
+        >
           <div className={`min-h-9 min-w-0 max-w-full ${isDark ? 'text-white' : 'text-gray-800'} lg:text-right`}>
             <div className="truncate text-xs text-gray-400">
               {replayMode ? 'Replay Price' : 'Current Price'}
@@ -385,6 +399,7 @@ export default function ChartHeader({
             <div className="max-w-full truncate text-base font-bold leading-tight text-green-500 sm:text-lg">
               ${formatPrice(currentPrice)}
             </div>
+            {!replayMode && <div className="max-w-full truncate text-[10px] text-[#787b86]">Candle closes in {candleCountdown}</div>}
             {replayMode && (
               <div className={`max-w-full truncate text-xs ${isDark ? 'text-gray-300' : 'text-slate-500'}`}>
                 Selected: ${formatPrice(selectedReplayPrice)}

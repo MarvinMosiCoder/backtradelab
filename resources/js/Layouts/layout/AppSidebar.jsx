@@ -65,7 +65,7 @@ const AppSidebar = () => {
     return (
         <>
             <div
-                className={`${theme} absolute z-100 cursor-pointer rounded-full -left-[-14px] md:-left-[-270px] top-[66px] md:top-[15px] lg:top-[15px] border-2 ${borderColor} p-2 flex items-center justify-center`}
+                className={`hidden ${theme === 'bg-skin-black' ? 'bg-[#131722]' : theme} absolute z-100 cursor-pointer rounded-full -left-[-14px] md:-left-[-238px] top-[66px] md:top-[15px] lg:top-[15px] border ${borderColor} p-2 items-center justify-center shadow-lg`}
                 onClick={() => handleSidebarToggle()}
             >
                 <img
@@ -78,7 +78,7 @@ const AppSidebar = () => {
                 />
             </div>
             <div
-                className={`${isSidebarOpen ? 'w-[22rem]' : 'w-0'} transition-[width,height] duration-500 ${sideBarBgColor} absolute md:relative z-[70]`}
+                className={`${isSidebarOpen ? 'w-[18rem]' : 'w-0 md:w-16'} transition-[width,height] duration-300 ${theme === 'bg-skin-black' ? 'border-r border-[#2a2e39] bg-[#131722]' : sideBarBgColor} absolute md:relative z-[70] overflow-hidden`}
             >
                 <div className="max-h-[85vh] overflow-y-auto scrollbar-none select-none">
                     {/* Pass handleMenuClick to UserSidebar and AdminSidebar */}

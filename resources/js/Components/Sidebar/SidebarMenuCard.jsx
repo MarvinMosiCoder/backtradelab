@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import React, { useState } from 'react';
 import useThemeStyles from '../../Hooks/useThemeStyles';
 import { useTheme } from '../../Context/ThemeContext';
+import { useSidebar } from '../../Context/SidebarContext';
 
 const SidebarMenuCard = ({
   menuTitle = 'Sample Menu',
@@ -12,6 +13,7 @@ const SidebarMenuCard = ({
   setActiveChildMenu,
 }) => {
   const { theme } = useTheme();
+  const { isSidebarOpen } = useSidebar();
   const {
     sidebarHoverTextColor,
     sidebarHoverMenuBgColor,
@@ -50,12 +52,12 @@ const SidebarMenuCard = ({
       onClick={handleClick}
       disabled={true}
       href={'/' + href}
-      className={`cursor-pointer select-none px-3 py-[11px] overflow-hidden flex ${sideBarTextColor} items-center border-2 ${sidebarBorderColor} rounded-xl ${isMenuActive && sidebarActiveMenuBorderColor + ' ' + sidebarActiveMenuBgColor + ' ' + sidebarActiveTextColor} ${sidebarHoverMenuBgColor} ${sidebarHoverMenuBorderColor} ${sidebarHoverTextColor}`}
+      className={`flex h-10 cursor-pointer select-none items-center overflow-hidden rounded-md px-3 text-xs font-semibold transition ${isMenuActive ? 'bg-[#2962ff] text-white shadow-[0_6px_20px_rgba(41,98,255,.22)]' : theme === 'bg-skin-black' ? 'text-[#b2b5be] hover:bg-[#2a2e39] hover:text-white' : 'text-slate-700 hover:bg-slate-100'}`}
     >
       <div className="w-5 h-5 flex items-center justify-center mr-2 flex-shrink-0">
         <i className={icon}></i>
       </div>
-      <p className={`font-bold flex-shrink-0 text-xs`}>{menuTitle}</p>
+      <p className={`flex-shrink-0 text-xs font-semibold ${!isSidebarOpen ? 'hidden' : ''}`}>{menuTitle}</p>
     </Link>
   );
 };

@@ -11,6 +11,7 @@ use Inertia\Inertia;
 use App\Models\AdmModels\AdmUserProfiles;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Validation\Rule;
 class ProfilePageController extends Controller
 {
 
@@ -124,6 +125,21 @@ class ProfilePageController extends Controller
        
         return response()->json(["message"=>"Theme changed!", "status"=>"success"]);
         
+    }
+
+    public function updateDetails(Request $request)
+    {
+        $user = $request->user();
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'username' => ['nullable', 'string', 'min:3', 'max:60', 'regex:/^[A-Za-z0-9._-]+$/', Rule::unique('adm_users', 'username')->ignore($user->id)],
+            'timezone' => ['nullable', 'timezone'],
+            'trading_experience' => ['nullable', Rule::in(['beginner', 'intermediate', 'advanced', 'professional'])],
+        ]);
+
+        $user->update($validated);
+
+        return response()->json(['status' => 'success', 'message' => 'Profile details updated.']);
     }
     
 }

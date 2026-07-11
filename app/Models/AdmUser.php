@@ -22,10 +22,16 @@ class AdmUser extends Authenticatable
     
     protected $fillable = [
         'name',
+        'username',
         'email',
         'password',
         'status',
         'theme',
+        'timezone',
+        'trading_experience',
+        'social_provider',
+        'social_provider_id',
+        'password_login_enabled',
         'created_at',
         'updated_at'
     ];
@@ -56,6 +62,7 @@ class AdmUser extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'password_login_enabled' => 'boolean',
     ];
 
     public function scopeGetData($query){

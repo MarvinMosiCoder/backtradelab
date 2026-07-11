@@ -3,12 +3,14 @@ import SidebarMenuCard from './SidebarMenuCard'
 import SidebarMenuCardMultiple from './SidebarMenuCardMultiple'
 import { NavbarContext } from "../../Context/NavbarContext";
 import { usePage } from '@inertiajs/react';
+import { useSidebar } from '../../Context/SidebarContext';
 
 
 const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChildMenu, handleMenuClickToggle}) => {
 
     const { setTitle } = useContext(NavbarContext);
     const page = usePage();
+    const { isSidebarOpen } = useSidebar();
     const { auth } = page.props;
     const admin_menus  = auth.sessions.admin_menus;    
 
@@ -31,9 +33,9 @@ const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChil
     };
 
   return (
-    <div className='m-5'>
-        <p className='text-xs font-bold text-gray-400 mb-5 text-nowrap'>ADMIN MENU</p>
-        <div className='space-y-2'>
+    <div className='border-t border-[#2a2e39] p-2 pt-3'>
+        {isSidebarOpen && <p className='mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#787b86] text-nowrap'>ADMIN MENU</p>}
+        <div className='space-y-1'>
             <SidebarMenuCard
                 href="admin/feedback"
                 menuTitle="Feedback Inbox"

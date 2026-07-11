@@ -25,6 +25,13 @@ const ProfilePage = ({ page_title, user }) => {
     const [showModalProfiles, setShowModalProfiles] = useState(false);
     const [profiles, setProfiles] = useState([]);
     const [profileUpdate, setProfileUpdate] = useState(null);
+    const [details, setDetails] = useState({
+        name: user?.name ?? '',
+        username: user?.username ?? '',
+        timezone: user?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+        trading_experience: user?.trading_experience ?? '',
+    });
+    const [detailsMessage, setDetailsMessage] = useState('');
 
     useEffect(() => {
         setTitle(page_title);
@@ -88,7 +95,7 @@ const ProfilePage = ({ page_title, user }) => {
                     'Content-Type': 'multipart/form-data',
                 },
             });
-            if (response.data.type == 'success') {
+            if (response.data.status === 'success') {
                 handleToast(response.data.message, response.data.status);
                 router.reload({ only: ['profile'] });
             } else {
@@ -100,6 +107,21 @@ const ProfilePage = ({ page_title, user }) => {
             } else {
                 handleToast('An error occurred. Please try again.', 'error');
             }
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const saveDetails = async (event) => {
+        event.preventDefault();
+        setLoading(true);
+        setDetailsMessage('');
+        try {
+            const { data } = await axios.put('/profile/details', details);
+            setDetailsMessage(data.message ?? 'Profile updated.');
+        } catch (error) {
+            const firstError = Object.values(error.response?.data?.errors ?? {}).flat().find(Boolean);
+            setDetailsMessage(firstError ?? error.response?.data?.message ?? 'Unable to update profile details.');
         } finally {
             setLoading(false);
         }
@@ -236,6 +258,17 @@ const ProfilePage = ({ page_title, user }) => {
                                 >
                                     {user.privilege_name}
                                 </span>
+                            </div>
+                            <div className={`mt-7 w-full max-w-xl rounded-xl border p-5 text-left ${theme === 'bg-skin-black' ? 'border-[#2a2e39] bg-[#0b0e14] text-[#d1d4dc]' : 'border-slate-200 bg-slate-50 text-slate-900'}`}>
+                                <div className="mb-4"><h2 className="text-sm font-bold">Profile details</h2><p className="mt-1 text-xs text-[#787b86]">Your username identifies you in feedback and future community features. Timezone keeps reports and sessions understandable.</p></div>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="text-xs font-semibold">Display name<input value={details.name} onChange={(e)=>setDetails((c)=>({...c,name:e.target.value}))} className="mt-1.5 h-10 w-full rounded-lg border border-[#2a2e39] bg-transparent px-3 text-sm outline-none focus:border-[#2962ff]" required/></label>
+                                    <label className="text-xs font-semibold">Username<input value={details.username} onChange={(e)=>setDetails((c)=>({...c,username:e.target.value}))} className="mt-1.5 h-10 w-full rounded-lg border border-[#2a2e39] bg-transparent px-3 text-sm outline-none focus:border-[#2962ff]" placeholder="trader.name"/></label>
+                                    <label className="text-xs font-semibold">Timezone<input value={details.timezone} onChange={(e)=>setDetails((c)=>({...c,timezone:e.target.value}))} className="mt-1.5 h-10 w-full rounded-lg border border-[#2a2e39] bg-transparent px-3 text-sm outline-none focus:border-[#2962ff]" placeholder="Asia/Manila"/></label>
+                                    <label className="text-xs font-semibold">Trading experience<select value={details.trading_experience} onChange={(e)=>setDetails((c)=>({...c,trading_experience:e.target.value}))} className="mt-1.5 h-10 w-full rounded-lg border border-[#2a2e39] bg-transparent px-3 text-sm outline-none focus:border-[#2962ff]"><option value="">Not specified</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option><option value="professional">Professional</option></select></label>
+                                </div>
+                                {detailsMessage && <div className="mt-3 text-xs text-[#5b8cff]">{detailsMessage}</div>}
+                                <button type="button" onClick={saveDetails} disabled={loading} className="mt-4 h-10 rounded-lg bg-[#2962ff] px-4 text-xs font-bold text-white disabled:opacity-50">{loading?'Saving…':'Save profile details'}</button>
                             </div>
                         </div>
                         {/* Action Buttons */}

@@ -125,6 +125,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/save-edit-image', [ProfilePageController::class, 'saveEditImage'])->name('save-edit-image');
     Route::get('/profiles', [ProfilePageController::class, 'getProfiles'])->name('get-profiles');
     Route::post('/update-profile', [ProfilePageController::class, 'updateProfile'])->name('update-profile');
+    Route::put('/profile/details', [ProfilePageController::class, 'updateDetails'])->name('profile.details.update');
     Route::post('/update-theme', [ProfilePageController::class, 'updateTheme'])->name('update-theme');
     //CHANGE PASSWORD
     Route::get('/change_password', [ChangePasswordController::class, 'getIndex'])->name('change_password');

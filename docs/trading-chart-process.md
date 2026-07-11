@@ -63,6 +63,7 @@ External API
 | `resources/js/Layouts/layout/AppNavbar.jsx` | Authenticated navbar with normal user quick links for Chart, PnL, and saved symbol selection |
 | `resources/js/Layouts/layout/TraderNavbar.jsx` | Compact role-aware trader terminal header with market selection, Chart/Journal navigation, theme control, user role, and logout |
 | `resources/js/Layouts/layout/TraderSidebar.jsx` | Collapsible trader navigation rail for workspace, market chart, journal, profile, and password security |
+| `resources/js/Layouts/layout/AdminNavbar.jsx` | Superadmin terminal header with sidebar control, Overview/Users/Feedback/Settings shortcuts, notifications, theme control, profile identity, and themed logout dialog |
 | `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart without reserving extra viewport-height space below it |
 | `resources/js/Pages/Market/TradeReportPage.jsx` | Trade reporting page that renders the standalone calendar module and PnL report table module |
 | `resources/js/Pages/Feedback/Index.jsx` | Trader feedback form and personal submission/status/response history |
@@ -70,7 +71,7 @@ External API
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
 | `resources/js/Components/Market/TradeCalendar.jsx` | Standalone trade calendar module showing daily PnL and win/loss counts by close date |
 | `resources/js/Components/Market/TradeReport.jsx` | PnL report module with summary cards, CSV/JSON export, closed-trades table, snapshots, and journal editing |
-| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Symbol dropdown, searchable add-symbol picker, timeframe, replay toggle, and price display |
+| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Responsive two-row trading toolbar with symbol management, market/timeframe controls, replay toggle, candle settings, and bordered price status |
 | `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a compact top tool editor for drawing styles and presets |
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, app logo brand mark, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
@@ -121,6 +122,8 @@ Login supports the existing admin-created email/password flow plus Google and Fa
 | `GET /auth/facebook/callback` | Handle Facebook OAuth callback |
 
 OAuth does not create new users. The provider email must already exist in `adm_users`, the account must be active, and the user must have an assigned privilege. After a successful provider login, `LoginController` reuses the same menu, privilege, theme, profile, notification, and announcement session setup as password login. Social login skips the password-age/default-password force-change gate so an admin-created OAuth user is not blocked by a password they may not use.
+
+OAuth-linked users store their latest provider identity on `adm_users`. If the account still has the admin-created temporary password, password login is disabled and Google/Facebook remains the valid sign-in method. From an authenticated social session, the user can create a strong local password without entering that unknown temporary password; this enables email/password login afterward. Accounts that already have a real local password keep password login enabled.
 
 The login form keeps the social actions visually recognizable in both dark and white public themes. The Google action uses a white button with the four-color Google SVG mark and dark label text. The Facebook action uses the standard Facebook blue button with white label text.
 
@@ -228,6 +231,8 @@ await fetch('/market-symbols', {
 The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols` with the authenticated user, source exchange, market category, native exchange symbol, coin name, base coin, and quote coin. Database uniqueness is by `user + exchange + category + symbol`, so every user owns an independent saved-symbol list and the same market can be saved from multiple exchanges and as both spot and futures.
 
 After a symbol is saved, `TradingViewChart.jsx` inserts it into the saved-symbol list, selects it as the active chart symbol, and the candle request reloads for that symbol.
+
+The currently selected saved symbol can be removed from the normal or fullscreen chart header. Removal is presented as an icon-only trash action with an accessible label so it takes minimal toolbar space. It removes only the authenticated user's saved-symbol record; it does not delete that market's chart drawings.
 
 ### 3. Frontend Candle Request
 
@@ -365,6 +370,8 @@ The same settings object also stores selectable presets by tool type under `sett
 
 ### 8. Paper Backtest Account
 
+Unsubmitted Entry/SL/TP plans can be cleared either from the ticket or by clicking the red chart-side `×` on the draft Entry line. This clears only the local draft and does not call the pending-order cancellation endpoint.
+
 Replay progress is persisted separately per authenticated user, exchange, market category, and symbol in `market_replay_progress`, with a user-scoped synchronous browser mirror under `market-replay-progress:{userId}:{market}`. If that user has a saved checkpoint, its timestamp and selected replay price are restored when the chart opens. If no checkpoint exists, the chart opens live at the current price and stays out of replay until the user clicks `Start Replay`. Each server write carries `client_saved_at` so a delayed older request cannot overwrite a newer replay candle. Normal playback saves to the server with a short debounce, while component unmount and browser page exit flush the latest value. `Back to Live` returns the current view to live candles without deleting the saved replay checkpoint. The replay `Reset`/`Go Latest` action explicitly replaces the checkpoint with the latest candle.
 
 The default candle width is `24`, and the user's later candle-width selection continues to be stored in `market-chart-candle-size` in `localStorage`.
@@ -389,7 +396,7 @@ Replay orders can be placed as Market, Limit, or Trigger entries. Market entries
 
 Pending entries are checked against the current replay candle high/low. If `low <= entryPrice <= high`, the pending entry is triggered at its configured entry price, the open trade is recorded, margin is locked, and the entry fee is charged. The candle where the order was placed is skipped so a pending order cannot trigger from price action that already happened before placement. Pending entries can also be cancelled from the Wallet panel before they trigger.
 
-Backtest order levels render on the chart as exchange-style horizontal lines. Hovering the chart shows a stable circular `+` price action beside the right price scale, and right-clicking the chart provides the same shortcut. Either action opens the Backtest Account order ticket at that chart price with Limit selected. Draft Entry, SL, and TP lines appear only after this explicit chart-order action, rather than immediately when the Wallet flyout opens; these lines retain their full chart width but use a thin `1px` stroke, and blank SL/TP fields use temporary 1% placeholder lines so the user can drag them to set the input value. Their chart labels immediately show live fee-adjusted estimated loss/profit in the account quote currency, including for the visible 1% placeholders, and update with entry, side, margin, leverage, SL, and TP changes. After a pending entry triggers, the replacement open-position TP/SL labels continue showing fee-adjusted PnL calculated from the filled entry price and quantity. The open entry line also displays fee-adjusted live unrealized PnL based on the current replay/market price; its line and badge turn green while profitable and red while losing. Pending entry lines are amber and dashed, TP lines are green, and SL lines are red. Pending entry prices, pending SL/TP, and open-position SL/TP lines can be dragged on the chart; the frontend updates the account locally while dragging, then saves the new prices through `/market-backtest/positions/{position}/risk` on mouse-up. Pending entry lines also show a small red `x` control near the right edge of the chart that cancels the pending order through `/market-backtest/positions/{position}/cancel`. Open position entry lines are display-only.
+Backtest order levels render on the chart as exchange-style horizontal lines. Hovering the chart shows a stable circular `+` price action beside the right price scale, and right-clicking the chart provides the same shortcut. Either action opens the Backtest Account order ticket at that chart price with Limit selected. Draft Entry, SL, and TP lines appear only after this explicit chart-order action, rather than immediately when the Wallet flyout opens; these lines retain their full chart width but use a thin `1px` stroke, and blank SL/TP fields use live 1% planned levels that follow entry-price and side changes. The visible planned SL/TP values are authoritative and are submitted with the order even if their inputs remain blank. A `Remove Entry / SL / TP Plan` action explicitly clears the three draft lines. Their chart labels show live fee-adjusted estimated loss/profit and stay inside the chart area before the right price scale. After a pending entry triggers, the replacement open-position TP/SL labels continue showing fee-adjusted PnL calculated from the filled entry price and quantity. The open entry line also displays fee-adjusted live unrealized PnL based on the current replay/market price; its line and badge turn green while profitable and red while losing. Pending entry lines are amber and dashed, TP lines are green, and SL lines are red. Pending entry prices, pending SL/TP, and open-position SL/TP lines can be dragged on the chart; the frontend updates the account locally while dragging, then saves the new prices through `/market-backtest/positions/{position}/risk` on mouse-up. Pending entry lines also show a small red `x` control near the right edge of the chart that cancels the pending order through `/market-backtest/positions/{position}/cancel`. Open position entry lines are display-only.
 
 As replay advances, open positions are checked against the current candle high/low. A long closes at SL when `low <= stopLoss`, or at TP when `high >= takeProfit`; a short closes at SL when `high >= stopLoss`, or at TP when `low <= takeProfit`. The entry candle is skipped so a newly opened trade is not closed by price movement that happened before the simulated entry. If SL and TP are both inside the same candle, SL is treated as hit first because the intrabar path is unknown from OHLC data.
 
@@ -444,6 +451,8 @@ The user sidebar and trader navbar both expose Trade Report/PnL navigation for n
 Non-superadmin users get a chart-first dashboard. `Dashboard.jsx` checks `auth.sessions.admin_is_superadmin`; superadmin users keep the existing dashboard card layout, while normal users render `TradingViewChart` directly on `/dashboard`.
 
 The authenticated layout now has two visual shells. Superadmins retain the existing administration navbar/sidebar so management screens keep their established controls. Non-superadmin users receive the dedicated trading-terminal shell from `TraderNavbar.jsx` and `TraderSidebar.jsx`. The trader shell uses compact TradingView-inspired surfaces, a persistent market selector, direct Chart/Journal links, a visible `Trader` role label, and a collapsible navigation rail. Trader pages omit administrative breadcrumbs and the footer so the chart and reports use more of the viewport.
+
+The superadmin shell uses the same deep terminal surfaces, compact borders, blue active states, icon-only collapsed rail, and role-aware navbar pattern as the trader UI while retaining its database-driven administrative menus. `AdminNavbar.jsx` provides compact Overview, Users, Feedback, and Settings shortcuts plus notifications, theme control, profile identity, and the same themed sign-out confirmation used by the trader experience. Its dashboard reports real total, active, inactive, and new-this-month user counts plus an active-account health bar. Profiles support display name, unique username, timezone, and trading-experience level in addition to profile images, email, and privilege.
 
 Trader logout uses a themed confirmation dialog inside `TraderNavbar.jsx` instead of the browser confirmation prompt. The change-password page uses the terminal theme, per-field show/hide controls, a live password-strength checklist, matching confirmation feedback, and server-enforced mixed-case/number/symbol requirements. After a successful password update, a non-dismissible success dialog counts down for three seconds before automatically logging the user out; an immediate sign-out action is also available.
 
@@ -502,6 +511,10 @@ The Lightweight Charts TradingView attribution logo is disabled in chart layout 
 | Other theme classes | White `#ffffff` | Uses softened `0.08` opacity grid lines, light axis text, borders, and loading overlay |
 
 `Market.jsx` lets the chart content determine the page height. It should not reserve a fixed multi-viewport wrapper height around `TradingViewChart`, otherwise the market page shows a large blank area below the chart. The authenticated layout's `AppContent.jsx` content area is also dynamic rather than fixed to `600px`, so the chart panel can size naturally without overflowing a hardcoded container.
+
+Outside fullscreen, `ChartHeader.jsx` uses a stable responsive 12-column, two-row trading toolbar instead of forcing every control into one compressed row. The first row contains symbol management, Market, Timeframe, and Replay. Timeframe and Replay have dedicated grid columns, and the replay action uses a non-wrapping label so `Start Replay` and `Back to Live` retain consistent height and alignment. The second row contains the wider candle color/size controls and a separate bordered current/replay price status block. At medium widths symbol management receives a full row before the remaining primary controls; phones fall back to two columns. This structure prevents the replay button, timeframe selector, candle settings, and price information from competing for the same horizontal space.
+
+Fullscreen mode continues to use the compact wrapping header variant. Its symbol, market, timeframe, replay, and price controls use compact fixed heights, while symbol removal remains an icon-only trash action.
 
 Volume bars are derived from visible candles:
 
@@ -693,6 +706,8 @@ When switching timeframe, drawing timestamps are projected through the full load
 
 During timeframe changes, loading and error states render as absolute overlays on top of the existing chart instead of taking normal layout space above it. This keeps the chart container and drawing overlay dimensions stable while candles reload, preventing temporary chart/overlay misalignment when moving from higher timeframes such as `1h` to lower timeframes such as `15m`. Drawing projection uses the timeframe of the candle data currently loaded on screen until the new candle data has arrived, so saved drawing timestamps are not temporarily recalculated against the wrong interval during the loading gap.
 
+Timeframe changes restore the previous center time with a logical span reduced to 72% of the prior span, producing a consistent zoom-in. The live price display also shows a one-second-updating countdown to the active timeframe candle close; replay mode hides that live countdown.
+
 ---
 
 ## Drawing Overlay
@@ -850,6 +865,8 @@ Keyboard shortcuts are ignored while typing in inputs or editable elements.
 `handleScroll` and `handleScale` are adjusted so drawing tools do not fight with native chart interaction.
 
 Mouse-wheel behavior depends on pointer position. Over the main chart area, Lightweight Charts keeps its native time-scale wheel zoom and scroll behavior. Over the right price number panel, the custom price-scale wheel handler changes price height/range only.
+
+The chart wrapper keeps its normal cursor during ordinary interaction. The `grabbing` cursor appears only while the left mouse button is held for chart drag interaction; drawing and replay-pick modes continue using the crosshair. Draft Entry, SL, and TP lines are visible only while the active Wallet ticket is preparing that plan. Closing/switching away from the ticket or a submission that does not create an order clears the local draft. After successful creation, server-backed pending/open order lines remain on the chart.
 
 ---
 

@@ -8,6 +8,7 @@ import { NavbarProvider } from "../../Context/NavbarContext";
 import { useTheme } from "../../Context/ThemeContext";
 import TraderNavbar from "./TraderNavbar";
 import TraderSidebar from "./TraderSidebar";
+import AdminNavbar from './AdminNavbar';
 
 const Layout = ({ children }) => {
     const {theme} = useTheme();
@@ -16,9 +17,9 @@ const Layout = ({ children }) => {
     return (
         <NavbarProvider>
             <div className="fixed z-100 w-full">
-                {isSuperAdmin ? <AppNavbar /> : <TraderNavbar />}
+                {isSuperAdmin ? <AdminNavbar /> : <TraderNavbar />}
             </div>
-            <div className={`flex h-screen ${isSuperAdmin ? 'pt-[100px] md:pt-[60px]' : 'pt-14'}`}>
+            <div className="flex h-screen pt-14">
                 {isSuperAdmin ? <AppSidebar /> : <TraderSidebar />}
                 <div className="flex min-w-0 w-full flex-col overflow-hidden">
                     <div className="flex-1 w-full flex flex-col overflow-auto">

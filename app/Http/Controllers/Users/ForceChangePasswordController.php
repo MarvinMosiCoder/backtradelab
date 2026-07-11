@@ -35,8 +35,10 @@ class ForceChangePasswordController extends Controller
 	}
 
 	public function postUpdatePassword(Request $request) {
+		$user = AdmUser::where('id', CommonHelpers::myId())->firstOrFail();
+		$isSocialPasswordSetup = $user->social_provider && !$user->password_login_enabled;
 		$validator = \Validator::make($request->all(), [
-			'current_password' => ['required', 'string'],
+			'current_password' => [$isSocialPasswordSetup ? 'nullable' : 'required', 'string'],
 			'new_password' => ['required', 'string', Password::min(8)->mixedCase()->numbers()->symbols()],
 			'confirm_password' => ['required', 'same:new_password'],
 		]);
@@ -49,9 +51,9 @@ class ForceChangePasswordController extends Controller
 		}
 
 		$fields = $request->all();
-		$user = AdmUser::where('id',CommonHelpers::myId())->first();
 
-		if (Hash::check($fields['current_password'], $user->password)){
+
+		if ($isSocialPasswordSetup || Hash::check($fields['current_password'], $user->password)){
 			//Check if password exist in history
 			$passwordHistory = DB::table('adm_password_histories')->where('adm_user_id',CommonHelpers::myId())->get()->toArray();
 			$isExist = array_column($passwordHistory, 'adm_user_old_pass');
@@ -61,6 +63,7 @@ class ForceChangePasswordController extends Controller
 					'password'=>Hash::make($fields['new_password']),
 					'last_password_updated' => Carbon::now()->format('Y-m-d'),
 					'waiver_count' => 0
+					,'password_login_enabled' => true
 				]);
 				$newPass = AdmUser::where('id',CommonHelpers::myId())->first();
 				Session::put('check-user',false);

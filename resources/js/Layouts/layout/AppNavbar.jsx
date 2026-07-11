@@ -304,7 +304,7 @@ const AppNavbar = () => {
             </div>
             
             <div
-                className={`${theme} w-full h-[60px] border-b-[1px] ${!['bg-skin-black'].includes(theme) ? 'border-gray-200' : 'border-gray-700'}  flex items-center justify-end px-5 py-7 select-none shodow-customLight`}
+                className={`${theme === 'bg-skin-black' ? 'bg-[#131722] text-[#d1d4dc]' : theme} w-full h-[60px] border-b ${!['bg-skin-black'].includes(theme) ? 'border-gray-200' : 'border-[#2a2e39]'} flex items-center justify-end px-5 py-7 select-none shadow-lg`}
                 ref={menuRef}
             >
              

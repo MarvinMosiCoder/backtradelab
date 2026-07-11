@@ -189,8 +189,9 @@ export default function Home() {
                 </section>
 
                 <section id="features" className={`border-t px-4 py-10 ${isDark ? 'border-gray-800 bg-skin-black' : 'border-slate-200 bg-white'}`}>
-                    <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                         {[
+                            ['Try your strategy', 'Turn an idea into a repeatable paper-trading session before risking real capital.'],
                             ['Replay Chart', 'Step through candles, pick prices, and practice entries without leaving the chart.'],
                             ['Drawing Tools', 'Mark structure with lines, boxes, Fibonacci, text notes, and duplicated setups.'],
                             ['Trade Review', 'Capture entry and exit snapshots, then review closed trades in reports.'],

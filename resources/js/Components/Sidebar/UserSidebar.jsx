@@ -3,6 +3,7 @@ import SidebarMenuCard from './SidebarMenuCard';
 import SidebarMenuCardMultiple from './SidebarMenuCardMultiple';
 import { usePage } from '@inertiajs/react';
 import { NavbarContext } from "../../Context/NavbarContext";
+import { useSidebar } from '../../Context/SidebarContext';
 
 const UserSidebar = ({
   activeMenu,
@@ -12,6 +13,7 @@ const UserSidebar = ({
   handleMenuClick, // Add this prop here
 }) => {
   const { auth } = usePage().props;
+  const { isSidebarOpen } = useSidebar();
   const user_menus = auth.sessions.user_menus;
   const { setTitle } = useContext(NavbarContext);
 
@@ -33,9 +35,9 @@ const UserSidebar = ({
   };
 
   return (
-    <div className="m-5">
-      <p className="text-xs font-bold text-gray-400 mb-5">MENU</p>
-      <div className="space-y-2">
+    <div className="p-2">
+      {isSidebarOpen && <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#787b86]">MENU</p>}
+      <div className="space-y-1">
         {user_menus &&
           user_menus.map((menu, index) => {
             if (menu.type === 'Route') {
