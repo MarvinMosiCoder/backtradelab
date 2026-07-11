@@ -11,6 +11,7 @@ use Inertia\Inertia;
 use DB;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 
 class ForceChangePasswordController extends Controller
 {
@@ -33,7 +34,20 @@ class ForceChangePasswordController extends Controller
 		}
 	}
 
-    public function postUpdatePassword(Request $request) {
+	public function postUpdatePassword(Request $request) {
+		$validator = \Validator::make($request->all(), [
+			'current_password' => ['required', 'string'],
+			'new_password' => ['required', 'string', Password::min(8)->mixedCase()->numbers()->symbols()],
+			'confirm_password' => ['required', 'same:new_password'],
+		]);
+
+		if ($validator->fails()) {
+			return response()->json([
+				'message' => $validator->errors()->first(),
+				'status' => 'error',
+			], 422);
+		}
+
 		$fields = $request->all();
 		$user = AdmUser::where('id',CommonHelpers::myId())->first();
 
@@ -42,15 +56,6 @@ class ForceChangePasswordController extends Controller
 			$passwordHistory = DB::table('adm_password_histories')->where('adm_user_id',CommonHelpers::myId())->get()->toArray();
 			$isExist = array_column($passwordHistory, 'adm_user_old_pass');
 			if(!self::checkPasswordInArray($fields['new_password'], $isExist)) {
-				$validator = \Validator::make($request->all(), [
-					'current_password' => 'required',
-					'new_password' => 'required',
-					'confirm_password' => 'required|same:new_password'
-				]);
-			
-				if ($validator->fails()) {
-					return response()->json(['message' => $validator, 'status'=>'error']);
-				}
 				AdmUser::where('id', CommonHelpers::myId())
 				->update([
 					'password'=>Hash::make($fields['new_password']),

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MarketSymbol;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 
@@ -11,9 +12,10 @@ class MarketDataController extends Controller
 {
     private const EXCHANGES = ['binance', 'bybit', 'okx', 'bingx', 'mexc'];
 
-    public function symbols()
+    public function symbols(Request $request)
     {
         $symbols = MarketSymbol::query()
+            ->where('adm_user_id', $request->user()->id)
             ->where('is_active', true)
             ->orderBy('exchange')
             ->orderBy('symbol')
@@ -43,6 +45,11 @@ class MarketDataController extends Controller
 
         $category = $validated['category'] ?? 'spot';
         $requestedExchange = $validated['exchange'] ?? null;
+        $cacheKey = implode(':', ['market-symbol-options', $category, $requestedExchange ?? 'all']);
+
+        if ($cached = Cache::get($cacheKey)) {
+            return response()->json($cached);
+        }
 
         try {
             $symbols = [];
@@ -65,11 +72,16 @@ class MarketDataController extends Controller
                 return [$a['symbol'], $a['exchange']] <=> [$b['symbol'], $b['exchange']];
             });
 
-            return response()->json([
+            $payload = [
                 'success' => true,
                 'symbols' => array_values($symbols),
                 'errors' => $errors,
-            ]);
+            ];
+
+            // A partial exchange failure should be retried sooner than a complete response.
+            Cache::put($cacheKey, $payload, now()->addSeconds($errors ? 30 : 600));
+
+            return response()->json($payload);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -96,7 +108,12 @@ class MarketDataController extends Controller
         $category = $validated['category'] ?? 'spot';
 
         $marketSymbol = MarketSymbol::query()->updateOrCreate(
-            ['exchange' => $exchange, 'category' => $category, 'symbol' => $symbol],
+            [
+                'adm_user_id' => $request->user()->id,
+                'exchange' => $exchange,
+                'category' => $category,
+                'symbol' => $symbol,
+            ],
             [
                 'exchange_symbol' => strtoupper($validated['exchange_symbol'] ?? $symbol),
                 'coin_name' => strtoupper($validated['coin_name'] ?? $validated['base_coin'] ?? ''),
@@ -120,6 +137,18 @@ class MarketDataController extends Controller
                 'category',
             ]),
         ], $marketSymbol->wasRecentlyCreated ? 201 : 200);
+    }
+
+    public function destroySymbol(Request $request, MarketSymbol $marketSymbol)
+    {
+        abort_unless((int) $marketSymbol->adm_user_id === (int) $request->user()->id, 404);
+
+        $marketSymbol->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Symbol removed from your saved markets.',
+        ]);
     }
 
     public function klines(Request $request)
@@ -160,6 +189,22 @@ class MarketDataController extends Controller
                 'success' => false,
                 'message' => 'Invalid interval',
             ], 422);
+        }
+
+        $cacheKey = implode(':', [
+            'market-klines-v1',
+            $exchange,
+            $category,
+            $symbol,
+            $interval,
+            $chunkLimit,
+            $maxCandles,
+            $start ?: 'none',
+            $end ?: 'latest',
+        ]);
+
+        if ($cached = Cache::get($cacheKey)) {
+            return response()->json($cached);
         }
 
         try {
@@ -293,13 +338,17 @@ class MarketDataController extends Controller
                 ];
             }, $allRows);
 
-            return response()->json([
+            $payload = [
                 'success' => true,
                 'exchange' => $usedExchange,
                 'requested_exchange' => $exchange,
                 'count' => count($candles),
                 'candles' => $candles,
-            ]);
+            ];
+
+            Cache::put($cacheKey, $payload, now()->addSeconds($this->klineCacheSeconds($interval, $end !== null)));
+
+            return response()->json($payload);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -738,12 +787,26 @@ class MarketDataController extends Controller
     private function marketHttp()
     {
         return Http::withOptions([
-            'verify' => false, // local only
+            'verify' => filter_var(env('MARKET_HTTP_VERIFY', true), FILTER_VALIDATE_BOOL),
         ])
             ->withHeaders([
                 'User-Agent' => 'Mozilla/5.0',
                 'Accept' => '*/*',
             ])
             ->timeout(20);
+    }
+
+    private function klineCacheSeconds(string $interval, bool $isHistorical): int
+    {
+        if ($isHistorical) {
+            return 3600;
+        }
+
+        return match ($interval) {
+            '1', '3' => 10,
+            '5', '15', '30' => 20,
+            '60', '120', '240', '360', '720' => 60,
+            default => 300,
+        };
     }
 }

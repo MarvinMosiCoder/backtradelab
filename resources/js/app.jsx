@@ -15,7 +15,7 @@ getAppName().then(appName => {
             const pages = import.meta.glob("./Pages/**/*.jsx", { eager: true });
             let page = pages[`./Pages/${name}.jsx`];
             page.default.layout =
-                name.startsWith("Auth/") || name.startsWith("Public/") || name === "Dashboard"
+                name.startsWith("Auth/") || name.startsWith("Public/")
                     ? undefined
                     : pageComponent => {
                         const {auth} = useAuth();

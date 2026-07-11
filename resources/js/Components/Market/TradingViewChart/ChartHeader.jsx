@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Play, Plus, Search, X } from 'lucide-react';
+import { Play, Plus, Search, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
@@ -10,6 +10,7 @@ export default function ChartHeader({
   symbols,
   availableSymbols,
   isSavingSymbol,
+  isRemovingSymbol,
   isLoadingAvailableSymbols,
   symbolError,
   timeframe,
@@ -21,6 +22,7 @@ export default function ChartHeader({
   onSymbolChange,
   onCategoryChange,
   onAddSymbol,
+  onRemoveSymbol,
   onTimeframeChange,
   onToggleReplayMode,
   onCandleColorChange,
@@ -48,6 +50,7 @@ export default function ChartHeader({
   const buildSymbolKey = (item) => `${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`;
   const categorySymbols = symbols.filter((item) => (item.category ?? 'spot') === marketCategory);
   const currentSymbolOption = { symbol, exchange: exchange ?? 'bybit', category: marketCategory ?? 'spot' };
+  const currentSavedSymbol = symbols.find((item) => buildSymbolKey(item) === buildSymbolKey(currentSymbolOption));
   const symbolOptions = categorySymbols.some((item) => buildSymbolKey(item) === buildSymbolKey(currentSymbolOption))
     ? categorySymbols
     : [currentSymbolOption, ...categorySymbols];
@@ -125,6 +128,12 @@ export default function ChartHeader({
             </option>
           ))}
         </select>
+
+        {currentSavedSymbol && (
+          <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-8 w-8 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10 disabled:opacity-40" title="Remove saved symbol">
+            <Trash2 size={14} />
+          </button>
+        )}
 
         <select
           value={marketCategory}
@@ -205,6 +214,12 @@ export default function ChartHeader({
               <Plus size={14} />
               {addButtonLabel}
             </button>
+            {currentSavedSymbol && (
+              <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md border border-red-500/30 px-3 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-40" title={`Remove ${currentSavedSymbol.symbol}`}>
+                <Trash2 size={14} />
+                Remove
+              </button>
+            )}
           </div>
           {isAddOpen && (
             <div className={`absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border shadow-xl sm:right-auto sm:w-96 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>

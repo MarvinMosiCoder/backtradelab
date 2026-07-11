@@ -58,11 +58,13 @@ function ControlButton({
   variant = 'neutral',
   className = '',
   chartTheme,
+  title,
   ...props
 }) {
   return (
     <button
       type="button"
+      aria-label={title}
       className={`${controlBaseClass} ${controlVariantClass(variant, active, chartTheme)} ${className}`}
       {...props}
     >
@@ -100,7 +102,6 @@ function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={title}
       aria-label={title}
       className={`flex h-10 w-10 items-center justify-center rounded-md border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
         active ? 'border-white bg-white text-skin-black' : `${inactiveTextClass} hover:brightness-95`
@@ -124,7 +125,10 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
       className={`ml-2 w-[min(300px,calc(100vw-5.5rem))] rounded-lg border p-3 shadow-2xl backdrop-blur ${
         isDark ? 'text-white' : 'text-slate-800'
       }`}
-      style={getPanelStyle(chartTheme)}
+      style={{
+        ...getPanelStyle(chartTheme),
+        maxWidth: 'var(--replay-panel-content-width, 300px)',
+      }}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className={`flex min-w-0 items-center gap-2 text-xs font-semibold uppercase tracking-wide ${titleClass}`}>
@@ -135,7 +139,6 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
           type="button"
           onClick={onClose}
           className={`flex h-7 w-7 items-center justify-center rounded-md ${closeClass}`}
-          title="Close"
           aria-label="Close"
         >
           <X size={15} />
@@ -255,6 +258,7 @@ function TopToolEditorBar({
   onDeleteSelectedDrawing,
   onSavePreset,
   chartTheme,
+  availableWidth,
 }) {
   const [hexColorDraft, setHexColorDraft] = useState(activeColor ?? '');
 
@@ -302,8 +306,11 @@ function TopToolEditorBar({
 
   return (
     <div
-      className="pointer-events-auto ml-2 max-w-[calc(100vw-5.5rem)] rounded-lg border p-1.5 shadow-2xl backdrop-blur"
-      style={getPanelStyle(chartTheme)}
+      className="pointer-events-auto ml-2 rounded-lg border p-1.5 shadow-2xl backdrop-blur"
+      style={{
+        ...getPanelStyle(chartTheme),
+        maxWidth: `${Math.max(Number(availableWidth) || 140, 140)}px`,
+      }}
     >
       <div className="flex flex-wrap items-center gap-1.5">
         <div className={`flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-semibold ${editorBadgeClass}`}>
@@ -826,6 +833,7 @@ export default function ReplayPanel({
   tool,
   drawingColor,
   drawings,
+  drawingSaveStatus = 'saved',
   selectedDrawingId,
   selectedDrawing,
   toolSettings,
@@ -862,6 +870,7 @@ export default function ReplayPanel({
   orderEntryRequest,
   onBacktestOrderDraftChange,
   chartTheme,
+  overlayWidth,
   className = '',
 }) {
   const [activeGroup, setActiveGroup] = useState(null);
@@ -1145,7 +1154,10 @@ export default function ReplayPanel({
   ]);
 
   return (
-    <div className={`pointer-events-none flex items-start ${className}`}>
+    <div
+      className={`pointer-events-none flex items-start ${className}`}
+      style={{ '--replay-panel-content-width': `${Math.max((Number(overlayWidth) || 0) - 164, 140)}px` }}
+    >
       <div
         className="pointer-events-auto flex flex-col gap-2 rounded-lg border p-1.5 shadow-2xl backdrop-blur"
         style={getPanelStyle(chartTheme)}
@@ -1179,14 +1191,37 @@ export default function ReplayPanel({
           onClick={() => toggleGroup('tool-editor')}
           chartTheme={chartTheme}
         />
+        <div
+          className={`h-1.5 w-full rounded-full ${
+            drawingSaveStatus === 'saving'
+              ? 'animate-pulse bg-amber-400'
+              : drawingSaveStatus === 'local'
+                ? 'bg-red-500'
+                : 'bg-emerald-500'
+          }`}
+          title={
+            drawingSaveStatus === 'saving'
+              ? 'Saving drawings'
+              : drawingSaveStatus === 'local'
+                ? 'Saved on this device; server sync failed'
+                : 'Drawings saved'
+          }
+          aria-label={
+            drawingSaveStatus === 'saving'
+              ? 'Saving drawings'
+              : drawingSaveStatus === 'local'
+                ? 'Drawings saved locally only'
+                : 'Drawings saved'
+          }
+        />
       </div>
 
       {activeGroup === 'replay' && (
         <div className="pointer-events-auto">
           <Flyout title="Replay" icon={Play} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
             {!replayMode && (
-              <ControlButton icon={Play} onClick={onTogglePlay} variant="primary" className="w-full" chartTheme={chartTheme}>
-                Start Replay
+              <ControlButton icon={Crosshair} onClick={onToggleReplayPricePick} variant={isReplayPricePickActive ? 'warning' : 'primary'} className="w-full" chartTheme={chartTheme}>
+                {isReplayPricePickActive ? 'Click Chart to Start' : 'Start Replay'}
               </ControlButton>
             )}
 
@@ -1739,6 +1774,7 @@ export default function ReplayPanel({
           onDeleteSelectedDrawing={onDeleteSelectedDrawing}
           onSavePreset={handleSavePreset}
           chartTheme={chartTheme}
+          availableWidth={Math.max((Number(overlayWidth) || 0) - 164, 140)}
         />
       )}
 

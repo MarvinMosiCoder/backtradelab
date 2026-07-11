@@ -29,13 +29,14 @@ const AppNavbar = () => {
     const [applogo, setApplogo] = useState('');
     const [showModalTheme, setShowModalTheme] = useState(false);
     const [marketSymbols, setMarketSymbols] = useState([]);
+    const activeSymbolStorageKey = `backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`;
     const [activeNavbarSymbol, setActiveNavbarSymbol] = useState(() => {
         if (typeof window === 'undefined') {
             return null;
         }
 
         try {
-            const storedSymbol = JSON.parse(localStorage.getItem('backtradelab-active-symbol') || 'null');
+            const storedSymbol = JSON.parse(localStorage.getItem(`backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`) || 'null');
             return storedSymbol?.symbol ? storedSymbol : null;
         } catch {
             return null;
@@ -65,7 +66,7 @@ const AppNavbar = () => {
 
         let cancelled = false;
 
-        fetch('/api/market-symbols', {
+        fetch('/market-symbols', {
             headers: { Accept: 'application/json' },
         })
             .then((response) => response.ok ? response.json() : Promise.reject(response))
@@ -184,7 +185,7 @@ const AppNavbar = () => {
         try {
             const symbol = JSON.parse(selectedSymbol);
             setActiveNavbarSymbol(symbol);
-            localStorage.setItem('backtradelab-active-symbol', JSON.stringify(symbol));
+            localStorage.setItem(activeSymbolStorageKey, JSON.stringify(symbol));
             window.dispatchEvent(new CustomEvent('backtradelab-active-symbol-change', {
                 detail: symbol,
             }));

@@ -5,6 +5,29 @@
 :root {
     --primary-color: #282222;
     --secondary-color: #797878;
+    --terminal-blue: #2962ff;
+    --terminal-bg: #0b0e14;
+    --terminal-panel: #131722;
+    --terminal-border: #2a2e39;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    min-width: 320px;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+    background: rgba(41, 98, 255, 0.35);
+}
+
+:focus-visible {
+    outline: 2px solid var(--terminal-blue);
+    outline-offset: 2px;
 }
 
 ::-webkit-scrollbar {

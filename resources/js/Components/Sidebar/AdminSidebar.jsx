@@ -8,7 +8,8 @@ import { usePage } from '@inertiajs/react';
 const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChildMenu, handleMenuClickToggle}) => {
 
     const { setTitle } = useContext(NavbarContext);
-    const { auth } = usePage().props;
+    const page = usePage();
+    const { auth } = page.props;
     const admin_menus  = auth.sessions.admin_menus;    
 
     const handleMenuClick = (menuTitle, type) => {
@@ -33,6 +34,14 @@ const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChil
     <div className='m-5'>
         <p className='text-xs font-bold text-gray-400 mb-5 text-nowrap'>ADMIN MENU</p>
         <div className='space-y-2'>
+            <SidebarMenuCard
+                href="admin/feedback"
+                menuTitle="Feedback Inbox"
+                icon="fa-solid fa-comments"
+                setActiveChildMenu={setActiveChildMenu}
+                isMenuActive={activeMenu === 'Feedback Inbox' || page.url.startsWith('/admin/feedback')}
+                onClick={() => handleMenuClick('Feedback Inbox', 'Route')}
+            />
             {
                 admin_menus && admin_menus.map((menu, index)=>{
                     if (menu.type === 'Route'){

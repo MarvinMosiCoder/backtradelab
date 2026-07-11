@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import axios from 'axios';
+import { usePage } from '@inertiajs/react';
 import {
   createChart,
   CandlestickSeries,
@@ -19,7 +20,6 @@ import {
   TIMEFRAMES,
 } from './TradingViewChart/constants';
 import {
-  buildLegacyStorageKey,
   buildStorageKey,
   distanceToSegment,
   estimateDrawingLogicalFromTime,
@@ -55,7 +55,7 @@ const CHART_THEMES = {
     grid: 'rgba(148, 163, 184, 0.06)',
     border: '#252a32',
     overlay: 'rgba(11, 13, 16, 0.78)',
-    selectedPriceLine: '#e5e7eb',
+    selectedReplayPriceMarker: '#363a45',
   },
   light: {
     mode: 'light',
@@ -66,7 +66,7 @@ const CHART_THEMES = {
     grid: 'rgba(100, 116, 139, 0.08)',
     border: '#cbd5e1',
     overlay: 'rgba(255, 255, 255, 0.76)',
-    selectedPriceLine: '#334155',
+    selectedReplayPriceMarker: '#363a45',
   },
 };
 
@@ -390,6 +390,7 @@ export default function TradingViewReplayChart({
   onBacktestAccountChange = null,
 }) {
   const { theme: adminTheme } = useTheme();
+  const { auth } = usePage().props;
   const chartTheme = useMemo(() => resolveChartTheme(adminTheme), [adminTheme]);
   const wrapperRef = useRef(null);
   const fullscreenRef = useRef(null);
@@ -429,6 +430,8 @@ export default function TradingViewReplayChart({
   const triggerBacktestPositionRef = useRef(null);
   const closeBacktestPositionRef = useRef(null);
   const drawingUndoStackRef = useRef([]);
+  const drawingSaveQueueRef = useRef(Promise.resolve());
+  const drawingSaveVersionRef = useRef(0);
   const restoredReplayProgressKeyRef = useRef(null);
   const latestReplayProgressRef = useRef(null);
 
@@ -467,6 +470,7 @@ export default function TradingViewReplayChart({
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolError, setSymbolError] = useState('');
   const [isSavingSymbol, setIsSavingSymbol] = useState(false);
+  const [isRemovingSymbol, setIsRemovingSymbol] = useState(false);
   const [isLoadingAvailableSymbols, setIsLoadingAvailableSymbols] = useState(false);
   const [timeframe, setTimeframe] = useState(initialTimeframe);
 
@@ -491,6 +495,7 @@ export default function TradingViewReplayChart({
   const [tool, setTool] = useState(null);
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
   const [drawings, setDrawings] = useState([]);
+  const [drawingSaveStatus, setDrawingSaveStatus] = useState('saved');
   const [tempDrawing, setTempDrawing] = useState(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState(null);
   const [toolSettings, setToolSettings] = useState({});
@@ -596,7 +601,7 @@ export default function TradingViewReplayChart({
   }, [selectedReplayPrice]);
 
   const replayProgressKey = `${exchange}:${marketCategory}:${symbol}`;
-  const replayProgressStorageKey = `market-replay-progress:${replayProgressKey}`;
+  const replayProgressStorageKey = `market-replay-progress:${auth?.user?.id ?? 'guest'}:${replayProgressKey}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -745,7 +750,7 @@ export default function TradingViewReplayChart({
 
   const loadMarketSymbols = useCallback(async () => {
     try {
-      const response = await fetch('/api/market-symbols', {
+      const response = await fetch('/market-symbols', {
         headers: { Accept: 'application/json' },
       });
 
@@ -1045,43 +1050,6 @@ export default function TradingViewReplayChart({
     };
   }, []);
 
-  const loadLocalDrawings = useCallback(() => {
-    const drawingMap = new Map();
-
-    const addStoredDrawings = (raw) => {
-      if (!raw) return;
-
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-
-      parsed.forEach((drawing) => {
-        if (!drawing?.id) return;
-        if (!drawingMap.has(drawing.id)) {
-          drawingMap.set(drawing.id, drawing);
-        }
-      });
-    };
-
-    const sharedKey = buildStorageKey(symbol, exchange, marketCategory);
-    addStoredDrawings(localStorage.getItem(sharedKey));
-
-    if (marketCategory === 'spot') {
-      addStoredDrawings(localStorage.getItem(`replay-drawings:${symbol}`));
-
-      TIMEFRAMES.forEach(({ value }) => {
-        addStoredDrawings(localStorage.getItem(buildLegacyStorageKey(symbol, value)));
-      });
-    }
-
-    const storedDrawings = Array.from(drawingMap.values());
-
-    if (storedDrawings.length) {
-      localStorage.setItem(sharedKey, JSON.stringify(storedDrawings));
-    }
-
-    return storedDrawings;
-  }, [exchange, marketCategory, symbol]);
-
   const persistDrawingsToServer = useCallback(async (nextDrawings, activeSymbol = symbol) => {
     await axios.put('/market-drawings', {
       symbol: activeSymbol,
@@ -1098,7 +1066,26 @@ export default function TradingViewReplayChart({
       localStorage.setItem(buildStorageKey(symbol, exchange, marketCategory), JSON.stringify(nextDrawings));
     } catch {}
 
-    persistDrawingsToServer(nextDrawings).catch(() => {});
+    const saveVersion = drawingSaveVersionRef.current + 1;
+    drawingSaveVersionRef.current = saveVersion;
+    setDrawingSaveStatus('saving');
+
+    const queuedSave = drawingSaveQueueRef.current
+      .catch(() => {})
+      .then(() => persistDrawingsToServer(nextDrawings));
+
+    drawingSaveQueueRef.current = queuedSave;
+    queuedSave
+      .then(() => {
+        if (drawingSaveVersionRef.current === saveVersion) {
+          setDrawingSaveStatus('saved');
+        }
+      })
+      .catch(() => {
+        if (drawingSaveVersionRef.current === saveVersion) {
+          setDrawingSaveStatus('local');
+        }
+      });
   }, [exchange, marketCategory, persistDrawingsToServer, symbol]);
 
   const getDrawingScope = useCallback(() => {
@@ -1160,8 +1147,6 @@ export default function TradingViewReplayChart({
   }, [buildToolSettingsFromDrawing, saveDrawings, saveToolSettingsForType]);
 
   const loadStoredDrawings = useCallback(async () => {
-    const localDrawings = loadLocalDrawings();
-
     try {
       const response = await axios.get('/market-drawings', {
         params: { symbol, exchange, category: marketCategory },
@@ -1171,12 +1156,7 @@ export default function TradingViewReplayChart({
       const serverDrawings = Array.isArray(response.data?.drawings)
         ? response.data.drawings
         : [];
-      const hasServerRecord = Boolean(response.data?.exists);
-      const nextDrawings = hasServerRecord ? serverDrawings : localDrawings;
-
-      if (!hasServerRecord && localDrawings.length) {
-        persistDrawingsToServer(localDrawings).catch(() => {});
-      }
+      const nextDrawings = response.data?.exists ? serverDrawings : [];
 
       try {
         localStorage.setItem(buildStorageKey(symbol, exchange, marketCategory), JSON.stringify(nextDrawings));
@@ -1184,9 +1164,9 @@ export default function TradingViewReplayChart({
 
       return nextDrawings;
     } catch {
-      return localDrawings;
+      return [];
     }
-  }, [exchange, loadLocalDrawings, marketCategory, persistDrawingsToServer, symbol]);
+  }, [exchange, marketCategory, symbol]);
 
   const getDrawingTimes = useCallback((items) => {
     return items.flatMap((drawing) => {
@@ -2240,11 +2220,11 @@ export default function TradingViewReplayChart({
     if (replayMode && selectedReplayPrice != null) {
       selectedPriceLineRef.current = candleSeries.createPriceLine({
         price: selectedReplayPrice,
-        color: chartTheme.selectedPriceLine,
-        lineWidth: 1,
+        color: chartTheme.selectedReplayPriceMarker,
+        lineWidth: 2,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
-        title: 'Selected',
+        title: 'Replay',
       });
     }
 
@@ -3287,7 +3267,11 @@ export default function TradingViewReplayChart({
     setIsPlaying(false);
 
     if (!replayMode) {
-      startReplayMode(replayIndex);
+      setTool(null);
+      setTempDrawing(null);
+      setTextInput(null);
+      setSelectedDrawingId(null);
+      setIsReplayPricePickActive(true);
       return;
     }
 
@@ -3414,6 +3398,10 @@ export default function TradingViewReplayChart({
   };
 
   const handleClearDrawings = () => {
+    if (drawingsRef.current.length && !window.confirm('Clear all drawings for this market? You can undo this action with Ctrl/Cmd + Z.')) {
+      return;
+    }
+
     pushDrawingUndoSnapshot(selectedDrawingIdRef.current);
     saveDrawings([]);
     setSelectedDrawingId(null);
@@ -3652,26 +3640,25 @@ export default function TradingViewReplayChart({
     setSymbolError('');
 
     try {
-      const response = await fetch('/api/market-symbols', {
-        method: 'POST',
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await axios.post('/market-symbols', {
+        symbol: normalizedSymbol,
+        exchange: selectedAvailableSymbol?.exchange ?? 'bybit',
+        exchange_symbol: selectedAvailableSymbol?.exchange_symbol ?? normalizedSymbol,
+        coin_name: selectedAvailableSymbol?.coin_name ?? selectedAvailableSymbol?.baseCoin ?? normalizedSymbol,
+        base_coin: selectedAvailableSymbol?.baseCoin ?? '',
+        quote_coin: selectedAvailableSymbol?.quoteCoin ?? '',
+        category: selectedAvailableSymbol?.category ?? marketCategory,
+      }, {
         headers: {
           Accept: 'application/json',
-          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken ?? '',
         },
-        body: JSON.stringify({
-          symbol: normalizedSymbol,
-          exchange: selectedAvailableSymbol?.exchange ?? 'bybit',
-          exchange_symbol: selectedAvailableSymbol?.exchange_symbol ?? normalizedSymbol,
-          coin_name: selectedAvailableSymbol?.coin_name ?? selectedAvailableSymbol?.baseCoin ?? normalizedSymbol,
-          base_coin: selectedAvailableSymbol?.baseCoin ?? '',
-          quote_coin: selectedAvailableSymbol?.quoteCoin ?? '',
-          category: selectedAvailableSymbol?.category ?? marketCategory,
-        }),
       });
 
-      const result = await response.json();
+      const result = response.data;
 
-      if (!response.ok || !result.success) {
+      if (!result?.success) {
         throw new Error(result.message || 'Failed to save symbol');
       }
 
@@ -3702,9 +3689,52 @@ export default function TradingViewReplayChart({
       setMarketCategory(savedSymbol.category ?? 'spot');
       setSymbol(savedSymbol.symbol);
     } catch (err) {
-      setSymbolError(err.message || 'Failed to save symbol');
+      const validationErrors = err.response?.data?.errors;
+      const firstValidationError = validationErrors
+        ? Object.values(validationErrors).flat().find(Boolean)
+        : null;
+      const message = err.response?.status === 419
+        ? 'Your session security token expired. Refresh the page, sign in again if needed, then add the symbol.'
+        : firstValidationError
+          ?? err.response?.data?.message
+          ?? err.message
+          ?? 'Failed to save symbol';
+      setSymbolError(message);
     } finally {
       setIsSavingSymbol(false);
+    }
+  };
+
+  const handleRemoveSymbol = async (marketSymbol) => {
+    if (!marketSymbol?.id || isRemovingSymbol) return;
+    if (!window.confirm(`Remove ${marketSymbol.symbol} from your saved symbols? Your chart drawings are not deleted.`)) return;
+
+    setIsRemovingSymbol(true);
+    setSymbolError('');
+    try {
+      await axios.delete(`/market-symbols/${marketSymbol.id}`, {
+        headers: { Accept: 'application/json' },
+      });
+
+      const nextSymbols = symbols.filter((item) => item.id !== marketSymbol.id);
+      setSymbols(nextSymbols);
+      window.dispatchEvent(new CustomEvent('backtradelab-symbols-changed', { detail: nextSymbols }));
+
+      const removedActive = marketSymbol.symbol === symbol
+        && (marketSymbol.exchange ?? 'bybit') === exchange
+        && (marketSymbol.category ?? 'spot') === marketCategory;
+      if (removedActive) {
+        const fallback = nextSymbols.find((item) => (item.category ?? 'spot') === marketCategory)
+          ?? nextSymbols[0]
+          ?? { symbol: 'BTCUSDT', exchange: marketCategory === 'linear' ? 'bingx' : 'bybit', category: marketCategory };
+        setSymbol(fallback.symbol);
+        setExchange(fallback.exchange ?? 'bybit');
+        setMarketCategory(fallback.category ?? 'spot');
+      }
+    } catch (err) {
+      setSymbolError(err.response?.data?.message ?? err.message ?? 'Failed to remove symbol');
+    } finally {
+      setIsRemovingSymbol(false);
     }
   };
 
@@ -4142,6 +4172,7 @@ export default function TradingViewReplayChart({
     symbols,
     availableSymbols,
     isSavingSymbol,
+    isRemovingSymbol,
     isLoadingAvailableSymbols,
     symbolError,
     timeframe,
@@ -4153,6 +4184,7 @@ export default function TradingViewReplayChart({
     onSymbolChange: handleSymbolChange,
     onCategoryChange: setMarketCategory,
     onAddSymbol: handleAddSymbol,
+    onRemoveSymbol: handleRemoveSymbol,
     onTimeframeChange: handleTimeframeChange,
     onToggleReplayMode: toggleReplayMode,
     onCandleColorChange: setCandleColors,
@@ -4260,6 +4292,7 @@ export default function TradingViewReplayChart({
             tool={tool}
             drawingColor={drawingColor}
             drawings={drawings}
+            drawingSaveStatus={drawingSaveStatus}
             selectedDrawingId={selectedDrawingId}
             selectedDrawing={selectedDrawing}
             toolSettings={toolSettings}
@@ -4296,6 +4329,7 @@ export default function TradingViewReplayChart({
             orderEntryRequest={chartOrderRequest}
             onBacktestOrderDraftChange={setBacktestOrderDraft}
             chartTheme={chartTheme}
+            overlayWidth={overlaySize.width}
           />
         </div>
       </div>

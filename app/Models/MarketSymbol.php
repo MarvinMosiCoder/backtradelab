@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class MarketSymbol extends Model
 {
     protected $fillable = [
+        'adm_user_id',
         'symbol',
         'exchange',
         'exchange_symbol',
@@ -16,6 +17,11 @@ class MarketSymbol extends Model
         'category',
         'is_active',
     ];
+
+    public function user()
+    {
+        return $this->belongsTo(AdmUser::class, 'adm_user_id');
+    }
 
     protected $casts = [
         'is_active' => 'boolean',

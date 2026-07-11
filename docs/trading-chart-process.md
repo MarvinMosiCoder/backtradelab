@@ -27,9 +27,9 @@ User Browser
 
 Laravel Backend
   routes/api.php
-    GET /api/market-symbols
+    GET /market-symbols (authenticated)
     GET /api/market-symbol-options
-    POST /api/market-symbols
+    POST /market-symbols (authenticated)
     GET /api/klines
 
   app/Http/Controllers/MarketDataController.php
@@ -61,8 +61,12 @@ External API
 | `resources/js/Pages/Dashboard/Dashboard.jsx` | Superadmin dashboard cards, or chart-first trader dashboard for non-superadmin users |
 | `resources/js/Layouts/layout/AppSidebar.jsx` | Authenticated sidebar shell that only renders `AdminSidebar` when the current privilege is superadmin |
 | `resources/js/Layouts/layout/AppNavbar.jsx` | Authenticated navbar with normal user quick links for Chart, PnL, and saved symbol selection |
+| `resources/js/Layouts/layout/TraderNavbar.jsx` | Compact role-aware trader terminal header with market selection, Chart/Journal navigation, theme control, user role, and logout |
+| `resources/js/Layouts/layout/TraderSidebar.jsx` | Collapsible trader navigation rail for workspace, market chart, journal, profile, and password security |
 | `resources/js/Pages/Market/Market.jsx` | Market page that renders the chart without reserving extra viewport-height space below it |
 | `resources/js/Pages/Market/TradeReportPage.jsx` | Trade reporting page that renders the standalone calendar module and PnL report table module |
+| `resources/js/Pages/Feedback/Index.jsx` | Trader feedback form and personal submission/status/response history |
+| `resources/js/Pages/Feedback/AdminIndex.jsx` | Superadmin feedback inbox with search, filtering, prioritization, workflow status, and responses |
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
 | `resources/js/Components/Market/TradeCalendar.jsx` | Standalone trade calendar module showing daily PnL and win/loss counts by close date |
 | `resources/js/Components/Market/TradeReport.jsx` | PnL report module with summary cards, CSV/JSON export, closed-trades table, snapshots, and journal editing |
@@ -75,7 +79,8 @@ External API
 | `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
 | `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
 | `app/Http/Controllers/MarketBacktestController.php` | Loads paper account/session state, starts/ends backtest sessions, places market/limit/trigger replay entries, updates chart-dragged SL/TP and pending entry prices, updates trade journal notes/tags, triggers pending entries, cancels pending entries, closes replay positions, and resets the demo account |
-| `routes/api.php` | Defines `/api/market-symbols`, `/api/market-symbol-options`, and `/api/klines` |
+| `app/Http/Controllers/UserFeedbackController.php` | Owns trader feedback submission/history and superadmin-only inbox/update endpoints |
+| `routes/api.php` | Defines public market-data endpoints `/api/market-symbol-options` and `/api/klines` |
 | `routes/web.php` | Defines public `/`, `/login`, authenticated `/market-drawings`, `/market-tool-settings`, and `/market-backtest/*` routes |
 | `app/Http/Controllers/MarketDataController.php` | Lists/saves symbols, fetches Binance/OKX/Bybit/BingX/MEXC symbol options, and fetches/normalizes candle data |
 | `app/Models/MarketSymbol.php` | Eloquent model for symbols saved in the database |
@@ -146,7 +151,7 @@ The dark public theme is aligned with the authenticated BacktradeLab black theme
 `TradingViewChart.jsx` loads saved symbols on mount:
 
 ```javascript
-const response = await fetch('/api/market-symbols', {
+const response = await fetch('/market-symbols', {
   headers: { Accept: 'application/json' },
 });
 ```
@@ -202,7 +207,7 @@ The response contains tradable instruments:
 Users add symbols from `ChartHeader.jsx` by clicking `Add Symbol`, searching the available-symbol list, then clicking the plus icon beside a symbol. The frontend sends:
 
 ```javascript
-await fetch('/api/market-symbols', {
+await fetch('/market-symbols', {
   method: 'POST',
   headers: {
     Accept: 'application/json',
@@ -220,7 +225,7 @@ await fetch('/api/market-symbols', {
 });
 ```
 
-The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols` with the source exchange, market category, native exchange symbol, coin name, base coin, and quote coin. The database uniqueness is by `exchange + category + symbol`, so the same market name can be saved from multiple exchanges and as both spot and futures.
+The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols` with the authenticated user, source exchange, market category, native exchange symbol, coin name, base coin, and quote coin. Database uniqueness is by `user + exchange + category + symbol`, so every user owns an independent saved-symbol list and the same market can be saved from multiple exchanges and as both spot and futures.
 
 After a symbol is saved, `TradingViewChart.jsx` inserts it into the saved-symbol list, selects it as the active chart symbol, and the candle request reloads for that symbol.
 
@@ -271,9 +276,10 @@ The UI timeframe is mapped to the selected exchange interval in `MarketDataContr
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| `symbols()` | `GET /api/market-symbols` | Return active symbols from `market_symbols` |
+| `symbols()` | `GET /market-symbols` | Return only the authenticated user's active saved symbols |
 | `availableSymbols()` | `GET /api/market-symbol-options` | Return available Binance, OKX, Bybit, BingX, and MEXC instruments for the add-symbol picker |
-| `storeSymbol()` | `POST /api/market-symbols` | Validate, uppercase, and save a symbol |
+| `storeSymbol()` | `POST /market-symbols` | Authenticated, throttled symbol validation and storage |
+| `destroySymbol()` | `DELETE /market-symbols/{marketSymbol}` | Remove one symbol owned by the authenticated user without deleting chart drawings |
 | `klines()` | `GET /api/klines` | Fetch normalized exchange candles |
 
 `availableSymbols()` validates the requested category, calls the configured exchange symbol endpoints, normalizes symbol/base/quote/status/exchange metadata, sorts the symbols alphabetically, and returns them for the searchable picker. The picker displays the coin name and the source exchange beside each symbol.
@@ -331,7 +337,7 @@ axios.put('/market-drawings', {
 });
 ```
 
-`localStorage` remains as a browser fallback and migration source. If the database has no saved drawing record for the current user and symbol, existing local drawings are loaded and uploaded to the server. The backend returns an `exists` flag so an intentionally empty drawing list is preserved after the user clears their tools. After the first server save, the database is the primary source, so the same user can see their tools on another device after logging in.
+The backend returns an `exists` flag so an intentionally empty drawing list is preserved after the user clears their tools. If no server record exists, the chart starts with no drawings and does not import or upload browser-local drawings automatically. This prevents a new account on a shared browser from inheriting another user's analysis. A drawing record is created only after the user explicitly creates, edits, clears, or otherwise saves drawing state.
 
 ### 7. Reusable Tool Defaults
 
@@ -359,7 +365,7 @@ The same settings object also stores selectable presets by tool type under `sett
 
 ### 8. Paper Backtest Account
 
-Replay progress is persisted separately per authenticated user, exchange, market category, and symbol in `market_replay_progress`, with a synchronous `localStorage` mirror. The saved timestamp and selected replay price are restored when the chart is opened again, including after logout/login or module navigation. The synchronous browser copy is authoritative on the same device, while each server write carries `client_saved_at` so a delayed older request cannot overwrite a newer replay candle. Normal playback saves to the server with a short debounce, while component unmount and browser page exit flush the latest value. `Back to Live` returns the current view to live candles without deleting the saved replay checkpoint; reopening replay resumes from that checkpoint. The replay `Reset`/`Go Latest` action explicitly replaces the checkpoint with the latest candle.
+Replay progress is persisted separately per authenticated user, exchange, market category, and symbol in `market_replay_progress`, with a user-scoped synchronous browser mirror under `market-replay-progress:{userId}:{market}`. If that user has a saved checkpoint, its timestamp and selected replay price are restored when the chart opens. If no checkpoint exists, the chart opens live at the current price and stays out of replay until the user clicks `Start Replay`. Each server write carries `client_saved_at` so a delayed older request cannot overwrite a newer replay candle. Normal playback saves to the server with a short debounce, while component unmount and browser page exit flush the latest value. `Back to Live` returns the current view to live candles without deleting the saved replay checkpoint. The replay `Reset`/`Go Latest` action explicitly replaces the checkpoint with the latest candle.
 
 The default candle width is `24`, and the user's later candle-width selection continues to be stored in `market-chart-candle-size` in `localStorage`.
 
@@ -437,6 +443,20 @@ The user sidebar and trader navbar both expose Trade Report/PnL navigation for n
 
 Non-superadmin users get a chart-first dashboard. `Dashboard.jsx` checks `auth.sessions.admin_is_superadmin`; superadmin users keep the existing dashboard card layout, while normal users render `TradingViewChart` directly on `/dashboard`.
 
+The authenticated layout now has two visual shells. Superadmins retain the existing administration navbar/sidebar so management screens keep their established controls. Non-superadmin users receive the dedicated trading-terminal shell from `TraderNavbar.jsx` and `TraderSidebar.jsx`. The trader shell uses compact TradingView-inspired surfaces, a persistent market selector, direct Chart/Journal links, a visible `Trader` role label, and a collapsible navigation rail. Trader pages omit administrative breadcrumbs and the footer so the chart and reports use more of the viewport.
+
+Trader logout uses a themed confirmation dialog inside `TraderNavbar.jsx` instead of the browser confirmation prompt. The change-password page uses the terminal theme, per-field show/hide controls, a live password-strength checklist, matching confirmation feedback, and server-enforced mixed-case/number/symbol requirements. After a successful password update, a non-dismissible success dialog counts down for three seconds before automatically logging the user out; an immediate sign-out action is also available.
+
+The mandatory `ForceChangePassword.jsx` flow uses the same responsive security design and three-second automatic logout dialog. It remains non-dismissible until the password is changed or an eligible scheduled change is waived. Waiver processing checks the server-side waiver limit before submitting the waiver, preventing the older race where the waive request could continue before eligibility was known. Temporary/default-password users cannot waive the required update.
+
+The public home and login pages use the same terminal visual language: deep chart surfaces, blue execution accents, live/replay status cues, replay-preview graphics, and messaging organized around the `choose market → replay → execute → journal` practice loop.
+
+### User Feedback Workflow
+
+Authenticated traders can open `/feedback` from the trader navigation. Feedback is categorized as enhancement, additional feature, bug, usability, performance, or other. Each submission stores its title, detailed description, originating page URL, workflow status, priority, and any admin response. Users only receive their own feedback history and can follow statuses from submitted through reviewing, planned, in progress, completed, or declined.
+
+Superadmins can open `/admin/feedback` from the fixed `Feedback Inbox` entry in the admin sidebar. The inbox supports search and status/category/priority filters. Admins can set priority, move feedback through the workflow, and publish a response visible to the submitting user. User endpoints are ownership-scoped; admin listing and update actions additionally verify the superadmin session flag. Submission and update writes are rate-limited.
+
 `AppSidebar.jsx` already keeps the superadmin sidebar hidden for normal users by rendering `AdminSidebar` only when `auth.sessions.admin_privileges == 1`. Normal users keep their user sidebar access, such as Dashboard, Chart, and Trade Report/PnL, based on their assigned menu privileges.
 
 `AppNavbar.jsx` adds a compact trader control strip for non-superadmin users with:
@@ -445,7 +465,7 @@ Non-superadmin users get a chart-first dashboard. `Dashboard.jsx` checks `auth.s
 |---------|----------|
 | Chart | Opens `/dashboard` |
 | PnL | Opens `/trade-report` |
-| Symbols | Loads saved symbols from `/api/market-symbols`, shows the symbol with exchange/category details, stores the selected symbol in `localStorage` as `backtradelab-active-symbol`, and reloads the dashboard chart with that symbol/exchange/category |
+| Symbols | Loads the authenticated user's saved symbols from `/market-symbols`, shows exchange/category details, stores the selection under the user-scoped `backtradelab-active-symbol:{userId}` key, and reloads the dashboard chart |
 
 The selected symbol is passed into `TradingViewChart` as its initial symbol, exchange, and market category. The chart component is keyed by the selected symbol tuple so changing the navbar symbol remounts the chart with the new market context.
 
@@ -497,7 +517,7 @@ const visibleVolume = visibleCandles.map((c) => ({
 
 ## Replay Mode
 
-Replay mode starts around 30% through the loaded candle set:
+Keyboard playback can start replay around 30% through the loaded candle set:
 
 ```javascript
 const startIndex = Math.max(0, Math.floor(allCandles.length * 0.3));
@@ -514,6 +534,8 @@ When replay mode is enabled:
 | Follow Replay | Scrolls chart to the replay edge |
 | Set Replay Price | Arms the next chart click to pick replay candle/price |
 | Speed buttons | Changes playback interval inside the replay flyout |
+
+Clicking `Start Replay` does not immediately change the visible candle set. It arms replay-point selection first. While selection is armed, a dashed vertical line follows the pointer and the future chart area to its right is covered by a dark TradingView-style preview mask. Clicking the chart selects that candle and price, removes the preview, and starts replay from the chosen point.
 
 Playback speeds are defined in `constants.js`.
 
@@ -558,6 +580,10 @@ The Tool Editor opens automatically after a tool is clicked or a drawing is sele
 
 Replay, Tools, Tool Editor, and Backtest Account controls share the chart theme. In dark mode, inactive controls and flyout cards use `bg-black-table-color` with gray borders, panel shells use `bg-skin-black`, and selected or primary neutral controls use a high-contrast white button treatment. This removes the older blue/slate control tone from the replay modal, tools flyout, presets editor, fullscreen button, text-label popover, and backtest account panel. White theme controls use light surfaces with dark text and subtle borders. Semantic trading actions keep their meaning colors, such as green for long/success actions, red for short/destructive actions, and amber for price-pick warning actions.
 
+High-frequency replay, drawing, and account controls use accessible `aria-label` descriptions without native browser `title` tooltips, preventing repetitive hover popups while working on the chart. Tool-specific hints remain only on compact controls where the meaning would otherwise be unclear.
+
+Replay flyouts and the top Tool Editor calculate their maximum width from the actual chart overlay width. They reserve a safe area for the right-side price scale, wrap editor controls before reaching that scale, and reduce their width responsively on smaller charts. This prevents tool panels from covering or overflowing into the price-number sidebar.
+
 | Tool | Placement | Saved Shape |
 |------|-----------|-------------|
 | Line | Click start, click end | `{ type: 'line', start, end, strokeWidth, lineStyle, color }` |
@@ -582,9 +608,9 @@ Drawings are stored per symbol:
 `replay-drawings:${symbol}`
 ```
 
-Drawings are saved to the backend through `/market-drawings` and mirrored in `localStorage` as a fallback/migration source. Existing browser-only drawings are merged into the shared per-symbol key and uploaded when no server record exists yet.
+Drawings are saved to the backend through `/market-drawings` and may be mirrored in `localStorage` for the current browser, but browser-local data is never loaded or uploaded into an account automatically when no server record exists.
 
-Older timeframe-specific drawing keys are still read and migrated/merged when symbols load:
+Older timeframe-specific drawing keys may remain in browser storage from earlier versions but are no longer read or migrated automatically:
 
 ```javascript
 `replay-drawings:${symbol}:${timeframe}`
@@ -851,7 +877,7 @@ Backend errors are returned as JSON responses from `MarketDataController.php`.
 | `requestAnimationFrame` | Throttle overlay re-render requests during chart viewport movement |
 | `ResizeObserver` | Keep chart and overlay dimensions synchronized |
 | Theme palette updates | Apply the admin dark/white chart palette without recreating the chart instance |
-| `localStorage` | Mirror drawings/tool settings for fallback and legacy migration; store public `backtradelab-theme` and trader `backtradelab-active-symbol` |
+| `localStorage` | Mirror drawing edits/tool settings without auto-importing drawings; store public `backtradelab-theme` and user-scoped trader active-symbol preference |
 | Database | Persist the user's available market symbols, drawings, reusable tool defaults, and paper backtest records |
 
 ---
@@ -889,14 +915,14 @@ The chart now includes:
 3. Chart-first `/dashboard` for non-superadmin trader users, with superadmin keeping the existing dashboard cards.
 4. Trader navbar quick links for Chart, PnL, and saved symbol selection.
 5. Lightweight Charts candlestick and volume rendering.
-6. Database-backed market symbols through `/api/market-symbols`.
+6. Per-user database-backed market symbol reads and writes through authenticated `/market-symbols` routes; new users start with an empty saved-symbol list.
 7. Laravel/exchange candle data flow through `/api/klines`.
 8. Searchable Binance, OKX, Bybit, BingX, and MEXC add-symbol picker in the chart header, with Spot/Futures switching.
 9. A single live/replay chart with a compact black-theme-aligned left rail, grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a top toolbar for per-tool style/preset editing.
 10. Componentized React structure for header, replay controls, chart stage, constants, and helpers.
 11. Drawing tools for line, Fibonacci retracement/extension, measure, long/short position, forecast, box, and text on the live chart and in replay mode.
 12. Per-tool drawing colors, stroke widths, labels, presets, selection, duplicating, moving, and resizing.
-13. Drawing persistence per user/symbol in the database, with `localStorage` fallback and migration from old per-timeframe keys.
+13. Drawing persistence per user/market in the database, with no automatic browser-local import for new accounts.
 14. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
 15. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
 16. Admin-theme-aligned chart background, grid, axis text, borders, compact three-dot loading overlay, fullscreen shell, chart control surfaces, and snapshot background.

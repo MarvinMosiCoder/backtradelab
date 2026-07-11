@@ -8,6 +8,7 @@ import { useTheme } from "../../Context/ThemeContext";
 const AppContent = ({ children }) => {
     const {theme} = useTheme();
     const { auth } = usePage().props;
+    const isSuperAdmin = Boolean(auth?.sessions?.admin_is_superadmin);
     const { title, setTitle } = useContext(NavbarContext);
     useEffect(() => {
         setTimeout(() => {
@@ -17,8 +18,8 @@ const AppContent = ({ children }) => {
 
     return (
         <>
-            <div id="app-content" className={`h-full ${theme === 'bg-skin-black' ? 'bg-black-screen-color' : 'bg-gray-100'} p-4 z-10`}>
-                <BreadCrumbs data={auth} title={title}></BreadCrumbs>
+            <div id="app-content" className={`h-full ${theme === 'bg-skin-black' ? 'bg-[#0b0e14]' : 'bg-slate-100'} ${isSuperAdmin ? 'p-4' : 'p-2 sm:p-3'} z-10`}>
+                {isSuperAdmin && <BreadCrumbs data={auth} title={title}></BreadCrumbs>}
                 <div id="content-area" className="relative min-h-0">
                     <ToastProvider>
                         {children}

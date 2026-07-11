@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from '@inertiajs/react';
-import { ArrowRight, BarChart3, ChevronDown, LogIn, Moon, Search, UserCircle } from 'lucide-react';
+import { Activity, ArrowRight, BarChart3, BookOpen, ChevronDown, LogIn, Moon, Search, ShieldCheck, TrendingUp, UserCircle } from 'lucide-react';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 import LoginDetails from '../../Components/SystemSettings/LoginDetails';
 
-const navItems = ['Products', 'Community', 'Market', 'More'];
+const navItems = [
+    ['Workspace', '#workspace'],
+    ['Replay', '#features'],
+    ['Journal', '#features'],
+    ['Process', '#process'],
+];
 
 export default function Home() {
     const [applogo, setApplogo] = useState('');
@@ -68,14 +73,14 @@ export default function Home() {
                                 className={`min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-gray-500 ${isDark ? 'text-white' : 'text-slate-950'}`}
                             />
                         </div>
-                        {navItems.map((item) => (
-                            <button
+                        {navItems.map(([item, href]) => (
+                            <a
                                 key={item}
-                                type="button"
+                                href={href}
                                 className={`h-10 rounded-md px-3 text-sm font-semibold transition ${isDark ? 'text-gray-300 hover:bg-skin-black-light hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'}`}
                             >
                                 {item}
-                            </button>
+                            </a>
                         ))}
                     </div>
 
@@ -116,17 +121,18 @@ export default function Home() {
             </nav>
 
             <main>
-                <section className="mx-auto grid min-h-[calc(100vh-65px)] max-w-7xl grid-cols-1 gap-10 px-4 py-10 lg:grid-cols-[minmax(0,1fr)_minmax(420px,0.9fr)] lg:items-center">
+                <section id="workspace" className="relative mx-auto grid min-h-[calc(100vh-65px)] max-w-7xl grid-cols-1 gap-10 overflow-hidden px-4 py-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(520px,1.1fr)] lg:items-center">
                     <div className="max-w-2xl">
                         <div className={`mb-5 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold uppercase tracking-wide ${isDark ? 'border-gray-700 bg-black-table-color text-gray-200' : 'border-gray-300 bg-white text-slate-700'}`}>
                             <BarChart3 size={15} />
-                            Replay. Journal. Improve.
+                            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,.8)]" />
+                            Built for deliberate practice
                         </div>
                         <h1 className={`font-poppins text-4xl font-bold leading-tight sm:text-6xl ${isDark ? 'text-white' : 'text-slate-950'}`}>
-                            Backtest your trades with a focused replay workspace.
+                            Train your trading process, not just your entries.
                         </h1>
                         <p className={`mt-5 max-w-xl text-base leading-7 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-                            BacktradeLab gives traders a dark, practical space for chart replay, drawing tools, paper positions, snapshots, and trade reviews.
+                            A chart-first replay terminal for practicing execution, documenting decisions, and turning every simulated trade into useful feedback.
                         </p>
                         <div className="mt-8 flex flex-wrap gap-3">
                             <Link
@@ -143,20 +149,42 @@ export default function Home() {
                                 Explore features
                             </a>
                         </div>
+                        <div className="mt-8 grid max-w-xl grid-cols-3 gap-3 border-t border-slate-700/40 pt-5">
+                            {[
+                                ['Replay', 'Candle by candle'],
+                                ['Execute', 'Risk planned'],
+                                ['Review', 'Journal backed'],
+                            ].map(([value, label]) => (
+                                <div key={value}>
+                                    <div className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>{value}</div>
+                                    <div className="mt-1 text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
 
-                    <div className={`overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-white'}`}>
-                        {heroImage ? (
-                            <img
-                                src={heroImage}
-                                className="h-[360px] w-full object-cover sm:h-[480px]"
-                                alt="BacktradeLab workspace"
-                            />
-                        ) : (
-                            <div className={`flex h-[360px] items-center justify-center sm:h-[480px] ${isDark ? 'bg-black-table-color' : 'bg-slate-100'}`}>
-                                <div className={`h-28 w-28 animate-pulse rounded-md ${isDark ? 'bg-skin-black-light' : 'bg-slate-200'}`} />
+                    <div className={`overflow-hidden rounded-xl border shadow-2xl shadow-blue-950/20 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
+                        <div className={`flex h-12 items-center border-b px-4 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                            <div className="flex items-center gap-2 text-xs font-bold"><span className="flex h-7 w-7 items-center justify-center rounded bg-[#2962ff] text-white"><TrendingUp size={14} /></span> BTCUSDT</div>
+                            <div className="ml-3 text-[10px] text-slate-500">Perpetual · 15m</div>
+                            <div className="ml-auto flex items-center gap-2 text-[10px] text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Replay ready</div>
+                        </div>
+                        <div className="relative h-[330px] overflow-hidden bg-[linear-gradient(rgba(120,123,134,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(120,123,134,.08)_1px,transparent_1px)] bg-[size:48px_48px] sm:h-[420px]">
+                            {heroImage && <img src={heroImage} alt="" className="absolute inset-0 h-full w-full object-cover opacity-[0.07]" />}
+                            <svg viewBox="0 0 700 380" className="absolute inset-0 h-full w-full" preserveAspectRatio="none" aria-label="Trading replay preview">
+                                <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#2962ff" stopOpacity=".22"/><stop offset="1" stopColor="#2962ff" stopOpacity="0"/></linearGradient></defs>
+                                <path d="M0 300 C70 270 95 290 140 240 S220 260 260 205 S335 235 385 165 S465 195 510 120 S610 150 700 72 L700 380 L0 380Z" fill="url(#area)" />
+                                <path d="M0 300 C70 270 95 290 140 240 S220 260 260 205 S335 235 385 165 S465 195 510 120 S610 150 700 72" fill="none" stroke="#2962ff" strokeWidth="3" />
+                                <line x1="510" y1="0" x2="510" y2="380" stroke="#5b8cff" strokeDasharray="7 6" strokeWidth="2" />
+                                <rect x="512" y="0" width="188" height="380" fill="#070a10" opacity=".67" />
+                            </svg>
+                            <div className="absolute left-[64%] top-4 rounded bg-[#2962ff] px-2 py-1 text-[10px] font-bold text-white">Replay start</div>
+                            <div className={`absolute bottom-4 left-4 right-4 grid grid-cols-3 gap-2 rounded-lg border p-2 backdrop-blur ${isDark ? 'border-[#2a2e39] bg-[#0b0e14]/90' : 'border-slate-200 bg-white/90'}`}>
+                                {[[Activity, 'Replay', 'Step through price'], [ShieldCheck, 'Risk', 'Plan before entry'], [BookOpen, 'Journal', 'Review the process']].map(([Icon, title, copy]) => (
+                                    <div key={title} className="flex items-center gap-2 p-2"><Icon size={16} className="shrink-0 text-[#2962ff]" /><div><div className="text-[11px] font-bold">{title}</div><div className="hidden text-[9px] text-slate-500 sm:block">{copy}</div></div></div>
+                                ))}
                             </div>
-                        )}
+                        </div>
                     </div>
                 </section>
 
@@ -172,6 +200,17 @@ export default function Home() {
                                 <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>{description}</p>
                             </div>
                         ))}
+                    </div>
+                </section>
+
+                <section id="process" className={`border-t px-4 py-14 ${isDark ? 'border-gray-800 bg-black-screen-color' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className="mx-auto max-w-7xl">
+                        <div className="mb-8 max-w-xl"><div className="text-xs font-bold uppercase tracking-[0.2em] text-[#2962ff]">One repeatable loop</div><h2 className="mt-2 text-3xl font-bold">A workspace designed around improvement.</h2></div>
+                        <div className="grid gap-3 md:grid-cols-4">
+                            {['Choose a market', 'Replay the setup', 'Execute the plan', 'Journal the result'].map((item, index) => (
+                                <div key={item} className={`rounded-lg border p-5 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}><div className="mb-5 flex h-8 w-8 items-center justify-center rounded-full bg-[#2962ff]/15 text-xs font-bold text-[#5b8cff]">0{index + 1}</div><div className="text-sm font-bold">{item}</div></div>
+                            ))}
+                        </div>
                     </div>
                 </section>
             </main>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
-import { ArrowLeft, Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { ArrowLeft, BarChart3, BookOpen, Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../Context/AuthContext';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 
@@ -88,10 +88,24 @@ const LoginPage = () => {
                     </div>
                 </div>
 
-                <main className="mx-auto flex min-h-[calc(100vh-84px)] max-w-md items-center">
-                    <section className={`w-full rounded-md border p-5 shadow-2xl ${isDark ? 'border-gray-700 bg-skin-black' : 'border-slate-200 bg-white'}`}>
+                <main className="mx-auto grid min-h-[calc(100vh-84px)] max-w-5xl items-center gap-10 py-8 lg:grid-cols-[1fr_440px]">
+                    <aside className="hidden lg:block">
+                        <div className="text-xs font-bold uppercase tracking-[0.22em] text-[#2962ff]">Your practice desk</div>
+                        <h1 className="mt-4 max-w-lg text-4xl font-bold leading-tight">Return to the chart with a process.</h1>
+                        <p className={`mt-4 max-w-md text-sm leading-7 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Replay markets, execute planned risk, and keep every decision connected to your journal.</p>
+                        <div className="mt-8 grid max-w-lg gap-3">
+                            {[[BarChart3, 'Chart-first workspace', 'Market context stays visible while you practice.'], [ShieldCheck, 'Paper execution', 'Plan margin, leverage, stop, and target before entry.'], [BookOpen, 'Review loop', 'Snapshots and journal notes turn sessions into feedback.']].map(([Icon, title, copy]) => (
+                                <div key={title} className={`flex items-center gap-4 rounded-lg border p-4 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2962ff]/15 text-[#5b8cff]"><Icon size={18} /></div>
+                                    <div><div className="text-sm font-bold">{title}</div><div className="mt-1 text-xs text-slate-500">{copy}</div></div>
+                                </div>
+                            ))}
+                        </div>
+                    </aside>
+                    <section className={`w-full rounded-xl border p-6 shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
                         <div className="mb-6">
-                            <h1 className={`font-poppins text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-950'}`}>Sign in</h1>
+                            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Workspace online</div>
+                            <h1 className={`font-poppins text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-950'}`}>Welcome back</h1>
                             <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                                 Access your replay charts, paper trades, snapshots, and reports.
                             </p>

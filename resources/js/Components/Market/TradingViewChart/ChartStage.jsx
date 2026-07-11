@@ -1141,23 +1141,76 @@ export default function ChartStage({
   onCancelText,
   onToggleFullscreen,
 }) {
+  const [replayPickPreviewX, setReplayPickPreviewX] = useState(null);
+  const [isChartDragging, setIsChartDragging] = useState(false);
+
+  useEffect(() => {
+    if (!isReplayPricePickActive) {
+      setReplayPickPreviewX(null);
+    }
+  }, [isReplayPricePickActive]);
+
+  useEffect(() => {
+    const stopDragging = () => setIsChartDragging(false);
+    window.addEventListener('mouseup', stopDragging);
+    window.addEventListener('blur', stopDragging);
+    return () => {
+      window.removeEventListener('mouseup', stopDragging);
+      window.removeEventListener('blur', stopDragging);
+    };
+  }, []);
+
+  const handleReplayPickPreviewMove = (event) => {
+    if (!isReplayPricePickActive) return;
+
+    const bounds = event.currentTarget.getBoundingClientRect();
+    setReplayPickPreviewX(Math.min(Math.max(event.clientX - bounds.left, 0), bounds.width));
+  };
+
   return (
     <div
       ref={wrapperRef}
+      onMouseDown={(event) => {
+        if (event.button !== 0 || event.target?.closest?.('button, input, textarea, select, [data-chart-ui]')) return;
+        setIsChartDragging(true);
+      }}
+      onMouseMove={handleReplayPickPreviewMove}
+      onMouseLeave={() => setReplayPickPreviewX(null)}
       className={`relative min-h-0 overflow-hidden rounded-lg ${
         isFullscreen ? 'flex-1' : ''
       }`}
       style={{
         backgroundColor: chartTheme?.background ?? '#151617',
         height: isFullscreen ? '100%' : `${CHART_HEIGHT}px`,
-        cursor: isSpacePressed
-          ? 'grab'
+        cursor: isChartDragging
+          ? 'grabbing'
+          : isSpacePressed
+            ? 'grab'
           : tool || isReplayPricePickActive
             ? 'crosshair'
-            : 'default',
+            : 'grab',
       }}
     >
       <div ref={containerRef} className="absolute inset-0 z-0" />
+
+      {isReplayPricePickActive && replayPickPreviewX != null && (
+        <div className="pointer-events-none absolute inset-0 z-[9] overflow-hidden">
+          <div
+            className="absolute bottom-0 top-0 border-l-2 border-dashed border-blue-400"
+            style={{ left: replayPickPreviewX }}
+          />
+          <div
+            className="absolute bottom-0 right-0 top-0 bg-[#131722]/75"
+            style={{ left: replayPickPreviewX + 2 }}
+          />
+          <div
+            className="absolute top-3 -translate-x-1/2 whitespace-nowrap rounded bg-[#2962ff] px-2 py-1 text-[11px] font-semibold text-white shadow-lg"
+            style={{ left: replayPickPreviewX }}
+          >
+            Select replay start
+          </div>
+        </div>
+      )}
 
       <ChartBrandLogo chartTheme={chartTheme} />
 

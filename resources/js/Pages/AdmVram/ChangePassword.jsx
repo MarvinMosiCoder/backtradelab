@@ -1,336 +1,151 @@
-import React, { useContext, useEffect, useState } from 'react';
-import AppContent from '../../Layouts/layout/AppContent';
-import ContentPanel from '../../Components/Table/ContentPanel';
-import { Head, Link, router, usePage } from '@inertiajs/react';
-import InputWithLogo from '../../Components/Forms/InputWithLogo';
-import TableButton from '../../Components/Table/Buttons/TableButton';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Head, Link, router } from '@inertiajs/react';
 import axios from 'axios';
-import { useToast } from '../../Context/ToastContext';
+import { ArrowLeft, Check, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, X } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
-import useSwalColor from "../../Hooks/useThemeSwalColor";
-import useThemeSwalColor from '../../Hooks/useThemeSwalColor';
-import InputComponentPassword from '../../Components/Forms/InputPassword';
-import { NavbarContext } from '../../Context/NavbarContext';
-import useThemeStyles from '../../Hooks/useThemeStyles';
-const ChangePassword = () => {
-    const { auth, csrf_token } = usePage().props;
-    const {theme} = useTheme();
-    const { textColor, primayActiveColor } = useThemeStyles(theme);
-    const { handleToast } = useToast();
-    const swalColor = useThemeSwalColor(theme);
-    const { setTitle } = useContext(NavbarContext);
-    const [showModal, setShowModal] = useState(false);
-    const [isDisabled, setIsDisabled] = useState(true);
-    const [passwordMismatch, setPasswordMismatch] = useState(false);
-    const [isExistPassword, setIsExistPassword] = useState([]);
+
+function PasswordField({ label, name, value, onChange, autoComplete, error }) {
+    const [visible, setVisible] = useState(false);
+
+    return (
+        <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold">{label}</span>
+            <div className={`flex h-11 items-center rounded-lg border bg-transparent transition focus-within:border-[#2962ff] ${error ? 'border-red-500' : 'border-[#2a2e39]'}`}>
+                <LockKeyhole size={16} className="ml-3 shrink-0 text-[#787b86]" />
+                <input
+                    type={visible ? 'text' : 'password'}
+                    name={name}
+                    value={value}
+                    onChange={onChange}
+                    autoComplete={autoComplete}
+                    className="min-w-0 flex-1 bg-transparent px-3 text-sm outline-none"
+                />
+                <button type="button" onClick={() => setVisible((current) => !current)} className="mr-2 rounded-md p-2 text-[#787b86] hover:bg-white/10" aria-label={visible ? `Hide ${label}` : `Show ${label}`}>
+                    {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+            </div>
+            {error && <span className="mt-1 block text-xs text-red-400">{error}</span>}
+        </label>
+    );
+}
+
+export default function ChangePassword() {
+    const { theme } = useTheme();
+    const isDark = theme === 'bg-skin-black';
+    const [form, setForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
     const [loading, setLoading] = useState(false);
-    const [forms, setForms] = useState({
-        current_password: '',
-        new_password: '',
-        confirm_password: ''
-    });
+    const [error, setError] = useState('');
+    const [showSuccess, setShowSuccess] = useState(false);
+    const [countdown, setCountdown] = useState(3);
 
-    const [isVerified, setIsVerified] = useState(false);
-    const [verificationError, setVerificationError] = useState('');
-    const [activeText, setActiveText] = useState({
-        Uppercase: false,
-        Length: false,
-        Number: false,
-        Character: false
-    });
+    const checks = useMemo(() => ({
+        length: form.new_password.length >= 8,
+        uppercase: /[A-Z]/.test(form.new_password),
+        lowercase: /[a-z]/.test(form.new_password),
+        number: /\d/.test(form.new_password),
+        special: /[!@#$%^&*(),.?":{}|<>;]/.test(form.new_password),
+    }), [form.new_password]);
+    const isStrong = Object.values(checks).every(Boolean);
+    const matches = form.confirm_password !== '' && form.new_password === form.confirm_password;
+    const canSubmit = form.current_password && isStrong && matches && !loading;
 
-    const [isPasswordQwerty, setIsPasswordQwerty] = useState(false);
-    const [checkCountWaive, setCheckCountWaive] = useState(false);
     useEffect(() => {
-        setTimeout(()=>{
-            setTitle("Change Password");
-        },5);
-    }, []);
-    useEffect(() => {
-        const checkPassword = async () => {
-            try {
-            // Replace this URL with your actual API endpoint
-            const response = await axios.post('/check-password', {
-                current_password: 'qwerty', // This is the plain-text password to check
+        if (!showSuccess) return undefined;
+
+        const timer = window.setInterval(() => {
+            setCountdown((current) => {
+                if (current <= 1) {
+                    window.clearInterval(timer);
+                    router.post('/logout');
+                    return 0;
+                }
+                return current - 1;
             });
-            // Assuming your API returns a boolean indicating if the password is correct
-            setIsPasswordQwerty(response.data.success);
-            } catch (error) {
-                handleToast('An error occurred while connecting server', 'error');
-            }
-        };
-        checkPassword();
-    }, []);
-    // Check if the passwords match and validate form
-    useEffect(() => {
-        validateInputs();
-    }, [forms]);
+        }, 1000);
 
-    // Show modal when user needs to change password
-    useEffect(() => {
-        if (auth.check_user) {
-            setShowModal(true);
-        }
-    }, [auth.check_user]);
+        return () => window.clearInterval(timer);
+    }, [showSuccess]);
 
-    const handleChange = (e) => {
-        const { name, value } = e.target;
-        setForms(prevForms => ({
-            ...prevForms,
-            [name]: value
-        }));
+    const handleChange = (event) => {
+        setError('');
+        setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
     };
 
-    // Validate inputs for password match and required fields
-    const validateInputs = () => {
-        let isValid = true;
+    const handleSubmit = async (event) => {
+        event.preventDefault();
+        if (!canSubmit) return;
 
-        const textActive = checkPasswordTextActive(forms.new_password);
-
-        setActiveText({
-            Uppercase: textActive.includes('Uppercase'),
-            Length: textActive.includes('Length'),
-            Number: textActive.includes('Number'),
-            Character: textActive.includes('Character')
-        });
-        
-        const passwordChecks = {
-            weak: false,
-            strong: false,
-            excellent: false
-        };
-
-        // Check password length, case, digits, and special characters independently
-        if (forms.new_password) {
-            // Check criteria for Weak
-            if (forms.new_password.length > 0 && forms.new_password.length < 6) {
-                passwordChecks.weak = true;
-            }
-
-            // Check criteria for Strong
-            const hasLowerCase = /[a-z]/.test(forms.new_password);
-            const hasNumber = /\d/.test(forms.new_password);
-            if (forms.new_password.length >= 6 && hasLowerCase && hasNumber) {
-                passwordChecks.strong = true;
-            }
-
-            // Check criteria for Excellent
-            const hasUpperCase = /[A-Z]/.test(forms.new_password);
-            const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>;]/.test(forms.new_password);
-            if (forms.new_password.length >= 8 && hasUpperCase && hasLowerCase && hasNumber && hasSpecialChar) {
-                passwordChecks.excellent = true;
-            }
-            passwordChecks.weak = true;
-        }
-
-        // Now update `isExistPassword` based on the passwordChecks object
-        setIsExistPassword(() => {
-            const updatedPasswordStates = [];
-            if (passwordChecks.weak) {
-                updatedPasswordStates.push('Weak');
-            }
-            if (passwordChecks.strong) {
-                updatedPasswordStates.push('Strong');
-            }
-            if (passwordChecks.excellent) {
-                updatedPasswordStates.push('Excellent');
-            }
-            return updatedPasswordStates;
-        });
-
-        // Ensure "Submit" is only enabled if password is "Excellent"
-        if (!passwordChecks.excellent) {
-            isValid = false;
-        }
-
-        if (forms.new_password !== forms.confirm_password) {
-            setPasswordMismatch(true);
-            isValid = false;
-        } else {
-            setPasswordMismatch(false);
-        }
-
-        // Check if any form field is empty
-        Object.values(forms).forEach(val => {
-            if (!val) {
-                isValid = false;
-            }
-        });
-
-        setIsDisabled(!isValid);
-    };
-
-    const checkPasswordTextActive = (password) => {
-        const hasUpperCase = /[A-Z]/.test(password);
-        const hasLowerCase = /[a-z]/.test(password);
-        const hasNumber = /\d/.test(password);
-        const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>;]/.test(password);
-
-        const allCharacters = [];
-
-        if (hasUpperCase) allCharacters.push('Uppercase');
-        if (password.length >= 8) allCharacters.push('Length');
-        if (hasNumber) allCharacters.push('Number');
-        if (hasSpecialChar) allCharacters.push('Character');
-
-        return allCharacters;
-    };
-
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        // Proceed with password change if the current password is verified
-        if (isDisabled) return; // Check if the form is disabled
         setLoading(true);
+        setError('');
         try {
-            const response = await axios.post('/save-change-password', {
-                current_password: forms.current_password,
-                new_password: forms.new_password,
-                confirm_password: forms.confirm_password
-            });
-
-            if (response.data.status === 'success') {
-                Swal.fire({
-                    type: response.data.status,
-                    title: response.data.message,
-                    icon: response.data.status,
-                    confirmButtonColor: swalColor,
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        setShowModal(false);
-                        setTimeout(() => router.post('logout'), 3000);
-                    }
-                });
-            } else {
-                Swal.fire({
-                    type: response.data.status,
-                    title: response.data.message,
-                    icon: response.data.status,
-                    confirmButtonColor: swalColor,
-                });
+            const response = await axios.post('/save-change-password', form);
+            if (response.data?.status !== 'success') {
+                setError(response.data?.message || 'Unable to change your password.');
+                return;
             }
-        } catch (error) {
-            Swal.fire({
-                type: 'error',
-                title: 'An error occurred while changing the password',
-                icon: 'error',
-                confirmButtonColor: swalColor,
-            });
+
+            setCountdown(3);
+            setShowSuccess(true);
+        } catch (requestError) {
+            setError(requestError.response?.data?.message || 'Unable to change your password. Please try again.');
         } finally {
             setLoading(false);
         }
-       
     };
+
+    const criteria = [
+        ['length', 'At least 8 characters'],
+        ['uppercase', 'One uppercase letter'],
+        ['lowercase', 'One lowercase letter'],
+        ['number', 'One number'],
+        ['special', 'One special character'],
+    ];
 
     return (
         <>
             <Head title="Change Password" />
-                <ContentPanel>
-                    <Link
-                        href="dashboard"
-                        className="font-poppins text-red-500 font-semibold"
-                    >
-                        Go to Dashboard
-                    </Link>
-                    <form
-                        onSubmit={handleSubmit}
-                        className="flex justify-center my-8 font-poppins gap-x-16 gap-y-5 items-center flex-wrap m-5"
-                    >
-                        <img
-                            src="images/others/changepass-image.png"
-                            className="w-80"
-                        />
-                        <div className="max-w-md">
-                            <p className={`mb-5 ${theme === 'bg-skin-black' ? ' text-gray-300' : ''}`}>
-                                If you wish to change the account password,
-                                kindly fill in the current password, new
-                                password, and re-type new password.
-                            </p>
-
-                            <div className="flex flex-col mb-3 w-full">
-                                <InputComponentPassword   
-                                    name="current_password"
-                                    value={forms.current_password}
-                                    onChange={handleChange}
-                                    placeholder="Enter Current Password"
-                                    logo="images/login-page/password-icon.png"
-                                    // onBlur={verifyCurrentPassword} // Trigger verification when the input loses focus
-                                />
-                                {verificationError && (
-                                    <div className="text-red-600">
-                                        <i className="fa fa-warning"></i> {verificationError}
-                                    </div>
-                                )}
-                            </div>
-                            <div className="flex flex-col mb-3 w-full">
-                                <InputComponentPassword   
-                                    name="new_password"
-                                    value={forms.new_password}
-                                    onChange={handleChange}
-                                    placeholder="Enter New Password"
-                                    logo="images/login-page/password-icon.png"
-                                />
-                                <div className={`flex items-center justify-between w-full p-1 ${theme === 'bg-skin-black' ? theme+' text-gray-300' : 'bg-white'} border border-gray-300 rounded-lg mt-1`}>
-                                    {/* Step 1 */}
-                                    <div className="flex flex-col items-center w-1/3 p-2">
-                                        <div className={isExistPassword.includes('Weak') ? `w-full h-1 bg-red-600` : `w-full h-1 bg-gray-200`}></div>
-                                        <div className="flex items-center mt-2 space-x-2">
-                                            <span className={isExistPassword.includes('Weak')  ? `text-sm text-red-600` : `text-sm text-gray-400`}>Weak</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Step 2 */}
-                                    <div className="flex flex-col items-center w-1/3 p-2">
-                                        <div className={isExistPassword.includes('Strong') ? `w-full h-1 bg-orange-600` : `w-full h-1 bg-gray-200`}></div>
-                                        <div className="flex items-center mt-2 space-x-2">
-                                            <span className={isExistPassword.includes('Strong') ? `text-sm text-orange-600` : `text-sm text-gray-400`}>Strong</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Step 3 */}
-                                    <div className="flex flex-col items-center w-1/3 p-2">
-                                        <div className={isExistPassword.includes('Excellent') ? `w-full h-1 bg-green-600` : `w-full h-1 bg-gray-200`}></div>
-                                        <div className="flex items-center mt-2 space-x-2">
-                                        <span className={isExistPassword.includes('Excellent') ? `text-sm text-green-600` : `text-sm text-gray-400`}>Excellent</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="password-criteria mb-2">
-                                <p id="textUppercase" className={activeText.Uppercase ? 'text-green-600 text-sm' : 'text-sm text-gray-500'}>Password contains an uppercase letter</p>
-                                <p id="textLength" className={activeText.Length ? 'text-green-600 text-sm' : 'text-sm text-gray-500'}>Password is at least 8 characters long</p>
-                                <p id="textNumber" className={activeText.Number ? 'text-green-600 text-sm' : 'text-sm text-gray-500'}>Password contains a number</p>
-                                <p id="textChar" className={activeText.Character ? 'text-green-600 text-sm' : 'text-sm text-gray-500'}>Password contains a special character</p>
-                            </div>
-                            <div className="flex flex-col mb-3 w-full">
-                                <InputComponentPassword   
-                                    name="confirm_password"
-                                    value={forms.confirm_password}
-                                    onChange={handleChange}
-                                    placeholder="Confirm New Password"
-                                    logo="images/login-page/password-icon.png"
-                                />
-                            </div>
-                            {passwordMismatch && (
-                                <div id="pass_not_match" className="text-red-600">
-                                <i className='fa fa-warning'></i> Passwords do not match.
-                                </div>
-                            )}
-        
-                            <div className="flex justify-end">
-                                <TableButton 
-                                    disabled={isDisabled} 
-                                    fontColor={theme === 'bg-skin-white' ? 'text-white' : textColor} 
-                                    extendClass={theme === 'bg-skin-white' ? primayActiveColor : theme} 
-                                    type="submit"
-                                >
-                                   <i className='fa fa-key'></i> {loading ? "Changing..." : "Change password"}
-                                </TableButton>
+            <div className="mx-auto max-w-5xl py-2 sm:py-6">
+                <Link href="/dashboard" className="mb-4 inline-flex items-center gap-2 text-xs font-semibold text-[#787b86] hover:text-[#2962ff]"><ArrowLeft size={15} /> Back to workspace</Link>
+                <div className={`grid overflow-hidden rounded-xl border shadow-2xl lg:grid-cols-[0.85fr_1.15fr] ${isDark ? 'border-[#2a2e39] bg-[#131722] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-900'}`}>
+                    <aside className="relative overflow-hidden bg-[#2962ff] p-7 text-white sm:p-10">
+                        <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10" />
+                        <div className="relative">
+                            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15"><ShieldCheck size={22} /></span>
+                            <h1 className="mt-8 text-3xl font-bold">Protect your trading workspace.</h1>
+                            <p className="mt-4 text-sm leading-7 text-blue-100">A strong, unique password protects your replay history, journal notes, account settings, and saved analysis.</p>
+                            <div className="mt-8 space-y-3 text-xs text-blue-50">
+                                {['Use a password you do not use elsewhere', 'Never share your password with another trader', 'You will be signed out after a successful change'].map((item) => <div key={item} className="flex gap-2"><Check size={15} className="shrink-0" /> {item}</div>)}
                             </div>
                         </div>
+                    </aside>
+
+                    <form onSubmit={handleSubmit} className="p-6 sm:p-10">
+                        <div className="mb-7"><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-[#2962ff]"><KeyRound size={15} /> Account security</div><h2 className="mt-2 text-2xl font-bold">Change password</h2><p className="mt-2 text-xs text-[#787b86]">Enter your current password and choose a strong replacement.</p></div>
+                        <div className="space-y-4">
+                            <PasswordField label="Current password" name="current_password" value={form.current_password} onChange={handleChange} autoComplete="current-password" />
+                            <PasswordField label="New password" name="new_password" value={form.new_password} onChange={handleChange} autoComplete="new-password" />
+                            <div className={`grid gap-2 rounded-lg border p-3 sm:grid-cols-2 ${isDark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50'}`}>
+                                {criteria.map(([key, label]) => <div key={key} className={`flex items-center gap-2 text-[11px] ${checks[key] ? 'text-emerald-400' : 'text-[#787b86]'}`}><span className={`flex h-4 w-4 items-center justify-center rounded-full ${checks[key] ? 'bg-emerald-500/15' : 'bg-slate-500/10'}`}>{checks[key] ? <Check size={11} /> : <X size={10} />}</span>{label}</div>)}
+                            </div>
+                            <PasswordField label="Confirm new password" name="confirm_password" value={form.confirm_password} onChange={handleChange} autoComplete="new-password" error={form.confirm_password && !matches ? 'Passwords do not match.' : ''} />
+                        </div>
+                        {error && <div className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">{error}</div>}
+                        <button type="submit" disabled={!canSubmit} className="mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#2962ff] text-sm font-bold text-white transition hover:bg-[#1e53e5] disabled:cursor-not-allowed disabled:opacity-40"><KeyRound size={16} /> {loading ? 'Updating password…' : 'Update password'}</button>
                     </form>
-                </ContentPanel>
+                </div>
+            </div>
+
+            {showSuccess && (
+                <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+                    <div className={`w-full max-w-sm rounded-xl border p-7 text-center shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`} role="dialog" aria-modal="true" aria-labelledby="password-success-title">
+                        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400"><CheckCircle2 size={28} /></span>
+                        <h2 id="password-success-title" className="mt-5 text-xl font-bold">Password updated</h2>
+                        <p className="mt-2 text-sm text-[#787b86]">For your security, you will be signed out in</p>
+                        <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full border-4 border-[#2962ff]/25 text-2xl font-bold text-[#5b8cff]">{countdown}</div>
+                        <button type="button" onClick={() => router.post('/logout')} className="mt-5 text-xs font-semibold text-[#2962ff] hover:underline">Sign out now</button>
+                    </div>
+                </div>
+            )}
         </>
     );
-};
-
-export default ChangePassword;
+}
