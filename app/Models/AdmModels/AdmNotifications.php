@@ -10,9 +10,9 @@ class AdmNotifications extends Model
 {
     use HasFactory;
     protected $fillable = [
-        'user_id',
+        'adm_user_id',
         'type',
-        'message',
+        'content',
         'is_read',
     ];
 

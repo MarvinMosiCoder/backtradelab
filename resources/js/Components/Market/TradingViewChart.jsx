@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
+import { X } from 'lucide-react';
 import {
   createChart,
   CandlestickSeries,
   HistogramSeries,
+  LineSeries,
   CrosshairMode,
   LineStyle,
 } from 'lightweight-charts';
@@ -12,6 +14,7 @@ import { useTheme } from '../../Context/ThemeContext';
 import ChartHeader from './TradingViewChart/ChartHeader';
 import ChartStage from './TradingViewChart/ChartStage';
 import ReplayPanel from './TradingViewChart/ReplayPanel';
+import SubscriptionModal from './TradingViewChart/SubscriptionModal';
 import {
   CHART_HEIGHT,
   DRAWING_COLOR,
@@ -36,14 +39,54 @@ import {
 } from './TradingViewChart/utils';
 
 const DEFAULT_CANDLE_COLORS = {
-  up: '#26a69a',
-  down: '#ef5350',
+  up: '#089981',
+  down: '#f23645',
 };
 const DEFAULT_CANDLE_SIZE = 24;
 const MIN_CANDLE_SIZE = 3;
 const MAX_CANDLE_SIZE = 24;
 
 const MAX_DRAWING_UNDO_STEPS = 25;
+
+function LegacySubscriptionModal({ onClose }) {
+  const [form, setForm] = useState({ plan: 'monthly', payment_method: 'gcash_manual', payment_reference: '', amount: '' });
+  const [proof, setProof] = useState(null); const [status, setStatus] = useState(''); const [saving, setSaving] = useState(false);
+  const submit = async (event) => {
+    event.preventDefault(); setSaving(true); setStatus('');
+    const data = new FormData(); Object.entries(form).forEach(([key, value]) => data.append(key, value)); if (proof) data.append('payment_proof', proof);
+    try { await axios.post('/subscription-requests', data); setStatus('Payment request submitted for admin review.'); }
+    catch (error) { setStatus(error.response?.data?.message ?? 'Unable to submit request.'); }
+    finally { setSaving(false); }
+  };
+  return <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 p-4"><form onSubmit={submit} className="w-full max-w-md rounded-xl border border-[#2a2e39] bg-[#131722] p-5 text-white shadow-2xl"><div className="flex items-center justify-between"><h2 className="text-lg font-bold">Continue Replay</h2><button type="button" onClick={onClose} className="rounded p-2 hover:bg-white/10"><X size={18}/></button></div><p className="mt-2 text-sm text-[#b2b5be]">Your seven-day trial has ended. Pay using the admin-provided GCash details, then submit the reference and proof for approval.</p><div className="mt-4 grid gap-3"><select className="h-10 rounded border border-[#2a2e39] bg-[#0b0e14] px-3" value={form.plan} onChange={(e) => setForm({...form, plan:e.target.value})}><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option></select><input required className="h-10 rounded border border-[#2a2e39] bg-[#0b0e14] px-3" placeholder="GCash reference number" value={form.payment_reference} onChange={(e) => setForm({...form,payment_reference:e.target.value})}/><input className="h-10 rounded border border-[#2a2e39] bg-[#0b0e14] px-3" type="number" min="0" step="0.01" placeholder="Amount paid" value={form.amount} onChange={(e) => setForm({...form,amount:e.target.value})}/><input className="text-sm" type="file" accept="image/*" onChange={(e) => setProof(e.target.files?.[0] ?? null)}/></div>{status && <p className="mt-3 text-sm text-blue-300">{status}</p>}<button disabled={saving} className="mt-4 h-10 w-full rounded bg-[#2962ff] font-semibold hover:bg-blue-600 disabled:opacity-50">{saving?'Submitting…':'Submit for review'}</button></form></div>;
+}
+
+function movingAverage(candles, period) {
+  return candles.map((candle, index) => {
+    if (index + 1 < period) return null;
+    const window = candles.slice(index + 1 - period, index + 1);
+    return { time: candle.time, value: window.reduce((sum, item) => sum + Number(item.close), 0) / period };
+  }).filter(Boolean);
+}
+
+function exponentialMovingAverage(candles, period) {
+  if (!candles.length) return [];
+  const multiplier = 2 / (period + 1); let value = Number(candles[0].close);
+  return candles.map((candle) => { value = (Number(candle.close) * multiplier) + (value * (1 - multiplier)); return { time: candle.time, value }; });
+}
+
+function relativeStrengthIndex(candles, period) {
+  let gains = 0; let losses = 0;
+  return candles.map((candle, index) => {
+    if (!index) return null;
+    const delta = Number(candle.close) - Number(candles[index - 1].close);
+    const gain = Math.max(delta, 0); const loss = Math.max(-delta, 0);
+    if (index <= period) { gains += gain; losses += loss; if (index < period) return null; }
+    else { gains = ((gains * (period - 1)) + gain) / period; losses = ((losses * (period - 1)) + loss) / period; }
+    const rs = losses === 0 ? 100 : gains / losses;
+    return { time: candle.time, value: 100 - (100 / (1 + rs)) };
+  }).filter(Boolean);
+}
 
 const CHART_THEMES = {
   dark: {
@@ -398,6 +441,9 @@ export default function TradingViewReplayChart({
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
   const volumeSeriesRef = useRef(null);
+  const smaSeriesRef = useRef(null);
+  const emaSeriesRef = useRef(null);
+  const rsiSeriesRef = useRef(null);
   const visibleCandlesRef = useRef([]);
   const resizeObserverRef = useRef(null);
   const replayTimerRef = useRef(null);
@@ -466,6 +512,10 @@ export default function TradingViewReplayChart({
       ? Math.min(Math.max(stored, MIN_CANDLE_SIZE), MAX_CANDLE_SIZE)
       : DEFAULT_CANDLE_SIZE;
   });
+  const [indicators, setIndicators] = useState(() => {
+    try { return { volume: true, volumeSize: 20, sma: false, smaPeriod: 20, ema: false, emaPeriod: 20, rsi: false, rsiPeriod: 14, ...JSON.parse(localStorage.getItem('market-chart-indicators') || '{}') }; }
+    catch { return { volume: true, volumeSize: 20, sma: false, smaPeriod: 20, ema: false, emaPeriod: 20, rsi: false, rsiPeriod: 14 }; }
+  });
   const [symbols, setSymbols] = useState([]);
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolError, setSymbolError] = useState('');
@@ -491,6 +541,18 @@ export default function TradingViewReplayChart({
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const tourKey = `backtradelab-chart-tour:${auth?.user?.id ?? 'guest'}`;
+  const [tourStep, setTourStep] = useState(() => {
+    try { return localStorage.getItem(tourKey) ? -1 : 0; } catch { return 0; }
+  });
+  const tourSteps = [
+    ['Choose your market', 'Select a symbol, Spot or Futures, and the timeframe from the chart header.'],
+    ['Analyze the chart', 'Use Appearance for Volume, SMA, EMA, RSI, candle colors, size, and price alerts.'],
+    ['Replay history', 'Start Replay and click the historical candle where your practice session should begin.'],
+    ['Execute and review', 'Use Wallet for paper orders, drawing tools for analysis, and Trade journal for review.'],
+  ];
+  const finishTour = () => { try { localStorage.setItem(tourKey, 'completed'); } catch {} setTourStep(-1); };
 
   const [tool, setTool] = useState(null);
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
@@ -1874,6 +1936,10 @@ export default function TradingViewReplayChart({
       lastValueVisible: false,
       priceLineVisible: false,
     });
+    const smaSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
+    const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
+    const rsiSeries = chart.addSeries(LineSeries, { priceScaleId: 'rsi', color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false });
+    rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.72, bottom: 0.02 }, autoScale: false });
 
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
@@ -1906,6 +1972,9 @@ export default function TradingViewReplayChart({
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volumeSeries;
+    smaSeriesRef.current = smaSeries;
+    emaSeriesRef.current = emaSeries;
+    rsiSeriesRef.current = rsiSeries;
 
     resizeObserverRef.current = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
@@ -2048,6 +2117,9 @@ export default function TradingViewReplayChart({
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      smaSeriesRef.current = null;
+      emaSeriesRef.current = null;
+      rsiSeriesRef.current = null;
     };
   }, [scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
 
@@ -2084,6 +2156,19 @@ export default function TradingViewReplayChart({
     });
     scheduleOverlayRender();
   }, [chartTheme, scheduleOverlayRender]);
+
+  useEffect(() => {
+    try { localStorage.setItem('market-chart-indicators', JSON.stringify(indicators)); } catch {}
+    const volume = volumeSeriesRef.current; const sma = smaSeriesRef.current; const ema = emaSeriesRef.current; const rsi = rsiSeriesRef.current;
+    volume?.applyOptions({ visible: indicators.volume });
+    volume?.priceScale().applyOptions({ scaleMargins: { top: 1 - (Math.min(Math.max(Number(indicators.volumeSize), 10), 45) / 100), bottom: 0 } });
+    sma?.applyOptions({ visible: indicators.sma });
+    ema?.applyOptions({ visible: indicators.ema });
+    rsi?.applyOptions({ visible: indicators.rsi });
+    sma?.setData(indicators.sma ? movingAverage(visibleCandles, Number(indicators.smaPeriod) || 20) : []);
+    ema?.setData(indicators.ema ? exponentialMovingAverage(visibleCandles, Number(indicators.emaPeriod) || 20) : []);
+    rsi?.setData(indicators.rsi ? relativeStrengthIndex(visibleCandles, Number(indicators.rsiPeriod) || 14) : []);
+  }, [indicators, visibleCandles]);
 
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
@@ -2463,6 +2548,7 @@ export default function TradingViewReplayChart({
       }
 
       if (event.key === 'Escape') {
+        setIsFullscreen(false);
         tempDrawingRef.current = null;
         setTempDrawing(null);
         setTool(null);
@@ -3270,10 +3356,16 @@ export default function TradingViewReplayChart({
     setIsReplayPricePickActive(false);
   };
 
-  const toggleReplayMode = () => {
+  const toggleReplayMode = async () => {
     setIsPlaying(false);
 
     if (!replayMode) {
+      try {
+        const response = await axios.get('/replay-access');
+        if (!response.data?.allowed) { setShowSubscriptionModal(true); return; }
+      } catch (error) {
+        if (error.response?.status === 402) { setShowSubscriptionModal(true); return; }
+      }
       setTool(null);
       setTempDrawing(null);
       setTextInput(null);
@@ -3291,6 +3383,26 @@ export default function TradingViewReplayChart({
     setTextInput(null);
     setIsReplayPricePickActive(false);
   };
+
+  const handleCreatePriceAlert = useCallback(async () => {
+    const entered = window.prompt(`Alert price for ${symbol}`, currentPrice ? String(currentPrice) : '');
+    const targetPrice = Number(entered); if (!Number.isFinite(targetPrice) || targetPrice <= 0) return;
+    await axios.post('/market-price-alerts', { exchange, category: marketCategory, symbol, target_price: targetPrice, direction: targetPrice >= Number(currentPrice) ? 'above' : 'below', last_price: currentPrice });
+  }, [currentPrice, exchange, marketCategory, symbol]);
+
+  useEffect(() => {
+    if (!currentPrice || replayMode) return;
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await axios.post('/market-price-alerts/check', { exchange, category: marketCategory, symbol, price: currentPrice });
+        if (response.data?.triggered?.length && 'Notification' in window) {
+          if (Notification.permission === 'default') await Notification.requestPermission();
+          if (Notification.permission === 'granted') new Notification('BacktradeLab price alert', { body: `${symbol} is now ${formatOverlayPrice(currentPrice)}` });
+        }
+      } catch {}
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [currentPrice, exchange, marketCategory, replayMode, symbol]);
 
   const stepBackward = () => {
     setIsPlaying(false);
@@ -4188,6 +4300,7 @@ export default function TradingViewReplayChart({
     selectedReplayPrice,
     candleColors,
     candleSize,
+    indicators,
     onSymbolChange: handleSymbolChange,
     onCategoryChange: setMarketCategory,
     onAddSymbol: handleAddSymbol,
@@ -4196,15 +4309,20 @@ export default function TradingViewReplayChart({
     onToggleReplayMode: toggleReplayMode,
     onCandleColorChange: setCandleColors,
     onCandleSizeChange: setCandleSize,
+    onIndicatorsChange: setIndicators,
+    onCreatePriceAlert: handleCreatePriceAlert,
     chartTheme,
   };
 
   return (
+    <>
+    {showSubscriptionModal && <SubscriptionModal onClose={() => setShowSubscriptionModal(false)} />}
+    {tourStep >= 0 && <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/55 p-4 sm:items-center"><div className="w-full max-w-md rounded-xl border border-[#2a2e39] bg-[#131722] p-5 text-white shadow-2xl"><div className="text-xs font-semibold uppercase tracking-wider text-[#5b8cff]">Getting started · {tourStep + 1}/{tourSteps.length}</div><h2 className="mt-2 text-lg font-bold">{tourSteps[tourStep][0]}</h2><p className="mt-2 text-sm leading-6 text-[#b2b5be]">{tourSteps[tourStep][1]}</p><div className="mt-5 flex justify-between"><button onClick={finishTour} className="text-sm text-[#787b86] hover:text-white">Skip</button><button onClick={() => tourStep === tourSteps.length - 1 ? finishTour() : setTourStep(tourStep + 1)} className="rounded bg-[#2962ff] px-4 py-2 text-sm font-semibold">{tourStep === tourSteps.length - 1 ? 'Open chart' : 'Next'}</button></div></div></div>}
     <div
       ref={fullscreenRef}
       className={
         isFullscreen
-          ? 'fixed inset-0 z-[9999] flex h-[100dvh] flex-col overflow-hidden bg-black-screen-color p-2'
+          ? 'fixed inset-0 z-[9999] flex h-[100dvh] flex-col overflow-hidden bg-black-screen-color p-[max(0.5rem,env(safe-area-inset-top))]'
           : 'space-y-4'
       }
     >
@@ -4216,6 +4334,7 @@ export default function TradingViewReplayChart({
             wrapperRef={wrapperRef}
             containerRef={containerRef}
             isFullscreen={isFullscreen}
+            timeframe={timeframe}
             replayMode={replayMode}
             isSpacePressed={isSpacePressed}
             isReplayPricePickActive={isReplayPricePickActive}
@@ -4342,5 +4461,6 @@ export default function TradingViewReplayChart({
         </div>
       </div>
     </div>
+    </>
   );
 }

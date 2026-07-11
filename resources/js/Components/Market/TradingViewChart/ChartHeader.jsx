@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Play, Plus, Search, Trash2, X } from 'lucide-react';
+import { Play, Plus, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES, TIMEFRAME_SECONDS } from './constants';
 import { formatPrice } from './utils';
 
@@ -19,6 +19,7 @@ export default function ChartHeader({
   selectedReplayPrice,
   candleColors,
   candleSize,
+  indicators,
   onSymbolChange,
   onCategoryChange,
   onAddSymbol,
@@ -27,6 +28,8 @@ export default function ChartHeader({
   onToggleReplayMode,
   onCandleColorChange,
   onCandleSizeChange,
+  onIndicatorsChange,
+  onCreatePriceAlert,
   chartTheme,
   compact = false,
   className = '',
@@ -199,8 +202,8 @@ export default function ChartHeader({
   }
 
   return (
-    <div className={`relative z-40 rounded-lg border p-2 shadow-lg ${className}`} style={panelStyle}>
-      <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-12">
+    <div className={`relative z-40 rounded-lg border p-1.5 shadow-lg sm:p-2 ${className}`} style={panelStyle}>
+      <div className="grid grid-cols-2 items-end gap-1.5 sm:grid-cols-12 sm:gap-2">
         <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-6 xl:col-span-5">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -346,9 +349,14 @@ export default function ChartHeader({
           </button>
         </div>
 
-        <div className="col-span-2 min-w-0 sm:col-span-8 lg:col-span-9">
-          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Candles</label>
-          <div className={`${fieldClass} flex w-full items-center gap-2 px-2`}>
+        <details className="group relative col-span-1 min-w-0 sm:col-span-4 lg:col-span-2">
+          <summary className={`${fieldClass} flex cursor-pointer list-none items-center justify-center gap-2 font-semibold [&::-webkit-details-marker]:hidden`}>
+            <SlidersHorizontal size={14} />
+            <span>Appearance</span>
+          </summary>
+          <div className="absolute bottom-full left-0 z-[90] mb-2 w-72 rounded-md border p-3 shadow-2xl" style={panelStyle}>
+            <div className={`mb-2 text-xs font-semibold ${labelClass}`}>Candle appearance</div>
+            <div className={`${fieldClass} flex w-full items-center gap-2 px-2`}>
             <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bull candle color">
               G
               <input
@@ -386,10 +394,22 @@ export default function ChartHeader({
               />
               <span className="w-5 text-right tabular-nums">{candleSize}</span>
             </label>
+            </div>
+            <div className="mt-3 space-y-2 text-xs">
+              <button type="button" onClick={onCreatePriceAlert} className="h-9 w-full rounded bg-[#2962ff] font-semibold text-white hover:bg-blue-600">Set price alert</button>
+              <label className="flex items-center justify-between gap-2"><span>Volume</span><input type="checkbox" checked={indicators.volume} onChange={(e) => onIndicatorsChange((current) => ({ ...current, volume: e.target.checked }))} /></label>
+              {indicators.volume && <label className="flex items-center gap-2"><span className="w-20">Volume size</span><input className="min-w-0 flex-1" type="range" min="10" max="45" value={indicators.volumeSize} onChange={(e) => onIndicatorsChange((current) => ({ ...current, volumeSize: Number(e.target.value) }))} /></label>}
+              {[['sma', 'SMA', 'smaPeriod'], ['ema', 'EMA', 'emaPeriod'], ['rsi', 'RSI', 'rsiPeriod']].map(([key, label, periodKey]) => (
+                <div key={key} className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-2"><input type="checkbox" checked={indicators[key]} onChange={(e) => onIndicatorsChange((current) => ({ ...current, [key]: e.target.checked }))} />{label}</label>
+                  <input className={`${fieldClass} w-16`} type="number" min="2" max="200" value={indicators[periodKey]} onChange={(e) => onIndicatorsChange((current) => ({ ...current, [periodKey]: Math.min(200, Math.max(2, Number(e.target.value) || 2)) }))} aria-label={`${label} period`} />
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        </details>
 
-        <div className="col-span-2 flex min-w-0 items-end justify-start rounded-md border px-3 py-1 sm:col-span-4 sm:justify-end lg:col-span-3"
+        <div className="col-span-1 flex min-w-0 items-end justify-end rounded-md border px-2 py-1 sm:col-span-8 lg:col-span-10"
           style={{ borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb') }}
         >
           <div className={`min-h-9 min-w-0 max-w-full ${isDark ? 'text-white' : 'text-gray-800'} lg:text-right`}>

@@ -114,12 +114,12 @@ const LoginPage = () => {
                         <form onSubmit={handleSubmit}>
                             <label className="mb-4 block">
                                 <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</span>
-                                <div className={`flex h-11 items-center rounded-md border focus-within:border-gray-500 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                                <div className={`flex h-11 items-center rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
                                     <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
                                         <Mail size={17} />
                                     </div>
                                     <input
-                                        className={`min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-slate-500 ${isDark ? 'text-white' : 'text-slate-950'}`}
+                                        className={`min-w-0 flex-1 border-0 bg-transparent px-3 text-sm outline-none ring-0 placeholder:text-slate-500 focus:border-0 focus:outline-none focus:ring-0 ${isDark ? 'text-white' : 'text-slate-950'}`}
                                         type="email"
                                         value={email}
                                         placeholder="Enter email"
@@ -133,12 +133,12 @@ const LoginPage = () => {
 
                             <label className="mb-2 block">
                                 <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</span>
-                                <div className={`flex h-11 items-center rounded-md border focus-within:border-gray-500 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                                <div className={`flex h-11 items-center rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
                                     <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
                                         <Lock size={17} />
                                     </div>
                                     <input
-                                        className={`min-w-0 flex-1 bg-transparent px-3 text-sm outline-none placeholder:text-slate-500 ${isDark ? 'text-white' : 'text-slate-950'}`}
+                                        className={`min-w-0 flex-1 border-0 bg-transparent px-3 text-sm outline-none ring-0 placeholder:text-slate-500 focus:border-0 focus:outline-none focus:ring-0 ${isDark ? 'text-white' : 'text-slate-950'}`}
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         placeholder="Enter password"

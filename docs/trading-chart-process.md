@@ -925,6 +925,89 @@ Current known build warnings are unrelated to the chart changes:
 
 ## Summary
 
+## Indicators, alerts, onboarding, and replay access
+
+### Indicators and volume
+
+The chart Appearance menu manages candle styling plus removable Volume, configurable volume height, SMA, EMA, and RSI indicators. SMA, EMA, and RSI periods are editable. Indicator visibility, periods, and volume height are stored in the browser under `market-chart-indicators`.
+
+### Price alerts
+
+Authenticated users can create persistent price alerts through `/market-price-alerts`. Active alerts checked against live chart prices transition to `triggered`, create an `adm_notifications` record, and can request a browser notification while the chart is open. Production deployments that must trigger alerts while users are offline still require a scheduled exchange-price polling worker.
+
+### Onboarding and help
+
+The permanent `/help` page documents the chart-to-journal workflow and is linked from the trader sidebar. Each user also receives a dismissible first-chart tour stored under the user-scoped `backtradelab-chart-tour:{userId}` browser key.
+
+### Replay trial and access enforcement
+
+New accounts receive a seven-day replay trial through `replay_trial_started_at` and `replay_trial_ends_at` on `adm_users`. Paid access is stored separately in `replay_access_ends_at`. Existing accounts without trial timestamps receive their trial timestamps when replay access is first evaluated.
+
+Replay progress writes and paper-backtest actions are protected server-side by the `replay.access` middleware. Superadmins bypass this restriction. An expired user receives HTTP `402` with the `replay_subscription_required` code and the chart opens the subscription interface instead of starting replay.
+
+Users can inspect their current access at `/subscription`. The page displays:
+
+- Free trial, active membership, or expired status.
+- Trial and paid-access expiration dates.
+- Remaining access days.
+- Manual payment request history.
+- Pending, approved, or rejected review status.
+- Reference, recorded amount, submission/review timestamps, proof link, and admin notes.
+
+### Database-controlled subscription plans
+
+Plan definitions are stored in `subscription_plans` rather than hard-coded in React.
+
+| Field | Purpose |
+|------|---------|
+| `code` | Stable plan identifier such as `monthly`, `quarterly`, or `yearly` |
+| `name` | User-facing plan name |
+| `duration_days` | Replay-access days granted after approval |
+| `price` | Required plan amount; nullable until configured |
+| `currency` | Display currency, currently `PHP` |
+| `description` | Short plan-card description |
+| `is_featured` | Highlights the plan as popular |
+| `is_active` | Controls whether traders can select the plan |
+| `sort_order` | Controls plan-card ordering |
+
+The authenticated `GET /subscription-plans` endpoint returns active plans to traders and all plans to superadmins. Plans without a configured price display `Price pending` and cannot be selected. The backend loads the selected active plan and assigns its database price to the payment request; it does not trust an amount submitted by the browser.
+
+Superadmins manage prices, durations, descriptions, featured state, and availability at `/admin/subscription-plans`. The three initial records are created without prices, so an administrator must configure them before accepting subscriptions.
+
+### Manual payment and approval workflow
+
+The modern subscription modal first displays Monthly, Quarterly, and Yearly plan cards, database prices, durations, features, and featured-plan styling. The next step collects the GCash reference and optional image proof.
+
+Manual requests are stored in `subscription_requests` with the selected plan code, server-assigned price, payment method, reference, proof path, provider metadata, review state, reviewer, timestamps, and notes. Superadmins review requests at `/admin/subscriptions`.
+
+When a request is approved:
+
+1. The backend reloads the plan duration from `subscription_plans`.
+2. `adm_users.replay_access_ends_at` is extended from the approval time.
+3. The request records its reviewer and review timestamp.
+4. The user receives an in-system subscription notification.
+
+Rejections also notify the user and can include an admin note. Provider-neutral fields (`provider` and `provider_payment_id`) allow a future payment gateway webhook to reuse the same entitlement process.
+
+### Subscription files and routes
+
+| File or route | Purpose |
+|------|---------|
+| `resources/js/Components/Market/TradingViewChart/SubscriptionModal.jsx` | Responsive plan comparison and manual-payment submission |
+| `resources/js/Pages/Subscriptions/UserIndex.jsx` | User access summary and payment history |
+| `resources/js/Pages/Subscriptions/AdminIndex.jsx` | Superadmin request review |
+| `resources/js/Pages/Subscriptions/AdminPlans.jsx` | Superadmin database pricing controls |
+| `app/Http/Controllers/ReplayAccessController.php` | Trial status, plans, requests, pricing updates, and approvals |
+| `app/Http/Middleware/EnsureReplayAccess.php` | Server-side replay authorization |
+| `app/Models/SubscriptionPlan.php` | Database plan model |
+| `app/Models/SubscriptionRequest.php` | Manual/provider payment request model |
+| `GET /subscription` | User subscription page |
+| `GET /subscription-plans` | Available plan data |
+| `POST /subscription-requests` | Submit a manual payment request |
+| `GET /admin/subscriptions` | Admin payment review page |
+| `GET /admin/subscription-plans` | Admin plan-pricing page |
+| `PUT /admin/subscription-plans` | Save plan configuration |
+
 The chart now includes:
 
 1. Public `/` front page with navbar search, product/community/market/more links, hero content, login dropdown, browser-local dark/white theme preference, and black-theme-aligned dark controls.

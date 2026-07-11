@@ -32,6 +32,9 @@ class AdmUser extends Authenticatable
         'social_provider',
         'social_provider_id',
         'password_login_enabled',
+        'replay_trial_started_at',
+        'replay_trial_ends_at',
+        'replay_access_ends_at',
         'created_at',
         'updated_at'
     ];
@@ -63,6 +66,9 @@ class AdmUser extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
         'password_login_enabled' => 'boolean',
+        'replay_trial_started_at' => 'datetime',
+        'replay_trial_ends_at' => 'datetime',
+        'replay_access_ends_at' => 'datetime',
     ];
 
     public function scopeGetData($query){
@@ -82,6 +88,8 @@ class AdmUser extends Authenticatable
             $model->name = request()->input('name');
             $model->id_adm_privileges = request()->input('privilege_id');
             $model->password = 'qwerty';
+            $model->replay_trial_started_at = now();
+            $model->replay_trial_ends_at = now()->addDays(7);
         });
     }
 

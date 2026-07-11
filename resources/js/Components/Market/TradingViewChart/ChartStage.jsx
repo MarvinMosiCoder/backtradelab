@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Maximize2, Minimize2, Save, X } from 'lucide-react';
 import getAppLogo from '../../SystemSettings/ApplicationLogo';
-import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL } from './constants';
+import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL, TIMEFRAME_SECONDS } from './constants';
 import {
   colorToRgba,
   isHorizontalRayDrawing,
@@ -24,6 +24,32 @@ function formatPriceLabel(value) {
     minimumFractionDigits: number >= 100 ? 2 : 4,
     maximumFractionDigits: number >= 100 ? 2 : 6,
   });
+}
+
+function ChartCandleCountdown({ timeframe }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const candleSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
+  const remaining = Math.max(0, candleSeconds - (Math.floor(now / 1000) % candleSeconds));
+  const label = [
+    Math.floor(remaining / 3600),
+    Math.floor((remaining % 3600) / 60),
+    remaining % 60,
+  ].map((value) => String(value).padStart(2, '0')).join(':');
+
+  return (
+    <div
+      className="pointer-events-none absolute bottom-7 right-1 z-10 rounded border border-[#2a2e39] bg-[#131722]/95 px-1.5 py-1 text-[10px] font-semibold tabular-nums text-[#b2b5be] shadow"
+      title={`${timeframe} candle closes in ${label}`}
+    >
+      {label}
+    </div>
+  );
 }
 
 function formatDuration(seconds) {
@@ -1126,6 +1152,7 @@ export default function ChartStage({
   wrapperRef,
   containerRef,
   isFullscreen,
+  timeframe,
   replayMode,
   isSpacePressed,
   isReplayPricePickActive,
@@ -1182,7 +1209,7 @@ export default function ChartStage({
       }`}
       style={{
         backgroundColor: chartTheme?.background ?? '#151617',
-        height: isFullscreen ? '100%' : `${CHART_HEIGHT}px`,
+        height: isFullscreen ? '100%' : `min(${CHART_HEIGHT}px, max(420px, calc(100dvh - 220px)))`,
         cursor: isChartDragging
           ? 'grabbing'
           : isSpacePressed
@@ -1218,12 +1245,17 @@ export default function ChartStage({
       <button
         type="button"
         onClick={onToggleFullscreen}
-        className="absolute right-2 top-2 z-20 flex h-8 w-8 items-center justify-center rounded border border-gray-700 bg-black-table-color/95 text-white shadow-lg hover:bg-skin-black-light"
+        className="group absolute right-2 top-2 z-40 flex h-10 w-10 items-center justify-center rounded-md border border-gray-600 bg-[#131722]/95 text-white shadow-xl transition hover:border-blue-400 hover:bg-[#2962ff] focus:outline-none focus:ring-2 focus:ring-blue-400 sm:h-8 sm:w-8"
         title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
         aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
       >
         {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        <span className="pointer-events-none absolute right-0 top-full mt-2 hidden whitespace-nowrap rounded bg-black px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover:block group-focus:block">
+          {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+        </span>
       </button>
+
+      {!replayMode && <ChartCandleCountdown timeframe={timeframe} />}
 
       <DrawingOverlay
         renderedDrawings={renderedDrawings}

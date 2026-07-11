@@ -54,6 +54,13 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 - Load-test candle requests, replay progress, order placement, and reports.
 - Verify database restore procedures, not only backup creation.
 - Monitor HTTP errors, slow database queries, failed queue jobs, exchange latency, disk usage, and Redis availability.
+- Configure the manual payment instructions shown to users, restrict access to uploaded payment proofs, and audit every subscription approval.
+- Configure a non-null PHP price for every active subscription plan before launch; unpriced plans are intentionally unavailable to users.
+- Confirm plan duration and price changes follow the intended policy for pending requests. Request amounts are captured at submission, while access duration is loaded from the plan at approval time.
+- Decide whether approvals should extend from the current paid expiry instead of the current approval time before allowing early renewals.
+- Store payment proofs on private object storage with authorized download routes in production. The current local implementation uses the public disk for proof links.
+- Run price-alert evaluation from a supervised scheduler/queue for notifications when users do not have a chart open. The chart performs immediate checks while it is open.
+- When adding a payment gateway, verify signed webhooks and map successful provider payments onto the existing replay entitlement rather than trusting browser callbacks.
 
 ## Current performance protections
 

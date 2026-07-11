@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, usePage } from '@inertiajs/react';
-import { BarChart3, BookOpen, CandlestickChart, ChevronLeft, KeyRound, LayoutDashboard, MessageSquarePlus, UserRound } from 'lucide-react';
+import { BarChart3, BookOpen, CandlestickChart, ChevronLeft, CircleHelp, CreditCard, KeyRound, LayoutDashboard, MessageSquarePlus, UserRound } from 'lucide-react';
 import { useSidebar } from '../../Context/SidebarContext';
 import { useTheme } from '../../Context/ThemeContext';
 
@@ -8,9 +8,11 @@ const items = [
     { label: 'Workspace', href: '/dashboard', icon: LayoutDashboard },
     { label: 'Market chart', href: '/market', icon: CandlestickChart },
     { label: 'Trade journal', href: '/trade-report', icon: BookOpen },
+    { label: 'Subscription', href: '/subscription', icon: CreditCard },
     { label: 'Feedback', href: '/feedback', icon: MessageSquarePlus },
     { label: 'Profile', href: '/profile', icon: UserRound },
     { label: 'Change password', href: '/change_password', icon: KeyRound },
+    { label: 'How to use', href: '/help', icon: CircleHelp },
 ];
 
 export default function TraderSidebar() {
