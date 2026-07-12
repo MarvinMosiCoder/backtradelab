@@ -542,17 +542,17 @@ export default function TradingViewReplayChart({
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-  const tourKey = `backtradelab-chart-tour:${auth?.user?.id ?? 'guest'}`;
-  const [tourStep, setTourStep] = useState(() => {
-    try { return localStorage.getItem(tourKey) ? -1 : 0; } catch { return 0; }
-  });
+  const [replayAccessAllowed, setReplayAccessAllowed] = useState(null);
+  const replayAccessAllowedRef = useRef(false);
+  const [tourStep, setTourStep] = useState(auth?.user?.chart_tour_completed_at ? -1 : 0);
   const tourSteps = [
+    ['Your 7-day backtesting trial is active', 'You have full replay and paper-backtesting access for seven days. Your trial countdown and renewal options are always available under Subscription.'],
     ['Choose your market', 'Select a symbol, Spot or Futures, and the timeframe from the chart header.'],
     ['Analyze the chart', 'Use Appearance for Volume, SMA, EMA, RSI, candle colors, size, and price alerts.'],
     ['Replay history', 'Start Replay and click the historical candle where your practice session should begin.'],
     ['Execute and review', 'Use Wallet for paper orders, drawing tools for analysis, and Trade journal for review.'],
   ];
-  const finishTour = () => { try { localStorage.setItem(tourKey, 'completed'); } catch {} setTourStep(-1); };
+  const finishTour = () => { setTourStep(-1); axios.post('/chart-tour/complete').catch(() => setTourStep(0)); };
 
   const [tool, setTool] = useState(null);
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
@@ -662,6 +662,49 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     selectedReplayPriceRef.current = selectedReplayPrice;
   }, [selectedReplayPrice]);
+
+  useEffect(() => {
+    replayAccessAllowedRef.current = replayAccessAllowed === true;
+  }, [replayAccessAllowed]);
+
+  const requireReplayAccess = useCallback(async () => {
+    try {
+      const response = await axios.get('/replay-access');
+      const allowed = response.data?.allowed === true;
+      setReplayAccessAllowed(allowed);
+      replayAccessAllowedRef.current = allowed;
+      if (!allowed) setShowSubscriptionModal(true);
+      return allowed;
+    } catch (error) {
+      setReplayAccessAllowed(false);
+      replayAccessAllowedRef.current = false;
+      setShowSubscriptionModal(true);
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    requireReplayAccess().then((allowed) => {
+      if (allowed) return;
+      setReplayMode(false);
+      setIsPlaying(false);
+      setIsReplayPricePickActive(false);
+      setSelectedReplayPrice(null);
+    });
+  }, [requireReplayAccess]);
+
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      if (!replayModeRef.current && !isReplayPricePickActiveRef.current) return;
+      const allowed = await requireReplayAccess();
+      if (allowed) return;
+      setReplayMode(false);
+      setIsPlaying(false);
+      setIsReplayPricePickActive(false);
+      setSelectedReplayPrice(null);
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, [requireReplayAccess]);
 
   const replayProgressKey = `${exchange}:${marketCategory}:${symbol}`;
   const replayProgressStorageKey = `market-replay-progress:${auth?.user?.id ?? 'guest'}:${replayProgressKey}`;
@@ -3066,6 +3109,8 @@ export default function TradingViewReplayChart({
       const controller = new AbortController();
       candleFetchAbortRef.current = controller;
       const shouldRestoreSavedReplay =
+        replayAccessAllowed === true
+        &&
         !replayMode
         && restoredReplayProgressKeyRef.current !== replayProgressKey
         && Number.isFinite(Number(savedReplayProgress?.replay_time));
@@ -3344,7 +3389,7 @@ export default function TradingViewReplayChart({
     return () => {
       candleFetchAbortRef.current?.abort();
     };
-  }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings, replayProgressKey, replayProgressLoadedKey, savedReplayProgress]);
+  }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings, replayAccessAllowed, replayProgressKey, replayProgressLoadedKey, savedReplayProgress]);
 
   const startReplayMode = (startIndex = Math.max(0, Math.floor(allCandles.length * 0.3))) => {
     const nextIndex = Math.min(Math.max(0, startIndex), Math.max(0, allCandles.length - 1));
@@ -3360,12 +3405,7 @@ export default function TradingViewReplayChart({
     setIsPlaying(false);
 
     if (!replayMode) {
-      try {
-        const response = await axios.get('/replay-access');
-        if (!response.data?.allowed) { setShowSubscriptionModal(true); return; }
-      } catch (error) {
-        if (error.response?.status === 402) { setShowSubscriptionModal(true); return; }
-      }
+      if (!await requireReplayAccess()) return;
       setTool(null);
       setTempDrawing(null);
       setTextInput(null);
@@ -3404,9 +3444,10 @@ export default function TradingViewReplayChart({
     return () => window.clearTimeout(timer);
   }, [currentPrice, exchange, marketCategory, replayMode, symbol]);
 
-  const stepBackward = () => {
+  const stepBackward = async () => {
     setIsPlaying(false);
     setFollowReplay(false);
+    if (!await requireReplayAccess()) return;
 
     if (!replayMode) {
       const startIndex = Math.max(0, allCandles.length - 2);
@@ -3421,9 +3462,10 @@ export default function TradingViewReplayChart({
     });
   };
 
-  const stepForward = () => {
+  const stepForward = async () => {
     setIsPlaying(false);
     setFollowReplay(false);
+    if (!await requireReplayAccess()) return;
 
     if (!replayMode) {
       startReplayMode();
@@ -3437,7 +3479,8 @@ export default function TradingViewReplayChart({
     });
   };
 
-  const togglePlay = () => {
+  const togglePlay = async () => {
+    if (!await requireReplayAccess()) return;
     if (!replayMode) {
       startReplayMode();
       setIsPlaying(true);
@@ -4432,7 +4475,10 @@ export default function TradingViewReplayChart({
             onStepForward={stepForward}
             onResetReplay={resetReplay}
             onFollowReplay={handleFollowReplay}
-            onToggleReplayPricePick={() => setIsReplayPricePickActive((prev) => !prev)}
+            onToggleReplayPricePick={async () => {
+              if (!await requireReplayAccess()) return;
+              setIsReplayPricePickActive((prev) => !prev);
+            }}
             onPlaybackSpeedChange={setPlaybackSpeed}
             onToolChange={handleToolChange}
             onDrawingColorChange={handleDrawingColorChange}

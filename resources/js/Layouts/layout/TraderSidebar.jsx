@@ -22,7 +22,7 @@ export default function TraderSidebar() {
     const isDark = theme === 'bg-skin-black';
 
     return (
-        <aside className={`${isSidebarOpen ? 'w-56' : 'w-0 lg:w-16'} fixed bottom-0 left-0 top-14 z-40 overflow-hidden border-r transition-[width] duration-200 lg:relative lg:top-0 ${isDark ? 'border-[#2a2e39] bg-[#131722] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-700'}`}>
+        <aside className={`${isSidebarOpen ? 'w-56' : 'w-0 lg:w-16'} fixed bottom-0 left-0 top-14 z-[100] shrink-0 overflow-hidden border-r transition-[width] duration-200 lg:relative lg:top-0 ${isDark ? 'border-[#2a2e39] bg-[#131722] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-700'}`}>
             <div className="flex h-full w-56 flex-col p-2 lg:w-auto">
                 <div className={`mb-2 flex items-center gap-2 rounded-md border px-3 py-2 ${isDark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50'}`}>
                     <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.7)]" />

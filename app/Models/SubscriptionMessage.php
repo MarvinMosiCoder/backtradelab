@@ -1,12 +1,13 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class SubscriptionRequest extends Model
+class SubscriptionMessage extends Model
 {
     protected $guarded = [];
-    protected $casts = ['reviewed_at' => 'datetime'];
+
     public function user() { return $this->belongsTo(AdmUser::class, 'adm_user_id'); }
-    public function messages() { return $this->hasMany(SubscriptionMessage::class); }
+    public function subscriptionRequest() { return $this->belongsTo(SubscriptionRequest::class); }
 }

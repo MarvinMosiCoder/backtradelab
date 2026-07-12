@@ -166,7 +166,7 @@ export default function ChartHeader({
         <select
           value={timeframe}
           onChange={(e) => onTimeframeChange(e.target.value)}
-          className={`${compactFieldClass} w-20`}
+          className={`${compactFieldClass} w-28 min-w-28`}
           title="Timeframe"
         >
           {TIMEFRAMES.map((tf) => (
@@ -354,7 +354,7 @@ export default function ChartHeader({
             <SlidersHorizontal size={14} />
             <span>Appearance</span>
           </summary>
-          <div className="absolute bottom-full left-0 z-[90] mb-2 w-72 rounded-md border p-3 shadow-2xl" style={panelStyle}>
+          <div className="absolute left-0 top-full z-[90] mt-2 max-h-[min(32rem,calc(100vh-7rem))] w-full min-w-0 overflow-y-auto overscroll-contain rounded-md border p-3 shadow-2xl sm:left-auto sm:right-0 sm:w-72 sm:max-w-full" style={panelStyle}>
             <div className={`mb-2 text-xs font-semibold ${labelClass}`}>Candle appearance</div>
             <div className={`${fieldClass} flex w-full items-center gap-2 px-2`}>
             <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bull candle color">
