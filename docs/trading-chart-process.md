@@ -937,13 +937,13 @@ Authenticated users can create persistent price alerts through `/market-price-al
 
 ### Onboarding and help
 
-The permanent `/help` page documents the chart-to-journal workflow and is linked from the trader sidebar. Each user also receives a dismissible first-chart tour stored under the user-scoped `backtradelab-chart-tour:{userId}` browser key.
+The permanent `/help` page documents the chart-to-journal workflow and is linked from the trader sidebar. Each user receives a dismissible first-chart tour. Completion is stored server-side in `adm_users.chart_tour_completed_at`, so the tour is shown only until it is completed or skipped, including when the user changes browsers. The first step clearly announces the seven-day trial and links the workflow to the Subscription page.
 
 ### Replay trial and access enforcement
 
 New accounts receive a seven-day replay trial through `replay_trial_started_at` and `replay_trial_ends_at` on `adm_users`. Paid access is stored separately in `replay_access_ends_at`. Existing accounts without trial timestamps receive their trial timestamps when replay access is first evaluated.
 
-Replay progress writes and paper-backtest actions are protected server-side by the `replay.access` middleware. Superadmins bypass this restriction. An expired user receives HTTP `402` with the `replay_subscription_required` code and the chart opens the subscription interface instead of starting replay.
+Replay progress writes and paper-backtest actions are protected server-side by the `replay.access` middleware. Superadmins bypass this restriction. All frontend replay entry paths also call `/replay-access`: restoring saved progress, Start Replay, Set Replay Price, Back, Forward, and Play. Active replay is rechecked once per minute and closes when access expires. An expired user receives HTTP `402` with the `replay_subscription_required` code and the chart opens the subscription interface instead of starting replay.
 
 Users can inspect their current access at `/subscription`. The page displays:
 
@@ -976,16 +976,24 @@ Superadmins manage prices, durations, descriptions, featured state, and availabi
 
 ### Manual payment and approval workflow
 
-The modern subscription modal first displays Monthly, Quarterly, and Yearly plan cards, database prices, durations, features, and featured-plan styling. The next step collects the GCash reference and optional image proof.
+The subscription modal first displays Monthly, Quarterly, and Yearly plan cards, database prices, durations, features, and featured-plan styling. The payment step preserves the selected-plan feature list and displays database-controlled GCash instructions. It includes the account name and number, a copy-number action, payment rules, and an optional QR code positioned beside the account details. The user then enters the GCash reference and optional image proof.
 
-Manual requests are stored in `subscription_requests` with the selected plan code, server-assigned price, payment method, reference, proof path, provider metadata, review state, reviewer, timestamps, and notes. Superadmins review requests at `/admin/subscriptions`.
+GCash instructions are stored in `payment_settings` and managed by superadmins at `/admin/payment-settings`. QR images are served through an authenticated route instead of relying on a public storage URL.
+
+Manual requests are stored in `subscription_requests` with the selected plan code, server-assigned price, payment method, reference, proof path, provider metadata, review state, reviewer, timestamps, notes, and a unique submission token. Superadmins review requests at `/admin/subscriptions`.
+
+Submission tokens make retries idempotent. A database lock serializes submissions from multiple tabs, and the backend permits only one pending request per user. Retrying a completed HTTP submission returns the existing request rather than creating another record or notification.
+
+Each request owns a two-sided conversation in `subscription_messages`. Users and admins can send text, images, PDF files, documents, spreadsheets, CSV, or text attachments up to 10 MB. Proofs and chat attachments use authenticated download routes. After payment submission, chat opens automatically. While open, it polls every five seconds for messages and review status.
 
 When a request is approved:
 
 1. The backend reloads the plan duration from `subscription_plans`.
-2. `adm_users.replay_access_ends_at` is extended from the approval time.
+2. `adm_users.replay_access_ends_at` is extended from the later of the approval time or the current paid expiry.
 3. The request records its reviewer and review timestamp.
-4. The user receives an in-system subscription notification.
+4. The user receives an in-system subscription notification and an automatic payment-chat response.
+5. The open user chat displays a Subscription Successful modal with enabled features and the access expiration time.
+6. Confirming the success modal redirects the user to `/dashboard`.
 
 Rejections also notify the user and can include an admin note. Provider-neutral fields (`provider` and `provider_payment_id`) allow a future payment gateway webhook to reuse the same entitlement process.
 
@@ -997,13 +1005,20 @@ Rejections also notify the user and can include an admin note. Provider-neutral 
 | `resources/js/Pages/Subscriptions/UserIndex.jsx` | User access summary and payment history |
 | `resources/js/Pages/Subscriptions/AdminIndex.jsx` | Superadmin request review |
 | `resources/js/Pages/Subscriptions/AdminPlans.jsx` | Superadmin database pricing controls |
+| `resources/js/Pages/Subscriptions/AdminPaymentSettings.jsx` | Editable GCash account, rules, and QR configuration |
+| `resources/js/Components/Subscriptions/PaymentChat.jsx` | User/admin payment conversation, attachments, polling, and approval result modal |
 | `app/Http/Controllers/ReplayAccessController.php` | Trial status, plans, requests, pricing updates, and approvals |
 | `app/Http/Middleware/EnsureReplayAccess.php` | Server-side replay authorization |
 | `app/Models/SubscriptionPlan.php` | Database plan model |
 | `app/Models/SubscriptionRequest.php` | Manual/provider payment request model |
+| `app/Models/SubscriptionMessage.php` | Payment conversation message and attachment model |
+| `app/Models/PaymentSetting.php` | Dynamic manual-payment instructions |
 | `GET /subscription` | User subscription page |
 | `GET /subscription-plans` | Available plan data |
 | `POST /subscription-requests` | Submit a manual payment request |
+| `GET/POST /subscription-requests/{request}/messages` | Load or send payment chat messages |
+| `GET /admin/payment-settings` | Admin GCash settings page |
+| `POST /admin/payment-settings` | Save GCash details, rules, and QR image |
 | `GET /admin/subscriptions` | Admin payment review page |
 | `GET /admin/subscription-plans` | Admin plan-pricing page |
 | `PUT /admin/subscription-plans` | Save plan configuration |

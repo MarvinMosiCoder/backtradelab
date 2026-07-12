@@ -25,7 +25,7 @@ Use unique database, Redis, mail, OAuth, and object-storage credentials. Never c
 
 - Managed MySQL with automated backups and point-in-time recovery where available.
 - Redis for shared cache, sessions, rate limiting, and queued work.
-- S3-compatible object storage for chart snapshots.
+- S3-compatible private object storage for chart snapshots, payment proofs, payment-chat attachments, and payment QR images.
 - A queue worker supervised and restarted automatically.
 - HTTPS at the load balancer or web server.
 - A CDN for compiled assets and public snapshots.
@@ -55,10 +55,14 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 - Verify database restore procedures, not only backup creation.
 - Monitor HTTP errors, slow database queries, failed queue jobs, exchange latency, disk usage, and Redis availability.
 - Configure the manual payment instructions shown to users, restrict access to uploaded payment proofs, and audit every subscription approval.
+- Configure and verify the GCash account name, account number, payment rules, and QR image in `/admin/payment-settings` before enabling plans.
+- Confirm payment proof, QR, and chat-attachment download routes require authentication and authorize the request owner or a superadmin.
+- Test payment submission retries, double-clicks, and simultaneous browser tabs. Submission tokens must return the original request, and each user must have at most one pending request.
+- Test approval and rejection while the user payment chat is open. The user should receive the decision within the five-second polling interval and approval confirmation should redirect to the workspace.
 - Configure a non-null PHP price for every active subscription plan before launch; unpriced plans are intentionally unavailable to users.
 - Confirm plan duration and price changes follow the intended policy for pending requests. Request amounts are captured at submission, while access duration is loaded from the plan at approval time.
-- Decide whether approvals should extend from the current paid expiry instead of the current approval time before allowing early renewals.
-- Store payment proofs on private object storage with authorized download routes in production. The current local implementation uses the public disk for proof links.
+- Approvals currently extend from the later of the current paid expiry or approval time. Confirm this renewal policy before launch.
+- Store payment proofs, payment-chat attachments, and payment QR images on private object storage. The application uses authorized download routes, but the local disk remains the current storage backend in development.
 - Run price-alert evaluation from a supervised scheduler/queue for notifications when users do not have a chart open. The chart performs immediate checks while it is open.
 - When adding a payment gateway, verify signed webhooks and map successful provider payments onto the existing replay entitlement rather than trusting browser callbacks.
 
