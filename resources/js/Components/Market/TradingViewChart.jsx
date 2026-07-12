@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
-import { X } from 'lucide-react';
+import { Bell, X } from 'lucide-react';
 import {
   createChart,
   CandlestickSeries,
@@ -118,14 +118,11 @@ function resolveChartTheme(adminTheme) {
 }
 
 function ChartDotsLoader({ isDark }) {
-  const mutedDotClass = isDark ? 'bg-gray-500' : 'bg-slate-400';
-  const brightDotClass = isDark ? 'bg-gray-200' : 'bg-slate-700';
-
   return (
-    <div className="flex items-center gap-2" aria-label="Loading" role="status">
-      <span className={`h-2 w-2 rounded-full ${brightDotClass} chart-dot-loader chart-dot-loader-1`} />
-      <span className={`h-2 w-2 rounded-full ${mutedDotClass} chart-dot-loader chart-dot-loader-2`} />
-      <span className={`h-2 w-2 rounded-full ${brightDotClass} chart-dot-loader chart-dot-loader-3`} />
+    <div className="w-full max-w-3xl px-8" aria-label="Loading chart workspace" role="status">
+      <div className={`h-1.5 overflow-hidden rounded-full ${isDark ? 'bg-[#2a2e39]' : 'bg-slate-200'}`}><div className="h-full w-1/3 animate-pulse rounded-full bg-[#2962ff]"/></div>
+      <div className="mt-8 flex h-44 items-end justify-center gap-2 opacity-50">{[34,58,42,76,51,88,64,95,70,82,55,73,48,67,40].map((height,index)=><span key={index} className={index%3===0?'w-3 bg-red-500':'w-3 bg-emerald-500'} style={{height:`${height}%`}}/>)}</div>
+      <div className="mt-4 text-center text-xs font-semibold text-[#787b86]">Loading chart workspace…</div>
     </div>
   );
 }
@@ -444,6 +441,7 @@ export default function TradingViewReplayChart({
   const smaSeriesRef = useRef(null);
   const emaSeriesRef = useRef(null);
   const rsiSeriesRef = useRef(null);
+  const alertPriceLinesRef = useRef(new Map());
   const visibleCandlesRef = useRef([]);
   const resizeObserverRef = useRef(null);
   const replayTimerRef = useRef(null);
@@ -513,8 +511,8 @@ export default function TradingViewReplayChart({
       : DEFAULT_CANDLE_SIZE;
   });
   const [indicators, setIndicators] = useState(() => {
-    try { return { volume: true, volumeSize: 20, sma: false, smaPeriod: 20, ema: false, emaPeriod: 20, rsi: false, rsiPeriod: 14, ...JSON.parse(localStorage.getItem('market-chart-indicators') || '{}') }; }
-    catch { return { volume: true, volumeSize: 20, sma: false, smaPeriod: 20, ema: false, emaPeriod: 20, rsi: false, rsiPeriod: 14 }; }
+    try { return { volume: true, volumeSize: 20, sma: false, smaPeriod: 20, ema: false, emaPeriod: 20, rsi: false, rsiPeriod: 14, rsiSize: 25, ...JSON.parse(localStorage.getItem('market-chart-indicators') || '{}') }; }
+    catch { return { volume: true, volumeSize: 20, sma: false, smaPeriod: 20, ema: false, emaPeriod: 20, rsi: false, rsiPeriod: 14, rsiSize: 25 }; }
   });
   const [symbols, setSymbols] = useState([]);
   const [availableSymbols, setAvailableSymbols] = useState([]);
@@ -541,6 +539,11 @@ export default function TradingViewReplayChart({
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [isReplayPricePickActive, setIsReplayPricePickActive] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [priceAlerts, setPriceAlerts] = useState([]);
+  const [alertModalOpen, setAlertModalOpen] = useState(false);
+  const [alertDraft, setAlertDraft] = useState({ price: '', type: 'rise' });
+  const [alertError, setAlertError] = useState('');
+  const [alertNotice, setAlertNotice] = useState('');
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [replayAccessAllowed, setReplayAccessAllowed] = useState(null);
   const replayAccessAllowedRef = useRef(false);
@@ -1451,12 +1454,12 @@ export default function TradingViewReplayChart({
     };
 
     const handlePriceHover = (event) => {
-      if (event.target?.closest?.('[data-chart-ui="order-price-action"]')) return;
+      if (event.target?.closest?.('[data-chart-ui="order-price-action"], [data-chart-ui="alert-price-action"]')) return;
       setChartOrderAction(getPriceAction(event));
     };
 
     const handleMouseLeave = (event) => {
-      if (event.relatedTarget?.closest?.('[data-chart-ui="order-price-action"]')) return;
+      if (event.relatedTarget?.closest?.('[data-chart-ui="order-price-action"], [data-chart-ui="alert-price-action"]')) return;
       setChartOrderAction(null);
     };
 
@@ -1719,6 +1722,19 @@ export default function TradingViewReplayChart({
     ].filter(Boolean);
   }, [backtestAccount, backtestOrderDraft, executionPrice, overlayRenderVersion, overlaySize.width, symbol]);
 
+  const renderedTradeMarkers = useMemo(() => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return [];
+    return (backtestAccount?.trades ?? []).filter((trade) => trade.symbol === symbol).map((trade) => {
+      const x = chart.timeScale().timeToCoordinate(Number(trade.executedAtTime));
+      const y = series.priceToCoordinate(Number(trade.price));
+      if (x == null || y == null) return null;
+      const isBuy = (trade.action === 'open' && trade.side === 'long') || (trade.action === 'close' && trade.side === 'short');
+      return { id: trade.id, x, y, label: isBuy ? 'B' : 'S', color: isBuy ? '#16a34a' : '#dc2626' };
+    }).filter(Boolean);
+  }, [backtestAccount?.trades, overlayRenderVersion, symbol]);
+
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
 
@@ -1934,6 +1950,7 @@ export default function TradingViewReplayChart({
         background: { color: chartTheme.background },
         textColor: chartTheme.text,
         attributionLogo: false,
+        panes: { enableResize: true, separatorColor: chartTheme.border, separatorHoverColor: '#2962ff' },
       },
       grid: {
         vertLines: { color: chartTheme.grid },
@@ -1981,8 +1998,7 @@ export default function TradingViewReplayChart({
     });
     const smaSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
     const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
-    const rsiSeries = chart.addSeries(LineSeries, { priceScaleId: 'rsi', color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false });
-    rsiSeries.priceScale().applyOptions({ scaleMargins: { top: 0.72, bottom: 0.02 }, autoScale: false });
+    const rsiSeries = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false }, 1);
 
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
@@ -2208,6 +2224,11 @@ export default function TradingViewReplayChart({
     sma?.applyOptions({ visible: indicators.sma });
     ema?.applyOptions({ visible: indicators.ema });
     rsi?.applyOptions({ visible: indicators.rsi });
+    rsi?.moveToPane(indicators.rsi ? 1 : 0);
+    if (indicators.rsi) {
+      const pane = chartRef.current?.panes?.()[1];
+      pane?.setHeight(Math.max(80, Math.round((containerRef.current?.clientHeight || CHART_HEIGHT) * ((Number(indicators.rsiSize) || 25) / 100))));
+    }
     sma?.setData(indicators.sma ? movingAverage(visibleCandles, Number(indicators.smaPeriod) || 20) : []);
     ema?.setData(indicators.ema ? exponentialMovingAverage(visibleCandles, Number(indicators.emaPeriod) || 20) : []);
     rsi?.setData(indicators.rsi ? relativeStrengthIndex(visibleCandles, Number(indicators.rsiPeriod) || 14) : []);
@@ -2742,7 +2763,7 @@ export default function TradingViewReplayChart({
               strokeWidth: savedToolSettings.strokeWidth ?? 1,
               lineStyle: savedToolSettings.lineStyle ?? 'solid',
               color: savedToolSettings.color ?? drawingColorRef.current,
-              labelText: savedToolSettings.labelText ?? '',
+              labelText: '',
               labelVertical: savedToolSettings.labelVertical ?? 'top',
               labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
               textBold: Boolean(savedToolSettings.textBold),
@@ -2773,7 +2794,7 @@ export default function TradingViewReplayChart({
             strokeWidth: savedToolSettings.strokeWidth ?? 1,
             lineStyle: savedToolSettings.lineStyle ?? 'solid',
             color: savedToolSettings.color ?? drawingColorRef.current,
-            labelText: savedToolSettings.labelText ?? '',
+            labelText: '',
             labelVertical: savedToolSettings.labelVertical ?? 'top',
             labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
             textBold: Boolean(savedToolSettings.textBold),
@@ -3424,18 +3445,50 @@ export default function TradingViewReplayChart({
     setIsReplayPricePickActive(false);
   };
 
-  const handleCreatePriceAlert = useCallback(async () => {
-    const entered = window.prompt(`Alert price for ${symbol}`, currentPrice ? String(currentPrice) : '');
-    const targetPrice = Number(entered); if (!Number.isFinite(targetPrice) || targetPrice <= 0) return;
-    await axios.post('/market-price-alerts', { exchange, category: marketCategory, symbol, target_price: targetPrice, direction: targetPrice >= Number(currentPrice) ? 'above' : 'below', last_price: currentPrice });
-  }, [currentPrice, exchange, marketCategory, symbol]);
+  const handleCreatePriceAlert = useCallback((presetPrice = null) => {
+    const initialPrice = Number.isFinite(Number(presetPrice)) ? Number(presetPrice) : currentPrice;
+    setAlertDraft({ price: initialPrice ? String(initialPrice) : '', type: Number(initialPrice) < Number(currentPrice) ? 'drop' : 'rise' });
+    setAlertError('');
+    setAlertModalOpen(true);
+  }, [currentPrice]);
+
+  const savePriceAlert = useCallback(async () => {
+    const targetPrice = Number(alertDraft.price);
+    if (!Number.isFinite(targetPrice) || targetPrice <= 0) { setAlertError('Enter a valid price greater than zero.'); return; }
+    if (alertDraft.type === 'rise' && targetPrice <= Number(currentPrice)) { setAlertError('A rise alert must be above the current price.'); return; }
+    if (alertDraft.type === 'drop' && targetPrice >= Number(currentPrice)) { setAlertError('A drop alert must be below the current price.'); return; }
+    try {
+      const response = await axios.post('/market-price-alerts', { exchange, category: marketCategory, symbol, target_price: targetPrice, direction: alertDraft.type === 'rise' ? 'above' : 'below', last_price: currentPrice });
+      setPriceAlerts((items) => [response.data.alert, ...items]);
+      setAlertModalOpen(false);
+    } catch (err) { setAlertError(err.response?.data?.message ?? 'Could not set this alert.'); }
+  }, [alertDraft, currentPrice, exchange, marketCategory, symbol]);
+
+  useEffect(() => {
+    axios.get('/market-price-alerts').then(({ data }) => setPriceAlerts((data.alerts ?? []).filter((item) => item.exchange === exchange && item.category === marketCategory && item.symbol === symbol && item.status === 'active'))).catch(() => {});
+  }, [exchange, marketCategory, symbol]);
+
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+    alertPriceLinesRef.current.forEach((line) => { try { series.removePriceLine(line); } catch {} });
+    alertPriceLinesRef.current.clear();
+    priceAlerts.forEach((alert) => {
+      const line = series.createPriceLine({ price: Number(alert.target_price), color: '#9ca3af', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `⏰ ${alert.direction === 'above' ? 'Rise' : 'Drop'}` });
+      alertPriceLinesRef.current.set(alert.id, line);
+    });
+  }, [priceAlerts]);
 
   useEffect(() => {
     if (!currentPrice || replayMode) return;
     const timer = window.setTimeout(async () => {
       try {
         const response = await axios.post('/market-price-alerts/check', { exchange, category: marketCategory, symbol, price: currentPrice });
-        if (response.data?.triggered?.length && 'Notification' in window) {
+        if (response.data?.triggered?.length) {
+          setPriceAlerts((items) => items.filter((item) => !response.data.triggered.includes(item.id)));
+          setAlertNotice(`${symbol} reached an alert price at ${formatOverlayPrice(currentPrice)}.`);
+          window.setTimeout(() => setAlertNotice(''), 6000);
+          if (!('Notification' in window)) return;
           if (Notification.permission === 'default') await Notification.requestPermission();
           if (Notification.permission === 'granted') new Notification('BacktradeLab price alert', { body: `${symbol} is now ${formatOverlayPrice(currentPrice)}` });
         }
@@ -3443,6 +3496,23 @@ export default function TradingViewReplayChart({
     }, 800);
     return () => window.clearTimeout(timer);
   }, [currentPrice, exchange, marketCategory, replayMode, symbol]);
+
+  useEffect(() => {
+    if (replayMode) return undefined;
+    let cancelled = false;
+    const refreshLatest = async () => {
+      try {
+        const params = new URLSearchParams({ exchange, category: marketCategory, symbol, interval: INTERVAL_MAP[timeframe], limit: '2', max_candles: '2' });
+        const response = await fetch(`/api/klines?${params.toString()}`, { headers: { Accept: 'application/json' } });
+        const result = await response.json();
+        const latest = normalizeApiCandles(result.candles ?? []).at(-1);
+        if (!cancelled && latest) setAllCandles((items) => items.length && items.at(-1).time === latest.time ? [...items.slice(0, -1), latest] : [...items, latest]);
+      } catch {}
+    };
+    refreshLatest();
+    const timer = window.setInterval(refreshLatest, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [exchange, marketCategory, replayMode, symbol, timeframe]);
 
   const stepBackward = async () => {
     setIsPlaying(false);
@@ -4360,6 +4430,8 @@ export default function TradingViewReplayChart({
   return (
     <>
     {showSubscriptionModal && <SubscriptionModal onClose={() => setShowSubscriptionModal(false)} />}
+    {alertNotice && <div className="fixed right-4 top-4 z-[10003] flex max-w-sm items-start gap-3 rounded-lg border border-amber-400/40 bg-[#131722] p-4 text-sm text-white shadow-2xl"><Bell size={18} className="mt-0.5 shrink-0 text-amber-400"/><span>{alertNotice}</span><button onClick={()=>setAlertNotice('')} aria-label="Dismiss alert"><X size={16}/></button></div>}
+    {alertModalOpen && <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 p-4 sm:items-center" onMouseDown={(e)=>e.target===e.currentTarget&&setAlertModalOpen(false)}><div className={`w-full max-w-sm rounded-xl border p-5 shadow-2xl ${chartTheme.mode==='dark'?'border-[#2a2e39] bg-[#131722] text-white':'border-slate-200 bg-white text-slate-900'}`} role="dialog" aria-modal="true"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-bold"><Bell size={17}/>Set {symbol} alert</h2><button onClick={()=>setAlertModalOpen(false)} aria-label="Close"><X size={18}/></button></div><label className="mt-4 block text-xs font-semibold">Price<input autoFocus type="number" min="0" step="any" value={alertDraft.price} onChange={(e)=>setAlertDraft((d)=>({...d,price:e.target.value}))} className="mt-1 h-10 w-full rounded-md border border-gray-600 bg-transparent px-3 outline-none focus:border-[#2962ff]"/></label><div className="mt-3 grid grid-cols-2 gap-2">{[['rise','Rise to price'],['drop','Drop to price']].map(([value,label])=><button key={value} onClick={()=>setAlertDraft((d)=>({...d,type:value}))} className={`h-10 rounded-md border text-xs font-semibold ${alertDraft.type===value?'border-[#2962ff] bg-[#2962ff] text-white':'border-gray-600'}`}>{label}</button>)}</div>{alertError&&<p className="mt-2 text-xs text-red-400">{alertError}</p>}<button onClick={savePriceAlert} className="mt-4 h-10 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white">Create alert</button></div></div>}
     {tourStep >= 0 && <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/55 p-4 sm:items-center"><div className="w-full max-w-md rounded-xl border border-[#2a2e39] bg-[#131722] p-5 text-white shadow-2xl"><div className="text-xs font-semibold uppercase tracking-wider text-[#5b8cff]">Getting started · {tourStep + 1}/{tourSteps.length}</div><h2 className="mt-2 text-lg font-bold">{tourSteps[tourStep][0]}</h2><p className="mt-2 text-sm leading-6 text-[#b2b5be]">{tourSteps[tourStep][1]}</p><div className="mt-5 flex justify-between"><button onClick={finishTour} className="text-sm text-[#787b86] hover:text-white">Skip</button><button onClick={() => tourStep === tourSteps.length - 1 ? finishTour() : setTourStep(tourStep + 1)} className="rounded bg-[#2962ff] px-4 py-2 text-sm font-semibold">{tourStep === tourSteps.length - 1 ? 'Open chart' : 'Next'}</button></div></div></div>}
     <div
       ref={fullscreenRef}
@@ -4386,6 +4458,7 @@ export default function TradingViewReplayChart({
             overlaySize={overlaySize}
             renderedDrawings={renderedDrawings}
             renderedBacktestOrders={renderedBacktestOrders}
+            renderedTradeMarkers={renderedTradeMarkers}
             selectedDrawingId={selectedDrawingId}
             textInput={textInput}
             textDraft={textDraft}
@@ -4420,6 +4493,21 @@ export default function TradingViewReplayChart({
               aria-label={`Create order at ${formatOverlayPrice(chartOrderAction.price)}`}
             >
               <span aria-hidden="true">+</span>
+            </button>
+          )}
+
+          {chartOrderAction && !loading && !error && (
+            <button
+              type="button"
+              data-chart-ui="alert-price-action"
+              onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); handleCreatePriceAlert(chartOrderAction.price); }}
+              className="absolute left-2 z-20 flex h-6 w-6 items-center justify-center rounded bg-amber-500 text-black shadow-lg hover:bg-amber-400"
+              style={{ top: Math.max(4, chartOrderAction.y - 12) }}
+              title={`Set alert at ${formatOverlayPrice(chartOrderAction.price)}`}
+              aria-label={`Set alert at ${formatOverlayPrice(chartOrderAction.price)}`}
+            >
+              <Bell size={13} />
             </button>
           )}
 

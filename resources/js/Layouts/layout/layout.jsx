@@ -16,7 +16,7 @@ const Layout = ({ children }) => {
     const isSuperAdmin = Boolean(auth?.sessions?.admin_is_superadmin);
     return (
         <NavbarProvider>
-            <div className="fixed z-100 w-full">
+            <div className="fixed z-[200] w-full">
                 {isSuperAdmin ? <AdminNavbar /> : <TraderNavbar />}
             </div>
             <div className="flex h-screen pt-14">

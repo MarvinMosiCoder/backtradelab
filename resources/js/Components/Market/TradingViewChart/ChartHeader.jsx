@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Play, Plus, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Bell, ChevronDown, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES, TIMEFRAME_SECONDS } from './constants';
 import { formatPrice } from './utils';
 
@@ -36,6 +36,8 @@ export default function ChartHeader({
 }) {
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
+  const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const isDark = chartTheme?.mode === 'dark';
   useEffect(() => {
@@ -73,21 +75,14 @@ export default function ChartHeader({
   const addSymbolOptions = availableSymbols.filter((item) => (
     !savedSymbolSet.has(buildSymbolKey(item))
   ));
-  const addButtonLabel = isLoadingAvailableSymbols
-    ? 'Loading symbols...'
-    : !availableSymbols.length
-      ? 'Symbols unavailable'
-      : addSymbolOptions.length
-        ? 'Add Symbol'
-        : 'All symbols added';
   const filteredAddSymbolOptions = useMemo(() => {
     const query = symbolSearch.trim().toUpperCase();
 
     if (!query) {
-      return addSymbolOptions.slice(0, 80);
+      return availableSymbols.slice(0, 80);
     }
 
-    return addSymbolOptions
+    return availableSymbols
       .filter((item) => {
         return [
           item.symbol,
@@ -104,10 +99,11 @@ export default function ChartHeader({
         ].some((value) => String(value ?? '').toUpperCase().includes(query));
       })
       .slice(0, 80);
-  }, [addSymbolOptions, symbolSearch]);
+  }, [availableSymbols, symbolSearch]);
 
   const handleSelectSymbol = (nextSymbol) => {
-    onAddSymbol(nextSymbol);
+    if (!savedSymbolSet.has(buildSymbolKey(nextSymbol))) onAddSymbol(nextSymbol);
+    else onSymbolChange(buildSymbolKey(nextSymbol));
     setSymbolSearch('');
     setIsAddOpen(false);
   };
@@ -128,21 +124,10 @@ export default function ChartHeader({
         className={`flex max-w-full flex-wrap items-center gap-2 rounded-md border p-2 shadow-xl backdrop-blur ${className}`}
         style={panelStyle}
       >
-        <select
-          value={`${exchange ?? 'bybit'}:${marketCategory ?? 'spot'}:${symbol}`}
-          onChange={(e) => onSymbolChange(e.target.value)}
-          className={`${compactFieldClass} w-44 max-w-[42vw]`}
-          title="Symbol"
-        >
-          {symbolOptions.map((item) => (
-            <option
-              key={buildSymbolKey(item)}
-              value={buildSymbolKey(item)}
-            >
-              {item.symbol} ({String(item.exchange ?? 'bybit').toUpperCase()} {String(item.category ?? 'spot').toUpperCase()})
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <button type="button" onClick={()=>setIsAddOpen((value)=>!value)} className={`${compactFieldClass} flex w-44 max-w-[42vw] items-center justify-between gap-2`}><span className="truncate">{symbol} · {String(exchange).toUpperCase()}</span><ChevronDown size={13}/></button>
+          {isAddOpen&&<div className={`absolute left-0 top-full z-[120] mt-2 w-80 max-w-[85vw] overflow-hidden rounded-md border shadow-2xl ${isDark?'border-gray-700 bg-black-table-color':'border-gray-200 bg-white'}`}><div className="flex items-center gap-2 border-b border-gray-700 p-2"><Search size={14}/><input autoFocus value={symbolSearch} onChange={(e)=>setSymbolSearch(e.target.value)} placeholder="Search all symbols" className="min-w-0 flex-1 bg-transparent text-xs uppercase outline-none"/><button onClick={()=>setIsAddOpen(false)}><X size={14}/></button></div><div className="max-h-72 overflow-y-auto">{filteredAddSymbolOptions.map((item)=><button key={buildSymbolKey(item)} onClick={()=>handleSelectSymbol(item)} className="flex w-full items-center justify-between border-b border-gray-700/50 px-3 py-2 text-left text-xs hover:bg-[#2962ff]/15"><span>{item.symbol}</span><span className="text-[9px] text-gray-400">{String(item.exchange).toUpperCase()} {String(item.category).toUpperCase()}</span></button>)}</div></div>}
+        </div>
 
         {currentSavedSymbol && (
           <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-8 w-8 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10 disabled:opacity-40" aria-label="Remove saved symbol">
@@ -188,6 +173,14 @@ export default function ChartHeader({
           <span className="hidden sm:inline">{replayMode ? 'Live' : 'Replay'}</span>
         </button>
 
+        <button type="button" onClick={onCreatePriceAlert} className="flex h-8 items-center gap-1.5 rounded-md bg-[#2962ff] px-2.5 text-xs font-semibold text-white"><Bell size={13}/><span className="hidden sm:inline">Alert</span></button>
+
+        <div className="relative">
+          <button type="button" onClick={()=>setIsIndicatorsOpen((value)=>!value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}><SlidersHorizontal size={13}/><span className="hidden sm:inline">Indicators</span></button>
+          {isIndicatorsOpen&&<div className="absolute left-0 top-full z-[100] mt-2 w-64 max-w-[80vw] space-y-2 rounded-md border p-3 shadow-2xl" style={panelStyle}>{[['volume','Volume'],['sma','SMA'],['ema','EMA'],['rsi','RSI']].map(([key,label])=><label key={key} className="flex items-center justify-between gap-3 text-xs"><span>{label}</span><input type="checkbox" checked={indicators[key]} onChange={(e)=>onIndicatorsChange((current)=>({...current,[key]:e.target.checked}))}/></label>)}</div>}
+        </div>
+        <div className="relative"><button type="button" onClick={()=>setIsAppearanceOpen((value)=>!value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}><SlidersHorizontal size={13}/><span className="hidden md:inline">Style</span></button>{isAppearanceOpen&&<div className="absolute right-0 top-full z-[100] mt-2 flex w-56 items-center gap-3 rounded-md border p-3 shadow-2xl" style={panelStyle}><label className="text-[10px]">Buy<input type="color" value={candleColors.up} onChange={(e)=>onCandleColorChange((c)=>({...c,up:e.target.value}))}/></label><label className="text-[10px]">Sell<input type="color" value={candleColors.down} onChange={(e)=>onCandleColorChange((c)=>({...c,down:e.target.value}))}/></label><label className="min-w-0 flex-1 text-[10px]">Size<input className="w-full" type="range" min="3" max="24" value={candleSize} onChange={(e)=>handleCandleSizeChange(e.target.value)}/></label></div>}</div>
+
         <div className="min-w-0 px-1">
           <div className="truncate text-[10px] leading-none text-gray-400">
             {replayMode ? 'Replay' : 'Price'}
@@ -207,28 +200,14 @@ export default function ChartHeader({
         <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-6 xl:col-span-5">
           <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <select
-              value={`${exchange ?? 'bybit'}:${marketCategory ?? 'spot'}:${symbol}`}
-              onChange={(e) => onSymbolChange(e.target.value)}
-              className={`${fieldClass} min-w-0 flex-1`}
-            >
-              {symbolOptions.map((item) => (
-                <option
-                  key={buildSymbolKey(item)}
-                  value={buildSymbolKey(item)}
-                >
-                  {item.symbol} ({String(item.exchange ?? 'bybit').toUpperCase()} {String(item.category ?? 'spot').toUpperCase()})
-                </option>
-              ))}
-            </select>
             <button
               type="button"
               onClick={() => setIsAddOpen((current) => !current)}
-              disabled={isLoadingAvailableSymbols || !addSymbolOptions.length}
-              className="flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+              className={`${fieldClass} flex min-w-0 flex-1 items-center justify-between gap-2 text-left font-semibold`}
+              aria-expanded={isAddOpen}
             >
-              <Plus size={14} />
-              <span className="max-w-24 truncate">{addButtonLabel}</span>
+              <span className="truncate">{symbol} <span className="text-[10px] text-gray-400">{String(exchange).toUpperCase()} {String(marketCategory).toUpperCase()}</span></span>
+              <ChevronDown size={14} className="shrink-0" />
             </button>
             {currentSavedSymbol && (
               <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-40" aria-label={`Remove ${currentSavedSymbol.symbol}`}>
@@ -244,7 +223,7 @@ export default function ChartHeader({
                   autoFocus
                   value={symbolSearch}
                   onChange={(event) => setSymbolSearch(event.target.value)}
-                  placeholder="Search symbol"
+                  placeholder="Search all symbols"
                   className={`min-w-0 flex-1 bg-transparent text-xs uppercase outline-none placeholder:text-gray-500 ${isDark ? 'text-white' : 'text-gray-800'}`}
                 />
                 <button
@@ -285,10 +264,10 @@ export default function ChartHeader({
                         type="button"
                         onClick={() => handleSelectSymbol(item)}
                         disabled={isSavingSymbol}
-                        className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
-                        title={`Add ${item.symbol} from ${String(item.exchange ?? '').toUpperCase()} ${String(item.category ?? '').toUpperCase()}`}
+                        className="rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+                        title={`Open ${item.symbol}`}
                       >
-                        <Plus size={15} />
+                        Open
                       </button>
                     </div>
                   ))
@@ -349,12 +328,12 @@ export default function ChartHeader({
           </button>
         </div>
 
-        <details className="group relative col-span-1 min-w-0 sm:col-span-4 lg:col-span-2">
-          <summary className={`${fieldClass} flex cursor-pointer list-none items-center justify-center gap-2 font-semibold [&::-webkit-details-marker]:hidden`}>
+        <div className="relative col-span-1 min-w-0 sm:col-span-4 lg:col-span-2">
+          <button type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold`}>
             <SlidersHorizontal size={14} />
             <span>Appearance</span>
-          </summary>
-          <div className="absolute left-0 top-full z-[90] mt-2 max-h-[min(32rem,calc(100vh-7rem))] w-full min-w-0 overflow-y-auto overscroll-contain rounded-md border p-3 shadow-2xl sm:left-auto sm:right-0 sm:w-72 sm:max-w-full" style={panelStyle}>
+          </button>
+          {isAppearanceOpen && <div className="absolute left-0 top-full z-[90] mt-2 max-h-[min(32rem,calc(100vh-7rem))] w-full min-w-0 overflow-y-auto rounded-md border p-3 shadow-2xl sm:left-auto sm:right-0 sm:w-72" style={panelStyle}>
             <div className={`mb-2 text-xs font-semibold ${labelClass}`}>Candle appearance</div>
             <div className={`${fieldClass} flex w-full items-center gap-2 px-2`}>
             <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bull candle color">
@@ -396,18 +375,20 @@ export default function ChartHeader({
             </label>
             </div>
             <div className="mt-3 space-y-2 text-xs">
-              <button type="button" onClick={onCreatePriceAlert} className="h-9 w-full rounded bg-[#2962ff] font-semibold text-white hover:bg-blue-600">Set price alert</button>
-              <label className="flex items-center justify-between gap-2"><span>Volume</span><input type="checkbox" checked={indicators.volume} onChange={(e) => onIndicatorsChange((current) => ({ ...current, volume: e.target.checked }))} /></label>
-              {indicators.volume && <label className="flex items-center gap-2"><span className="w-20">Volume size</span><input className="min-w-0 flex-1" type="range" min="10" max="45" value={indicators.volumeSize} onChange={(e) => onIndicatorsChange((current) => ({ ...current, volumeSize: Number(e.target.value) }))} /></label>}
-              {[['sma', 'SMA', 'smaPeriod'], ['ema', 'EMA', 'emaPeriod'], ['rsi', 'RSI', 'rsiPeriod']].map(([key, label, periodKey]) => (
-                <div key={key} className="flex items-center justify-between gap-2">
-                  <label className="flex items-center gap-2"><input type="checkbox" checked={indicators[key]} onChange={(e) => onIndicatorsChange((current) => ({ ...current, [key]: e.target.checked }))} />{label}</label>
-                  <input className={`${fieldClass} w-16`} type="number" min="2" max="200" value={indicators[periodKey]} onChange={(e) => onIndicatorsChange((current) => ({ ...current, [periodKey]: Math.min(200, Math.max(2, Number(e.target.value) || 2)) }))} aria-label={`${label} period`} />
-                </div>
-              ))}
             </div>
-          </div>
-        </details>
+          </div>}
+        </div>
+
+        <div className="relative col-span-1 sm:col-span-4 lg:col-span-2">
+          <button type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold`}><SlidersHorizontal size={14}/>Indicators</button>
+          {isIndicatorsOpen && <div className="absolute right-0 top-full z-[100] mt-2 w-72 max-w-[calc(100vw-1rem)] space-y-2 rounded-md border p-3 shadow-2xl" style={panelStyle}>
+            <label className="flex items-center justify-between gap-2 text-xs"><span>Volume</span><input type="checkbox" checked={indicators.volume} onChange={(e) => onIndicatorsChange((c) => ({...c, volume:e.target.checked}))}/></label>
+            {indicators.volume && <input className="w-full" type="range" min="10" max="45" value={indicators.volumeSize} onChange={(e)=>onIndicatorsChange((c)=>({...c,volumeSize:Number(e.target.value)}))}/>}
+            {[['sma','SMA','smaPeriod'],['ema','EMA','emaPeriod'],['rsi','RSI','rsiPeriod']].map(([key,label,periodKey])=><div key={key} className="flex items-center gap-2 text-xs"><label className="flex flex-1 items-center gap-2"><input type="checkbox" checked={indicators[key]} onChange={(e)=>onIndicatorsChange((c)=>({...c,[key]:e.target.checked}))}/>{label}</label><input className={`${fieldClass} w-16`} type="number" min="2" max="200" value={indicators[periodKey]} onChange={(e)=>onIndicatorsChange((c)=>({...c,[periodKey]:Math.min(200,Math.max(2,Number(e.target.value)||2))}))}/>{key==='rsi'&&<input title="RSI pane size" className="w-16" type="range" min="15" max="45" value={indicators.rsiSize ?? 25} onChange={(e)=>onIndicatorsChange((c)=>({...c,rsiSize:Number(e.target.value)}))}/>}</div>)}
+          </div>}
+        </div>
+
+        <button type="button" onClick={onCreatePriceAlert} className="col-span-1 flex h-9 items-center justify-center gap-2 rounded-md bg-[#2962ff] px-3 text-xs font-semibold text-white hover:bg-blue-600 sm:col-span-4 lg:col-span-2"><Bell size={14}/>Alert</button>
 
         <div className="col-span-1 flex min-w-0 items-end justify-end rounded-md border px-2 py-1 sm:col-span-8 lg:col-span-10"
           style={{ borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb') }}

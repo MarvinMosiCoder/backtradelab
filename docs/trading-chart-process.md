@@ -501,7 +501,7 @@ The chart has visible time labels, a right price scale, and enabled native pan/z
 
 Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, fullscreen background, text-input popover, and the background color used when entry/exit snapshots are captured. The chart grid intentionally uses low-opacity RGBA colors so the grid boxes stay visible without competing with candles: dark mode uses `rgba(148, 163, 184, 0.06)`, and white mode uses `rgba(100, 116, 139, 0.08)`. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, preset controls, grouped drawing tools, and backtest account fields/cards so the controls remain readable in both dark and white themes.
 
-The chart loading overlay uses a compact three-dot bouncing loader in `TradingViewChart.jsx`, styled by the scoped `chart-dot-loader` classes in `resources/css/app.css`. It follows the admin template's three-dot loading language while using smaller dots and a shorter bounce so it fits inside the chart workspace.
+The chart loading overlay uses a chart-only workspace skeleton in `TradingViewChart.jsx`: an animated progress bar, simplified candle bars, and a loading label. It covers only the chart workspace and does not replace the surrounding application navigation.
 
 The Lightweight Charts TradingView attribution logo is disabled in chart layout options. `ChartStage.jsx` renders the configured application logo from `/applogo` in the bottom-left chart position as the BacktradeLab chart brand mark.
 
@@ -925,6 +925,28 @@ Current known build warnings are unrelated to the chart changes:
 
 ## Summary
 
+## July 2026 workspace and market-summary update
+
+- `/dashboard` is the chart-first trader Workspace. `/market` is Market Summary and appears before Workspace in trader navigation.
+- Market Summary reads the authenticated user's saved market symbols and opens a selected market in Workspace. Browser-persisted, user-scoped watchlist group management is located directly above the Workspace chart.
+- Fullscreen and embedded chart headers share symbol search, market/timeframe selection, replay, alert, indicator, and appearance controls.
+- Active Rise/Drop alerts are persisted per user, drawn as gray dashed price lines, checked against a latest-candle refresh every five seconds, and removed immediately after triggering. A trigger creates an admin notification and an in-workspace notice; browser notification remains an optional enhancement.
+- Hovering a price exposes an order `+` shortcut on the right and an alarm shortcut at the left endpoint of the same horizontal price line. Moving onto either control preserves the hovered price action. The alarm shortcut opens the Set Alert modal with that chart price prefilled.
+- RSI uses a native, resizable lower pane. Disabling RSI moves the hidden series back to the primary pane so the empty lower pane is removed.
+- Executed trades use custom 18px rounded rectangular badges: green with a centered `B` for buy and red with a centered `S` for sell. The badges have no contrasting border. Long/short planning regions use lighter translucent fills so candles remain readable.
+- Drawing categories are collapsible, new drawing labels start empty, and the tool editor accepts both expanded swatches and direct hex colors.
+- Initial chart loading uses a workspace/chart skeleton with a progress bar instead of a generic page loader.
+- The shared sidebar toggle accepts an explicit boolean as well as toggle behavior. The admin navbar has two intentionally separate controls: the left hamburger toggles the existing sidebar, while the final mobile-only hamburger replaces hidden navbar module links with a dropdown for Overview, Users, Customer Support, Payments, Pricing, Payment Setup, and Settings.
+- Customer Support includes payment, subscription, account, and product categories and is available to administrators as a prioritized inbox.
+
+### Watchlist storage
+
+Watchlist groups currently use `backtradelab-watchlists:{userId}` in `localStorage`; the actual available symbols remain database-backed and user-scoped through `/market-symbols`. Group creation, selection, and symbol membership are managed in Workspace. Market Summary remains focused on market discovery and opening symbols. A future cross-device watchlist feature should migrate group membership to dedicated server tables without changing the Workspace interaction.
+
+### Alert runtime boundary
+
+Alerts trigger while Workspace is open because the browser refreshes the latest candle and calls the authenticated alert checker. Offline/background alert delivery still requires a scheduled server worker or exchange stream.
+
 ## Indicators, alerts, onboarding, and replay access
 
 ### Indicators and volume
@@ -1040,6 +1062,6 @@ The chart now includes:
 13. Drawing persistence per user/market in the database, with no automatic browser-local import for new accounts.
 14. Paper account retesting with market and conditional long/short entries, pending entry cancellation, close actions, equity, cash, open PnL, and recent trades.
 15. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
-16. Admin-theme-aligned chart background, grid, axis text, borders, compact three-dot loading overlay, fullscreen shell, chart control surfaces, and snapshot background.
+16. Admin-theme-aligned chart background, grid, axis text, borders, chart workspace loading skeleton, fullscreen shell, chart control surfaces, and snapshot background.
 17. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
 18. Fullscreen chart mode.

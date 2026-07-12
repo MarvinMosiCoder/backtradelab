@@ -74,3 +74,15 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 - API and authenticated backtest routes have named rate limits.
 - Drawing saves are serialized in the browser so an older request cannot overwrite a newer drawing state.
 - Report lookup indexes cover account/status/close-time and account/session/status/close-time filters.
+# July 2026 UI verification additions
+
+- Verify the admin navbar's left hamburger toggles the existing sidebar without changing its navigation behavior.
+- Below the `lg` breakpoint, verify desktop module links are hidden and the final navbar hamburger opens a dropdown rather than navigating directly. Confirm every dropdown module routes correctly and the menu closes after selection or backdrop click.
+- Verify dark and light themes on user subscription, plan selection, payment submission, admin payment review, pricing, and payment settings.
+- Verify fullscreen symbol search has readable input and option text in both themes.
+- Verify enabling RSI creates a bottom pane, its separator is draggable, and disabling RSI removes the empty pane.
+- Verify Rise and Drop alerts trigger only in the intended direction, create a notification, show an in-workspace notice, and remove their dashed chart line.
+- Verify Workspace watchlist groups are isolated by authenticated user ID in browser storage, persist after reload, and reopen the selected symbol in the chart. Confirm Market Summary does not duplicate watchlist management.
+- Verify hovering a chart price keeps both shortcuts stable: alarm on the left end and order `+` on the right. Clicking alarm must open the Set Alert modal with the hovered price.
+- Verify completed trades render an 18px borderless rounded badge with `B` or `S` centered inside and remain aligned during pan, zoom, fullscreen, and timeframe changes.
+- Production offline alerts require a scheduled exchange-price worker; open-workspace polling alone is not an offline notification service.

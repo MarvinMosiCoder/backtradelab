@@ -38,11 +38,11 @@ const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChil
         <div className='space-y-1'>
             <SidebarMenuCard
                 href="admin/feedback"
-                menuTitle="Feedback Inbox"
+                menuTitle="Customer Support"
                 icon="fa-solid fa-comments"
                 setActiveChildMenu={setActiveChildMenu}
-                isMenuActive={activeMenu === 'Feedback Inbox' || page.url.startsWith('/admin/feedback')}
-                onClick={() => handleMenuClick('Feedback Inbox', 'Route')}
+                isMenuActive={activeMenu === 'Customer Support' || page.url.startsWith('/admin/feedback')}
+                onClick={() => handleMenuClick('Customer Support', 'Route')}
             />
             {
                 admin_menus && admin_menus.map((menu, index)=>{

@@ -9,7 +9,7 @@ use Inertia\Inertia;
 
 class UserFeedbackController extends Controller
 {
-    private const CATEGORIES = ['enhancement', 'feature', 'bug', 'usability', 'performance', 'other'];
+    private const CATEGORIES = ['payment', 'subscription', 'account', 'enhancement', 'feature', 'bug', 'usability', 'performance', 'other'];
     private const STATUSES = ['submitted', 'reviewing', 'planned', 'in_progress', 'completed', 'declined'];
     private const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
 
@@ -55,7 +55,7 @@ class UserFeedbackController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Thank you. Your feedback was submitted.',
+            'message' => 'Your support request was submitted.',
             'feedback' => $this->serialize($feedback),
         ], 201);
     }

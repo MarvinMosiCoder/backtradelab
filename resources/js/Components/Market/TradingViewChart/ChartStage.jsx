@@ -598,9 +598,9 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
     <>
       <svg
         className="pointer-events-none absolute inset-0 z-10"
-        width={overlaySize.width}
-        height={overlaySize.height}
-        style={{ width: '100%', height: '100%' }}
+        width={Math.max(overlaySize.width - 88, 0)}
+        height={Math.max(overlaySize.height - 28, 0)}
+        style={{ width: 'calc(100% - 88px)', height: 'calc(100% - 28px)' }}
       >
         {renderedDrawings.map((d) => {
           const drawingColor = d.color ?? DRAWING_COLOR;
@@ -847,14 +847,14 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
             const geometry = getPositionGeometry(d);
             const outline = 'rgba(226, 232, 240, 0.75)';
             const baseProfitFill = chartTheme?.mode === 'light'
-              ? 'rgba(22, 101, 52, 0.18)'
-              : 'rgba(22, 101, 52, 0.18)';
+              ? 'rgba(22, 101, 52, 0.08)'
+              : 'rgba(22, 101, 52, 0.08)';
             const baseLossFill = chartTheme?.mode === 'light'
-              ? 'rgba(127, 29, 29, 0.18)'
-              : 'rgba(127, 29, 29, 0.18)';
+              ? 'rgba(127, 29, 29, 0.08)'
+              : 'rgba(127, 29, 29, 0.08)';
             const currentFill = geometry.currentIsProfit
-              ? 'rgba(34, 197, 94, 0.16)'
-              : 'rgba(239, 68, 68, 0.16)';
+              ? 'rgba(34, 197, 94, 0.07)'
+              : 'rgba(239, 68, 68, 0.07)';
 
             return (
               <g key={d.id}>
@@ -1161,6 +1161,7 @@ export default function ChartStage({
   overlaySize,
   renderedDrawings,
   renderedBacktestOrders,
+  renderedTradeMarkers,
   selectedDrawingId,
   textInput,
   textDraft,
@@ -1269,6 +1270,15 @@ export default function ChartStage({
         overlaySize={overlaySize}
         chartTheme={chartTheme}
       />
+
+      <svg className="pointer-events-none absolute inset-0 z-[12]" width={overlaySize.width} height={overlaySize.height} aria-hidden="true">
+        {(renderedTradeMarkers ?? []).map((marker) => (
+          <g key={marker.id} transform={`translate(${marker.x - 9} ${marker.y - 9})`}>
+            <rect width="18" height="18" rx="3" fill={marker.color} />
+            <text x="9" y="12.5" textAnchor="middle" fill="#ffffff" fontSize="10" fontWeight="800">{marker.label}</text>
+          </g>
+        ))}
+      </svg>
 
       <TextInputPopover
         textInput={textInput}

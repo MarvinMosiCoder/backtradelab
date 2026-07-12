@@ -2,13 +2,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import TradingViewChart from "../../Components/Market/TradingViewChart";
 import { useTheme } from "../../Context/ThemeContext";
-import { Activity, UserCheck, UserMinus, Users } from 'lucide-react';
+import { Activity, FolderPlus, Star, UserCheck, UserMinus, Users } from 'lucide-react';
 
 const Dashboard = ({ userMetrics = {} }) => {
     const { auth } = usePage().props;
     const { theme } = useTheme();
     const isDark = theme === 'bg-skin-black';
     const isSuperAdmin = Boolean(auth?.sessions?.admin_is_superadmin);
+    const watchlistKey = `backtradelab-watchlists:${auth?.user?.id ?? 'guest'}`;
+    const [savedSymbols, setSavedSymbols] = useState([]);
+    const [watchlists, setWatchlists] = useState(() => { try { return JSON.parse(localStorage.getItem(watchlistKey) || '{"Main":[]}'); } catch { return { Main: [] }; } });
+    const [activeWatchlist, setActiveWatchlist] = useState(Object.keys(watchlists)[0] ?? 'Main');
     const [activeSymbol, setActiveSymbol] = useState(() => {
         if (typeof window === "undefined") {
             return null;
@@ -28,6 +32,16 @@ const Dashboard = ({ userMetrics = {} }) => {
 
         return `${activeSymbol.exchange ?? "bingx"}:${activeSymbol.category ?? "linear"}:${activeSymbol.symbol}`;
     }, [activeSymbol]);
+
+    useEffect(() => {
+        if (activeSymbol?.symbol) localStorage.setItem(`backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`, JSON.stringify(activeSymbol));
+    }, [activeSymbol, auth?.user?.id]);
+
+    useEffect(() => {
+        fetch('/market-symbols', { headers: { Accept: 'application/json' } }).then((response) => response.json()).then((data) => setSavedSymbols(data.symbols ?? [])).catch(() => setSavedSymbols([]));
+    }, []);
+
+    useEffect(() => { localStorage.setItem(watchlistKey, JSON.stringify(watchlists)); }, [watchlistKey, watchlists]);
 
     useEffect(() => {
         const handleSymbolChange = (event) => {
@@ -62,6 +76,10 @@ const Dashboard = ({ userMetrics = {} }) => {
                         <div className="hidden items-center gap-2 text-[10px] text-[#787b86] sm:flex">
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Market data connected
                         </div>
+                    </div>
+                    <div className={`rounded-lg border p-2 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-2">{Object.keys(watchlists).map((name)=><button key={name} onClick={()=>setActiveWatchlist(name)} className={`whitespace-nowrap rounded-md px-3 py-1.5 text-[10px] font-bold ${activeWatchlist===name?'bg-[#2962ff] text-white':'text-[#787b86] hover:bg-[#2962ff]/10'}`}>{name} · {watchlists[name].length}</button>)}<button onClick={()=>{const name=window.prompt('Watchlist name')?.trim();if(name&&!watchlists[name]){setWatchlists((current)=>({...current,[name]:[]}));setActiveWatchlist(name)}}} className="flex items-center gap-1 whitespace-nowrap px-2 text-[10px] font-bold text-[#5b8cff]"><FolderPlus size={13}/>New</button></div>
+                        <div className="flex gap-2 overflow-x-auto">{savedSymbols.map((item)=>{const key=`${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`,watched=(watchlists[activeWatchlist]??[]).includes(key);return <div key={key} className={`flex shrink-0 items-center rounded-md border ${watched?'border-amber-400/40':'border-transparent'}`}><button onClick={()=>setActiveSymbol({symbol:item.symbol,exchange:item.exchange,category:item.category})} className="px-2 py-1.5 text-[10px] font-bold">{item.symbol}</button><button onClick={()=>setWatchlists((current)=>({...current,[activeWatchlist]:watched?current[activeWatchlist].filter((value)=>value!==key):[...(current[activeWatchlist]??[]),key]}))} className={watched?'p-1.5 text-amber-400':'p-1.5 text-[#787b86]'}><Star size={12} fill={watched?'currentColor':'none'}/></button></div>})}</div>
                     </div>
                     <div className={`overflow-hidden rounded-lg border p-2 shadow-2xl shadow-black/20 sm:p-3 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
                         <TradingViewChart

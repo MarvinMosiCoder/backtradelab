@@ -1334,10 +1334,10 @@ export default function ReplayPanel({
                   .filter(Boolean);
 
                 return (
-                  <div key={group.name} className={`space-y-2 rounded-md border p-2 ${isDarkTheme ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
-                    <div className={`text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>
-                      {group.name}
-                    </div>
+                  <details key={group.name} className={`group rounded-md border p-2 ${isDarkTheme ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                    <summary className={`flex cursor-pointer list-none items-center justify-between text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>
+                      {group.name}<ChevronDown size={13} className="transition group-open:rotate-180"/>
+                    </summary>
                     <div className="grid grid-cols-2 gap-2">
                       {groupTools.map(({ type, label, icon }) => (
                         <ControlButton
@@ -1351,7 +1351,7 @@ export default function ReplayPanel({
                         </ControlButton>
                       ))}
                     </div>
-                  </div>
+                  </details>
                 );
               })}
             </div>
@@ -1804,15 +1804,6 @@ export default function ReplayPanel({
         />
       )}
 
-      {activeGroup === 'tool-editor' && !hasToolEditor && (
-        <div className="pointer-events-auto">
-          <Flyout title="Tool Editor" icon={Palette} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
-            <span className="text-[11px] text-gray-500">
-              Select a drawing or choose a tool to edit its style and presets.
-            </span>
-          </Flyout>
-        </div>
-      )}
     </div>
   );
 }

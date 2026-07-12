@@ -5,11 +5,11 @@ import { useSidebar } from '../../Context/SidebarContext';
 import { useTheme } from '../../Context/ThemeContext';
 
 const items = [
+    { label: 'Market Summary', href: '/market', icon: CandlestickChart },
     { label: 'Workspace', href: '/dashboard', icon: LayoutDashboard },
-    { label: 'Market chart', href: '/market', icon: CandlestickChart },
     { label: 'Trade journal', href: '/trade-report', icon: BookOpen },
     { label: 'Subscription', href: '/subscription', icon: CreditCard },
-    { label: 'Feedback', href: '/feedback', icon: MessageSquarePlus },
+    { label: 'Feedback & Customer Support', href: '/feedback', icon: MessageSquarePlus },
     { label: 'Profile', href: '/profile', icon: UserRound },
     { label: 'Change password', href: '/change_password', icon: KeyRound },
     { label: 'How to use', href: '/help', icon: CircleHelp },
