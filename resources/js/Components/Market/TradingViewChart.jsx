@@ -431,6 +431,7 @@ export default function TradingViewReplayChart({
 }) {
   const { theme: adminTheme } = useTheme();
   const { auth } = usePage().props;
+  const toolSettingsStorageKey = `market-tool-settings:${auth?.user?.id ?? 'guest'}`;
   const chartTheme = useMemo(() => resolveChartTheme(adminTheme), [adminTheme]);
   const wrapperRef = useRef(null);
   const fullscreenRef = useRef(null);
@@ -1023,13 +1024,13 @@ export default function TradingViewReplayChart({
 
   const persistToolSettings = useCallback((nextSettings) => {
     try {
-      localStorage.setItem('market-tool-settings', JSON.stringify(nextSettings));
+      localStorage.setItem(toolSettingsStorageKey, JSON.stringify(nextSettings));
     } catch {}
 
     axios.put('/market-tool-settings', {
       settings: nextSettings,
     }).catch(() => {});
-  }, []);
+  }, [toolSettingsStorageKey]);
 
   const saveToolSettingsForType = useCallback((type, updates) => {
     if (!type || !updates || !Object.keys(updates).length) return;
@@ -1123,7 +1124,7 @@ export default function TradingViewReplayChart({
       let localSettings = {};
 
       try {
-        const parsed = JSON.parse(localStorage.getItem('market-tool-settings') ?? '{}');
+        const parsed = JSON.parse(localStorage.getItem(toolSettingsStorageKey) ?? '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           localSettings = parsed;
         }
@@ -1134,15 +1135,16 @@ export default function TradingViewReplayChart({
           headers: { Accept: 'application/json' },
         });
         const serverSettings = response.data?.settings;
-        const nextSettings =
-          serverSettings && typeof serverSettings === 'object' && !Array.isArray(serverSettings)
+        const nextSettings = Array.isArray(serverSettings)
+          ? {}
+          : serverSettings && typeof serverSettings === 'object'
             ? serverSettings
-            : localSettings;
+            : {};
 
         if (!cancelled) {
           setToolSettings(nextSettings);
           try {
-            localStorage.setItem('market-tool-settings', JSON.stringify(nextSettings));
+            localStorage.setItem(toolSettingsStorageKey, JSON.stringify(nextSettings));
           } catch {}
         }
       } catch {
@@ -1157,7 +1159,7 @@ export default function TradingViewReplayChart({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [toolSettingsStorageKey]);
 
   const persistDrawingsToServer = useCallback(async (nextDrawings, activeSymbol = symbol) => {
     await axios.put('/market-drawings', {
@@ -4515,7 +4517,7 @@ export default function TradingViewReplayChart({
             <ChartHeader
               {...chartHeaderProps}
               compact
-              className="pointer-events-auto absolute left-16 top-2 z-20 max-w-[calc(100%-7.5rem)]"
+              className="pointer-events-auto absolute left-16 top-2 z-40 w-[calc(100vw-5rem)] max-w-xl lg:w-auto lg:max-w-[calc(100%-7.5rem)]"
             />
           )}
 
@@ -4538,7 +4540,7 @@ export default function TradingViewReplayChart({
           )}
 
           <ReplayPanel
-            className="absolute left-3 top-3 z-30"
+            className="absolute left-3 top-3 z-50"
             replayMode={replayMode}
             isPlaying={isPlaying}
             followReplay={followReplay}

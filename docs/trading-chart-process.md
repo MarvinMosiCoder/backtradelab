@@ -71,7 +71,7 @@ External API
 | `resources/js/Components/Market/TradingViewChart.jsx` | Main container for chart state, refs, data fetching, replay logic, and pointer/keyboard events |
 | `resources/js/Components/Market/TradeCalendar.jsx` | Standalone trade calendar module showing daily PnL and win/loss counts by close date |
 | `resources/js/Components/Market/TradeReport.jsx` | PnL report module with summary cards, CSV/JSON export, closed-trades table, snapshots, and journal editing |
-| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Responsive two-row trading toolbar with symbol management, market/timeframe controls, replay toggle, candle settings, and bordered price status |
+| `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Responsive chart command bar with symbol management, market/timeframe controls, replay, alerts, themed indicators, and appearance controls; fullscreen uses a compact variant |
 | `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, and paper backtest account controls, plus a compact top tool editor for drawing styles and presets |
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, app logo brand mark, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
@@ -364,6 +364,8 @@ axios.put('/market-tool-settings', {
 
 When a drawing is completed, or when a selected drawing's color, width, label text, text style, or label placement is changed, `TradingViewChart.jsx` updates the saved defaults for that tool type. If no drawing is selected, the contextual editor updates the active tool's defaults directly, so line, Fibonacci, box, forecast, measure, text, and position tools can each keep their own style. New tools of the same type inherit those saved settings, including line/box/Fibonacci text placement, bold/italic text style, and text-tool draft text. `localStorage` mirrors the settings as a fallback if the server request is unavailable.
 
+The browser fallback is scoped to the authenticated user with `market-tool-settings:{userId}`. A successful empty server response initializes `{}` and does not import the legacy unscoped `market-tool-settings` value. This prevents presets left in a shared browser from appearing for another account or being copied into that account's database record.
+
 The same settings object also stores selectable presets by tool type under `settings.presets`. A selected text, box, line, Fibonacci, forecast, measure, long-position, or short-position drawing can be saved as a preset from the contextual editor in `ReplayPanel.jsx`. Example text presets can be `BOS`, `MSS`, `HH`, `HL`, `LH`, or `LL`. After saving, the preset appears when that tool type is active or selected. Clicking a preset applies its saved text, color, width, text style, and label placement to the selected drawing, or makes it the default for the next drawing of that type. Each preset row also has a delete button that removes only that preset for the active tool type and persists the updated settings.
 
 ---
@@ -512,9 +514,13 @@ The Lightweight Charts TradingView attribution logo is disabled in chart layout 
 
 `Market.jsx` lets the chart content determine the page height. It should not reserve a fixed multi-viewport wrapper height around `TradingViewChart`, otherwise the market page shows a large blank area below the chart. The authenticated layout's `AppContent.jsx` content area is also dynamic rather than fixed to `600px`, so the chart panel can size naturally without overflowing a hardcoded container.
 
-Outside fullscreen, `ChartHeader.jsx` uses a stable responsive 12-column, two-row trading toolbar instead of forcing every control into one compressed row. The first row contains symbol management, Market, Timeframe, and Replay. Timeframe and Replay have dedicated grid columns, and the replay action uses a non-wrapping label so `Start Replay` and `Back to Live` retain consistent height and alignment. The second row contains the wider candle color/size controls and a separate bordered current/replay price status block. At medium widths symbol management receives a full row before the remaining primary controls; phones fall back to two columns. This structure prevents the replay button, timeframe selector, candle settings, and price information from competing for the same horizontal space.
+Outside fullscreen, `ChartHeader.jsx` uses a TradingView-style command bar. At desktop widths the active symbol, market category, timeframe, replay action, appearance, indicators, and alert action occupy one row. Visible form labels and the duplicate current-price card were removed so the chart retains more vertical space; accessible labels remain available to screen readers, and the chart price scale is the primary live-price display. The active symbol is green, exchange/category metadata is secondary, and the Indicators action shows the number of enabled indicators.
 
-Fullscreen mode continues to use the compact wrapping header variant. Its symbol, market, timeframe, replay, and price controls use compact fixed heights, while symbol removal remains an icon-only trash action.
+Below the `lg` breakpoint, both embedded and fullscreen headers collapse into a hamburger labeled with the active symbol. Activating it opens a scrollable, theme-aware controls dropdown; at `lg` and above the normal command bar is restored. The fullscreen compact header uses the available viewport width below `lg`, capped at `36rem`, so its mobile/tablet dropdown does not inherit a narrow button width.
+
+The embedded Indicators menu is explicitly themed rather than inheriting page text colors. Volume, SMA, EMA, and RSI are grouped into dark or light cards with matching borders and surfaces, blue-accent checkboxes/sliders, editable periods, and percentage readouts for Volume and RSI pane sizes.
+
+Fullscreen mode uses the compact wrapping header variant with the same active symbol and indicator state. Its symbol picker uses green symbol labels, explicit `Open` buttons, and theme-aware search/results. Its Indicators menu exposes Volume size, SMA/EMA/RSI periods, and RSI pane size. The compact header remains above the chart, while `ReplayPanel` uses a higher stacking layer so drawing Tool Settings, replay controls, and flyouts remain visible above the header when they overlap.
 
 Volume bars are derived from visible candles:
 
@@ -733,7 +739,7 @@ The chart itself is rendered by Lightweight Charts. Drawings are rendered above 
 
 The overlay is intentionally `pointer-events: none`; mouse events are handled by the chart wrapper in `TradingViewChart.jsx`.
 
-`ChartStage.jsx` includes a fullscreen button in the chart's top-right corner. Fullscreen mode uses an in-page fixed-position chart shell instead of the browser Fullscreen API, so the operating system taskbar can still appear when the user hovers an auto-hidden taskbar area. The normal full chart header is removed from fullscreen layout and replaced with a compact floating `ChartHeader` overlay for symbol, market, timeframe, replay, and price controls. This keeps the controls reachable while letting the chart consume nearly the full viewport. The chart and overlay are both resized through the same wrapper, so drawing alignment is preserved.
+`ChartStage.jsx` includes a fullscreen button in the chart's top-right corner. Fullscreen mode uses an in-page fixed-position chart shell instead of the browser Fullscreen API, so the operating system taskbar can still appear when the user hovers an auto-hidden taskbar area. The normal chart command bar is replaced with an absolutely positioned compact floating `ChartHeader` overlay. This keeps controls reachable while letting the chart consume nearly the full viewport. The chart and overlay are both resized through the same wrapper, so drawing alignment is preserved.
 
 ### Overlay Refresh
 
@@ -941,7 +947,9 @@ Current known build warnings are unrelated to the chart changes:
 
 ### Watchlist storage
 
-Watchlist groups currently use `backtradelab-watchlists:{userId}` in `localStorage`; the actual available symbols remain database-backed and user-scoped through `/market-symbols`. Group creation, selection, and symbol membership are managed in Workspace. Market Summary remains focused on market discovery and opening symbols. A future cross-device watchlist feature should migrate group membership to dedicated server tables without changing the Workspace interaction.
+Watchlist groups currently use `backtradelab-watchlists:{userId}` in `localStorage`; the actual available symbols remain database-backed and user-scoped through `/market-symbols`. Group creation uses a themed modal with empty/duplicate-name validation. Groups can be renamed without changing their assigned markets and deleted through a confirmation modal; deleting a group never deletes its database-backed saved symbols, and deleting the last group recreates an empty `Main` group.
+
+Workspace renders groups as a compact single-open accordion. Each expanded group has its own saved-market selector and a horizontally scrollable row of market chips. A chip opens that market in the chart or removes it from only that group. Market Summary remains focused on discovery and opening symbols. A future cross-device watchlist feature should migrate group membership to dedicated server tables without changing the Workspace interaction.
 
 ### Alert runtime boundary
 
@@ -975,6 +983,8 @@ Users can inspect their current access at `/subscription`. The page displays:
 - Manual payment request history.
 - Pending, approved, or rejected review status.
 - Reference, recorded amount, submission/review timestamps, proof link, and admin notes.
+
+The trader subscription page reads `ThemeContext` and uses separate dark and white palettes for its hero, access metrics, payment-history cards, status badges, metadata, admin notes, proof actions, and empty state. The plan/payment modal and payment conversation use the same active theme so the subscription workflow remains consistent with the trader shell.
 
 ### Database-controlled subscription plans
 

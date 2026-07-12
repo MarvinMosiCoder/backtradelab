@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, ChevronDown, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Bell, ChevronDown, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES, TIMEFRAME_SECONDS } from './constants';
 import { formatPrice } from './utils';
 
@@ -38,6 +38,7 @@ export default function ChartHeader({
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const isDark = chartTheme?.mode === 'dark';
   useEffect(() => {
@@ -55,7 +56,7 @@ export default function ChartHeader({
     backgroundColor: chartTheme?.panel ?? (isDark ? '#242627' : '#ffffff'),
     borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb'),
   };
-  const fieldClass = `h-9 rounded-md border px-2 text-sm outline-none ${
+  const fieldClass = `h-9 rounded-lg border px-3 text-xs font-medium outline-none transition-colors focus:border-[#2962ff] ${
     isDark
       ? 'border-gray-700 bg-black-table-color text-white'
       : 'border-gray-200 bg-gray-50 text-gray-800'
@@ -72,6 +73,7 @@ export default function ChartHeader({
     ? categorySymbols
     : [currentSymbolOption, ...categorySymbols];
   const savedSymbolSet = new Set(symbols.map((item) => buildSymbolKey(item)));
+  const activeIndicatorCount = ['volume', 'sma', 'ema', 'rsi'].filter((key) => indicators[key]).length;
   const addSymbolOptions = availableSymbols.filter((item) => (
     !savedSymbolSet.has(buildSymbolKey(item))
   ));
@@ -124,9 +126,11 @@ export default function ChartHeader({
         className={`flex max-w-full flex-wrap items-center gap-2 rounded-md border p-2 shadow-xl backdrop-blur ${className}`}
         style={panelStyle}
       >
+        <button type="button" onClick={()=>setIsMobileMenuOpen((open)=>!open)} className={`${compactFieldClass} flex items-center gap-2 font-semibold lg:hidden`} aria-expanded={isMobileMenuOpen}><Menu size={15}/><span className="max-w-28 truncate text-emerald-500">{symbol}</span><ChevronDown size={13} className={`transition-transform ${isMobileMenuOpen?'rotate-180':''}`}/></button>
+        <div className={`${isMobileMenuOpen?'flex':'hidden'} absolute left-0 right-0 top-full z-[110] mt-2 max-h-[calc(100dvh-5rem)] flex-wrap items-center gap-2 overflow-y-auto rounded-lg border p-2 shadow-2xl lg:contents ${isDark?'border-gray-700 bg-black-table-color text-white':'border-gray-200 bg-white text-slate-900'}`}>
         <div className="relative">
-          <button type="button" onClick={()=>setIsAddOpen((value)=>!value)} className={`${compactFieldClass} flex w-44 max-w-[42vw] items-center justify-between gap-2`}><span className="truncate">{symbol} · {String(exchange).toUpperCase()}</span><ChevronDown size={13}/></button>
-          {isAddOpen&&<div className={`absolute left-0 top-full z-[120] mt-2 w-80 max-w-[85vw] overflow-hidden rounded-md border shadow-2xl ${isDark?'border-gray-700 bg-black-table-color':'border-gray-200 bg-white'}`}><div className="flex items-center gap-2 border-b border-gray-700 p-2"><Search size={14}/><input autoFocus value={symbolSearch} onChange={(e)=>setSymbolSearch(e.target.value)} placeholder="Search all symbols" className="min-w-0 flex-1 bg-transparent text-xs uppercase outline-none"/><button onClick={()=>setIsAddOpen(false)}><X size={14}/></button></div><div className="max-h-72 overflow-y-auto">{filteredAddSymbolOptions.map((item)=><button key={buildSymbolKey(item)} onClick={()=>handleSelectSymbol(item)} className="flex w-full items-center justify-between border-b border-gray-700/50 px-3 py-2 text-left text-xs hover:bg-[#2962ff]/15"><span>{item.symbol}</span><span className="text-[9px] text-gray-400">{String(item.exchange).toUpperCase()} {String(item.category).toUpperCase()}</span></button>)}</div></div>}
+          <button type="button" onClick={()=>setIsAddOpen((value)=>!value)} className={`${compactFieldClass} flex w-44 max-w-[42vw] items-center justify-between gap-2`}><span className="truncate font-semibold text-emerald-500">{symbol} <span className={`text-[9px] font-medium ${isDark?'text-gray-400':'text-slate-500'}`}>{String(exchange).toUpperCase()}</span></span><ChevronDown size={13}/></button>
+          {isAddOpen&&<div className={`absolute left-0 top-full z-[120] mt-2 w-80 max-w-[85vw] overflow-hidden rounded-md border shadow-2xl ${isDark?'border-gray-700 bg-black-table-color text-white':'border-gray-200 bg-white text-slate-900'}`}><div className={`flex items-center gap-2 border-b p-2 ${isDark?'border-gray-700':'border-gray-200'}`}><Search size={14} className="text-gray-400"/><input autoFocus value={symbolSearch} onChange={(e)=>setSymbolSearch(e.target.value)} placeholder="Search all symbols" className="min-w-0 flex-1 bg-transparent text-xs uppercase outline-none placeholder:text-gray-500"/><button type="button" onClick={()=>setIsAddOpen(false)} className={`rounded p-1 ${isDark?'hover:bg-white/10':'hover:bg-black/5'}`}><X size={14}/></button></div><div className="max-h-72 overflow-y-auto">{filteredAddSymbolOptions.length?filteredAddSymbolOptions.map((item)=><div key={buildSymbolKey(item)} className={`flex items-center gap-2 border-b px-3 py-2 last:border-b-0 ${isDark?'border-gray-700/50':'border-gray-100'}`}><div className="min-w-0 flex-1"><div className="truncate text-xs font-semibold text-emerald-500">{item.symbol}</div><div className={`truncate text-[9px] ${isDark?'text-gray-400':'text-slate-500'}`}>{String(item.exchangeLabel??item.exchange).toUpperCase()} {String(item.category).toUpperCase()}</div></div><button type="button" onClick={()=>handleSelectSymbol(item)} disabled={isSavingSymbol} className="rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">Open</button></div>):<div className={`px-3 py-5 text-center text-xs ${isDark?'text-gray-400':'text-slate-500'}`}>No symbols found</div>}</div></div>}
         </div>
 
         {currentSavedSymbol && (
@@ -177,7 +181,7 @@ export default function ChartHeader({
 
         <div className="relative">
           <button type="button" onClick={()=>setIsIndicatorsOpen((value)=>!value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}><SlidersHorizontal size={13}/><span className="hidden sm:inline">Indicators</span></button>
-          {isIndicatorsOpen&&<div className="absolute left-0 top-full z-[100] mt-2 w-64 max-w-[80vw] space-y-2 rounded-md border p-3 shadow-2xl" style={panelStyle}>{[['volume','Volume'],['sma','SMA'],['ema','EMA'],['rsi','RSI']].map(([key,label])=><label key={key} className="flex items-center justify-between gap-3 text-xs"><span>{label}</span><input type="checkbox" checked={indicators[key]} onChange={(e)=>onIndicatorsChange((current)=>({...current,[key]:e.target.checked}))}/></label>)}</div>}
+          {isIndicatorsOpen&&<div className={`absolute left-0 top-full z-[100] mt-2 w-72 max-w-[85vw] space-y-3 rounded-md border p-3 shadow-2xl ${isDark?'text-white':'text-slate-900'}`} style={panelStyle}><div className={`text-[10px] font-bold uppercase tracking-wider ${isDark?'text-gray-400':'text-slate-500'}`}>Chart indicators</div><label className={`flex items-center justify-between gap-3 rounded-md border p-2 text-xs ${isDark?'border-gray-700 bg-black-table-color':'border-gray-200 bg-slate-50'}`}><span className="font-semibold">Volume</span><input className="accent-[#2962ff]" type="checkbox" checked={indicators.volume} onChange={(e)=>onIndicatorsChange((current)=>({...current,volume:e.target.checked}))}/></label>{indicators.volume&&<label className="flex items-center gap-2 text-[10px]"><span className={labelClass}>Pane size</span><input className="min-w-0 flex-1 accent-[#2962ff]" type="range" min="10" max="45" value={indicators.volumeSize} onChange={(e)=>onIndicatorsChange((current)=>({...current,volumeSize:Number(e.target.value)}))}/><span className="w-8 text-right tabular-nums">{indicators.volumeSize}%</span></label>}{[['sma','SMA','smaPeriod'],['ema','EMA','emaPeriod'],['rsi','RSI','rsiPeriod']].map(([key,label,periodKey])=><div key={key} className={`rounded-md border p-2 ${isDark?'border-gray-700 bg-black-table-color':'border-gray-200 bg-slate-50'}`}><div className="flex items-center gap-2 text-xs"><label className="flex flex-1 items-center gap-2 font-semibold"><input className="accent-[#2962ff]" type="checkbox" checked={indicators[key]} onChange={(e)=>onIndicatorsChange((current)=>({...current,[key]:e.target.checked}))}/>{label}</label><label className={`flex items-center gap-1 text-[10px] ${labelClass}`}>Period<input className={`${compactFieldClass} w-16`} type="number" min="2" max="200" value={indicators[periodKey]} onChange={(e)=>onIndicatorsChange((current)=>({...current,[periodKey]:Math.min(200,Math.max(2,Number(e.target.value)||2))}))}/></label></div>{key==='rsi'&&indicators.rsi&&<label className="mt-2 flex items-center gap-2 text-[10px]"><span className={labelClass}>Pane size</span><input className="min-w-0 flex-1 accent-[#2962ff]" type="range" min="15" max="45" value={indicators.rsiSize??25} onChange={(e)=>onIndicatorsChange((current)=>({...current,rsiSize:Number(e.target.value)}))}/><span className="w-8 text-right tabular-nums">{indicators.rsiSize??25}%</span></label>}</div>)}</div>}
         </div>
         <div className="relative"><button type="button" onClick={()=>setIsAppearanceOpen((value)=>!value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}><SlidersHorizontal size={13}/><span className="hidden md:inline">Style</span></button>{isAppearanceOpen&&<div className="absolute right-0 top-full z-[100] mt-2 flex w-56 items-center gap-3 rounded-md border p-3 shadow-2xl" style={panelStyle}><label className="text-[10px]">Buy<input type="color" value={candleColors.up} onChange={(e)=>onCandleColorChange((c)=>({...c,up:e.target.value}))}/></label><label className="text-[10px]">Sell<input type="color" value={candleColors.down} onChange={(e)=>onCandleColorChange((c)=>({...c,down:e.target.value}))}/></label><label className="min-w-0 flex-1 text-[10px]">Size<input className="w-full" type="range" min="3" max="24" value={candleSize} onChange={(e)=>handleCandleSizeChange(e.target.value)}/></label></div>}</div>
 
@@ -190,27 +194,29 @@ export default function ChartHeader({
           </div>
           {!replayMode && <div className="text-[9px] leading-none text-[#787b86]">Closes in {candleCountdown}</div>}
         </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={`relative z-40 rounded-lg border p-1.5 shadow-lg sm:p-2 ${className}`} style={panelStyle}>
-      <div className="grid grid-cols-2 items-end gap-1.5 sm:grid-cols-12 sm:gap-2">
-        <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-6 xl:col-span-5">
-          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Symbol</label>
+    <div className={`relative z-40 rounded-lg border p-1.5 shadow-sm ${className}`} style={panelStyle}>
+      <button type="button" onClick={()=>setIsMobileMenuOpen((open)=>!open)} className={`${fieldClass} flex w-full items-center justify-between gap-2 font-semibold lg:hidden`} aria-expanded={isMobileMenuOpen}><span className="flex min-w-0 items-center gap-2"><Menu size={15}/><span className="truncate text-emerald-500">{symbol}</span></span><ChevronDown size={14} className={`shrink-0 transition-transform ${isMobileMenuOpen?'rotate-180':''}`}/></button>
+      <div className={`${isMobileMenuOpen?'grid':'hidden'} absolute left-0 right-0 top-full z-[110] mt-2 max-h-[calc(100dvh-5rem)] grid-cols-2 items-center gap-1.5 overflow-y-auto rounded-lg border p-2 shadow-2xl sm:grid-cols-12 lg:static lg:mt-0 lg:grid lg:max-h-none lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none ${isDark?'border-gray-700 bg-black-table-color text-white':'border-gray-200 bg-white text-slate-900'}`}>
+        <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-4">
+          <label className="sr-only">Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
               onClick={() => setIsAddOpen((current) => !current)}
-              className={`${fieldClass} flex min-w-0 flex-1 items-center justify-between gap-2 text-left font-semibold`}
+              className={`${fieldClass} flex min-w-0 flex-1 items-center justify-between gap-2 text-left font-semibold hover:border-[#2962ff]/60`}
               aria-expanded={isAddOpen}
             >
-              <span className="truncate">{symbol} <span className="text-[10px] text-gray-400">{String(exchange).toUpperCase()} {String(marketCategory).toUpperCase()}</span></span>
+              <span className="truncate text-emerald-500">{symbol} <span className={`text-[9px] font-medium ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>{String(exchange).toUpperCase()} · {String(marketCategory).toUpperCase()}</span></span>
               <ChevronDown size={14} className="shrink-0" />
             </button>
             {currentSavedSymbol && (
-              <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-40" aria-label={`Remove ${currentSavedSymbol.symbol}`}>
+              <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/25 text-red-400 transition-colors hover:border-red-500/50 hover:bg-red-500/10 disabled:opacity-40" aria-label={`Remove ${currentSavedSymbol.symbol}`}>
                 <Trash2 size={14} />
               </button>
             )}
@@ -284,8 +290,8 @@ export default function ChartHeader({
           )}
         </div>
 
-        <div className="col-span-1 min-w-0 sm:col-span-4 lg:col-span-2">
-          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Market</label>
+        <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
+          <label className="sr-only">Market</label>
           <select
             value={marketCategory}
             onChange={(e) => {
@@ -299,8 +305,8 @@ export default function ChartHeader({
           </select>
         </div>
 
-        <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-2">
-          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Timeframe</label>
+        <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
+          <label className="sr-only">Timeframe</label>
           <select
             value={timeframe}
             onChange={(e) => onTimeframeChange(e.target.value)}
@@ -314,12 +320,12 @@ export default function ChartHeader({
           </select>
         </div>
 
-        <div className="col-span-2 min-w-0 sm:col-span-5 lg:col-span-2 xl:col-span-3">
-          <label className={`mb-1 block text-xs font-medium ${labelClass}`}>Replay</label>
+        <div className="col-span-2 min-w-0 sm:col-span-3 lg:col-span-2">
+          <label className="sr-only">Replay</label>
           <button
             type="button"
             onClick={onToggleReplayMode}
-            className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-md px-4 text-sm font-semibold transition-colors ${
+            className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors ${
               replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass
             }`}
           >
@@ -328,10 +334,10 @@ export default function ChartHeader({
           </button>
         </div>
 
-        <div className="relative col-span-1 min-w-0 sm:col-span-4 lg:col-span-2">
-          <button type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold`}>
+        <div className="relative col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
+          <button type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
             <SlidersHorizontal size={14} />
-            <span>Appearance</span>
+            <span className="hidden xl:inline">Style</span>
           </button>
           {isAppearanceOpen && <div className="absolute left-0 top-full z-[90] mt-2 max-h-[min(32rem,calc(100vh-7rem))] w-full min-w-0 overflow-y-auto rounded-md border p-3 shadow-2xl sm:left-auto sm:right-0 sm:w-72" style={panelStyle}>
             <div className={`mb-2 text-xs font-semibold ${labelClass}`}>Candle appearance</div>
@@ -379,30 +385,35 @@ export default function ChartHeader({
           </div>}
         </div>
 
-        <div className="relative col-span-1 sm:col-span-4 lg:col-span-2">
-          <button type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold`}><SlidersHorizontal size={14}/>Indicators</button>
-          {isIndicatorsOpen && <div className="absolute right-0 top-full z-[100] mt-2 w-72 max-w-[calc(100vw-1rem)] space-y-2 rounded-md border p-3 shadow-2xl" style={panelStyle}>
-            <label className="flex items-center justify-between gap-2 text-xs"><span>Volume</span><input type="checkbox" checked={indicators.volume} onChange={(e) => onIndicatorsChange((c) => ({...c, volume:e.target.checked}))}/></label>
-            {indicators.volume && <input className="w-full" type="range" min="10" max="45" value={indicators.volumeSize} onChange={(e)=>onIndicatorsChange((c)=>({...c,volumeSize:Number(e.target.value)}))}/>}
-            {[['sma','SMA','smaPeriod'],['ema','EMA','emaPeriod'],['rsi','RSI','rsiPeriod']].map(([key,label,periodKey])=><div key={key} className="flex items-center gap-2 text-xs"><label className="flex flex-1 items-center gap-2"><input type="checkbox" checked={indicators[key]} onChange={(e)=>onIndicatorsChange((c)=>({...c,[key]:e.target.checked}))}/>{label}</label><input className={`${fieldClass} w-16`} type="number" min="2" max="200" value={indicators[periodKey]} onChange={(e)=>onIndicatorsChange((c)=>({...c,[periodKey]:Math.min(200,Math.max(2,Number(e.target.value)||2))}))}/>{key==='rsi'&&<input title="RSI pane size" className="w-16" type="range" min="15" max="45" value={indicators.rsiSize ?? 25} onChange={(e)=>onIndicatorsChange((c)=>({...c,rsiSize:Number(e.target.value)}))}/>}</div>)}
+        <div className="relative col-span-1 sm:col-span-3 lg:col-span-2">
+          <button type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}><SlidersHorizontal size={14}/><span>Indicators</span>{activeIndicatorCount>0&&<span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2962ff] px-1 text-[9px] text-white">{activeIndicatorCount}</span>}</button>
+          {isIndicatorsOpen && <div className={`absolute right-0 top-full z-[100] mt-2 w-72 max-w-[calc(100vw-1rem)] space-y-3 rounded-lg border p-3 shadow-2xl ${isDark?'text-white':'text-slate-900'}`} style={panelStyle}>
+            <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark?'text-gray-400':'text-slate-500'}`}>Chart indicators</div>
+            <div className={`rounded-lg border p-2.5 ${isDark?'border-gray-700 bg-black-table-color':'border-slate-200 bg-slate-50'}`}><label className="flex items-center justify-between gap-2 text-xs font-semibold"><span>Volume</span><input className="h-4 w-4 accent-[#2962ff]" type="checkbox" checked={indicators.volume} onChange={(e) => onIndicatorsChange((c) => ({...c, volume:e.target.checked}))}/></label>{indicators.volume&&<label className={`mt-2 flex items-center gap-2 text-[10px] ${labelClass}`}><span>Pane size</span><input className="min-w-0 flex-1 accent-[#2962ff]" type="range" min="10" max="45" value={indicators.volumeSize} onChange={(e)=>onIndicatorsChange((c)=>({...c,volumeSize:Number(e.target.value)}))}/><span className="w-8 text-right tabular-nums">{indicators.volumeSize}%</span></label>}</div>
+            {[['sma','SMA','smaPeriod'],['ema','EMA','emaPeriod'],['rsi','RSI','rsiPeriod']].map(([key,label,periodKey])=><div key={key} className={`rounded-lg border p-2.5 ${isDark?'border-gray-700 bg-black-table-color':'border-slate-200 bg-slate-50'}`}><div className="flex items-center gap-2 text-xs"><label className="flex flex-1 items-center gap-2 font-semibold"><input className="h-4 w-4 accent-[#2962ff]" type="checkbox" checked={indicators[key]} onChange={(e)=>onIndicatorsChange((c)=>({...c,[key]:e.target.checked}))}/>{label}</label><label className={`flex items-center gap-1.5 text-[10px] ${labelClass}`}><span>Period</span><input className={`${fieldClass} w-16 bg-transparent px-2 text-center`} type="number" min="2" max="200" value={indicators[periodKey]} onChange={(e)=>onIndicatorsChange((c)=>({...c,[periodKey]:Math.min(200,Math.max(2,Number(e.target.value)||2))}))}/></label></div>{key==='rsi'&&indicators.rsi&&<label className={`mt-2 flex items-center gap-2 text-[10px] ${labelClass}`}><span>Pane size</span><input className="min-w-0 flex-1 accent-[#2962ff]" type="range" min="15" max="45" value={indicators.rsiSize??25} onChange={(e)=>onIndicatorsChange((c)=>({...c,rsiSize:Number(e.target.value)}))}/><span className="w-8 text-right tabular-nums">{indicators.rsiSize??25}%</span></label>}</div>)}
           </div>}
         </div>
 
-        <button type="button" onClick={onCreatePriceAlert} className="col-span-1 flex h-9 items-center justify-center gap-2 rounded-md bg-[#2962ff] px-3 text-xs font-semibold text-white hover:bg-blue-600 sm:col-span-4 lg:col-span-2"><Bell size={14}/>Alert</button>
+        <button type="button" onClick={onCreatePriceAlert} className="col-span-1 flex h-9 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-600 sm:col-span-3 lg:col-span-1"><Bell size={14}/><span className="hidden xl:inline">Alert</span></button>
 
-        <div className="col-span-1 flex min-w-0 items-end justify-end rounded-md border px-2 py-1 sm:col-span-8 lg:col-span-10"
+        <div className="hidden"
           style={{ borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb') }}
         >
-          <div className={`min-h-9 min-w-0 max-w-full ${isDark ? 'text-white' : 'text-gray-800'} lg:text-right`}>
-            <div className="truncate text-xs text-gray-400">
-              {replayMode ? 'Replay Price' : 'Current Price'}
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${replayMode ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+            <div className="min-w-0">
+              <div className="truncate text-[9px] font-semibold uppercase tracking-wider text-gray-400">
+                {replayMode ? 'Replay price' : 'Live price'}
+              </div>
+              {!replayMode && <div className="truncate text-[9px] leading-none text-[#787b86]">Closes in {candleCountdown}</div>}
             </div>
-            <div className="max-w-full truncate text-base font-bold leading-tight text-green-500 sm:text-lg">
+          </div>
+          <div className={`min-w-0 text-right ${isDark ? 'text-white' : 'text-gray-800'}`}>
+            <div className="truncate text-base font-bold leading-none text-emerald-500">
               ${formatPrice(currentPrice)}
             </div>
-            {!replayMode && <div className="max-w-full truncate text-[10px] text-[#787b86]">Candle closes in {candleCountdown}</div>}
             {replayMode && (
-              <div className={`max-w-full truncate text-xs ${isDark ? 'text-gray-300' : 'text-slate-500'}`}>
+              <div className={`mt-0.5 truncate text-[9px] ${isDark ? 'text-gray-300' : 'text-slate-500'}`}>
                 Selected: ${formatPrice(selectedReplayPrice)}
               </div>
             )}

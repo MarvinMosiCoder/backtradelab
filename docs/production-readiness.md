@@ -80,9 +80,16 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 - Below the `lg` breakpoint, verify desktop module links are hidden and the final navbar hamburger opens a dropdown rather than navigating directly. Confirm every dropdown module routes correctly and the menu closes after selection or backdrop click.
 - Verify dark and light themes on user subscription, plan selection, payment submission, admin payment review, pricing, and payment settings.
 - Verify fullscreen symbol search has readable input and option text in both themes.
+- Verify embedded and fullscreen symbol pickers retain the same active symbol. Confirm fullscreen results use green symbol labels and an explicit `Open` action in both themes.
+- Verify the embedded chart command bar stays on one row at desktop widths and wraps without overlap on tablet and phone widths.
+- Below `lg`, verify embedded and fullscreen chart headers show the active-symbol hamburger, open a scrollable themed controls dropdown, and return to the command bar at `lg`. Confirm the fullscreen dropdown has usable phone/tablet width.
+- Verify embedded and fullscreen Indicators menus in dark and white themes, including Volume size, SMA/EMA/RSI periods, RSI pane size, and the enabled-indicator count.
+- In fullscreen, verify drawing Tool Settings and replay/tool flyouts remain above the chart header when their surfaces overlap.
+- Sign into two different users in the same browser and confirm drawing-tool presets do not cross accounts. Browser fallback keys must use `market-tool-settings:{userId}`, and an account with no server settings must start empty.
 - Verify enabling RSI creates a bottom pane, its separator is draggable, and disabling RSI removes the empty pane.
 - Verify Rise and Drop alerts trigger only in the intended direction, create a notification, show an in-workspace notice, and remove their dashed chart line.
 - Verify Workspace watchlist groups are isolated by authenticated user ID in browser storage, persist after reload, and reopen the selected symbol in the chart. Confirm Market Summary does not duplicate watchlist management.
+- Verify watchlist create and rename validation, delete confirmation, last-group `Main` fallback, single-open accordion behavior, compact horizontal market chips, and that deleting a group never removes saved symbols.
 - Verify hovering a chart price keeps both shortcuts stable: alarm on the left end and order `+` on the right. Clicking alarm must open the Set Alert modal with the hovered price.
 - Verify completed trades render an 18px borderless rounded badge with `B` or `S` centered inside and remain aligned during pan, zoom, fullscreen, and timeframe changes.
 - Production offline alerts require a scheduled exchange-price worker; open-workspace polling alone is not an offline notification service.
