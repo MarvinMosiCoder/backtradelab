@@ -215,6 +215,16 @@ export default function Home() {
                     </div>
                 </section>
             </main>
+
+            <footer className={`border-t px-4 py-6 ${isDark ? 'border-gray-800 bg-skin-black text-slate-500' : 'border-slate-200 bg-white text-slate-500'}`}>
+                <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 text-xs sm:flex-row">
+                    <span>&copy; {new Date().getFullYear()} BacktradeLab. Educational simulation only.</span>
+                    <div className="flex gap-5">
+                        <Link href="/privacy-policy" className="hover:text-[#5b8cff]">Privacy Policy</Link>
+                        <Link href="/terms-of-service" className="hover:text-[#5b8cff]">Terms of Service</Link>
+                    </div>
+                </div>
+            </footer>
         </div>
     );
 }

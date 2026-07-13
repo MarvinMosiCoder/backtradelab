@@ -19,6 +19,7 @@ use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use App\Models\Announcement;
 use App\Models\AdmModels\AdmSettings;
@@ -63,6 +64,7 @@ class LoginController extends Controller
         }
 
         if (Auth::attempt($credentials)) {
+            RateLimiter::clear('login-identity:'.sha1(Str::lower(trim($credentials['email'])).'|'.$request->ip()));
             $this->completeLogin($request, Auth::user(), $session_details);
             return redirect()->intended($this->loginDestination($session_details));
         }

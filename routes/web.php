@@ -46,17 +46,29 @@ Route::get('/', function () {
 
     return Inertia::render('Public/Home');
 })->name('home');
+Route::get('/privacy-policy', fn () => Inertia::render('Public/PrivacyPolicy', [
+    'legal' => config('legal'),
+]))->name('privacy-policy');
+Route::get('/terms-of-service', fn () => Inertia::render('Public/TermsOfService', [
+    'legal' => config('legal'),
+]))->name('terms-of-service');
 Route::get('login', [LoginController::class, 'index'])->name('login');
 Route::get('/reset_password', [ResetPasswordController::class, 'getIndex'])->name('reset_password');
-Route::post('/send_resetpass_email', [ResetPasswordController::class, 'sendResetPasswordInstructions']);
+Route::post('/send_resetpass_email', [ResetPasswordController::class, 'sendResetPasswordInstructions'])
+    ->middleware('throttle:password-reset-request');
 Route::get('/reset_password_email/{email}', [ResetPasswordController::class, 'getResetIndex'])->name('reset_password_email');
-Route::post('/send_resetpass_email/reset', [ResetPasswordController::class, 'resetPassword']);
-Route::post('login-save', [LoginController::class, 'authenticate'])->name('login-save');
+Route::post('/send_resetpass_email/reset', [ResetPasswordController::class, 'resetPassword'])
+    ->middleware('throttle:password-reset-confirm');
+Route::post('login-save', [LoginController::class, 'authenticate'])
+    ->middleware('throttle:login')
+    ->name('login-save');
 Route::get('/auth/{provider}/redirect', [LoginController::class, 'redirectToProvider'])
     ->whereIn('provider', ['google', 'facebook'])
+    ->middleware('throttle:social-login')
     ->name('social.redirect');
 Route::get('/auth/{provider}/callback', [LoginController::class, 'handleProviderCallback'])
     ->whereIn('provider', ['google', 'facebook'])
+    ->middleware('throttle:social-callback')
     ->name('social.callback');
 Route::get('/appname', [SettingsController::class, 'getAppname'])->name('app-name');
 Route::get('/applogo', [SettingsController::class, 'getApplogo'])->name('app-logo');

@@ -201,6 +201,10 @@ const LoginPage = () => {
                             </a>
                         </div>
 
+                        <p className={`mt-4 text-center text-xs leading-5 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
+                            By signing in, you agree to our <Link href="/terms-of-service" className="font-semibold text-[#5b8cff] hover:underline">Terms of Service</Link> and acknowledge our <Link href="/privacy-policy" className="font-semibold text-[#5b8cff] hover:underline">Privacy Policy</Link>.
+                        </p>
+
                         <div className={`mt-6 flex justify-center gap-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                             <span>Forgot Password?</span>
                             <Link href="reset_password" className={`font-bold ${isDark ? 'text-gray-200 hover:text-white' : 'text-skin-black hover:text-skin-black-light'}`}>

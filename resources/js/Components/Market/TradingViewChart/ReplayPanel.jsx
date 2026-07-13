@@ -865,7 +865,6 @@ export default function ReplayPanel({
   onOpenBacktestPosition,
   onCloseBacktestPosition,
   onCancelBacktestPosition,
-  onResetBacktestAccount,
   orderLineDraftPatch,
   orderEntryRequest,
   orderDraftClearRequest,
@@ -885,7 +884,6 @@ export default function ReplayPanel({
   const [orderStopLoss, setOrderStopLoss] = useState('');
   const [orderTakeProfit, setOrderTakeProfit] = useState('');
   const [showOrderDraft, setShowOrderDraft] = useState(false);
-  const [resetBalance, setResetBalance] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState(() => (
     getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
@@ -952,12 +950,6 @@ export default function ReplayPanel({
       localStorage.setItem('market-backtest-php-rate', phpRate);
     } catch {}
   }, [phpRate]);
-
-  useEffect(() => {
-    if (backtestAccount?.startingBalance != null) {
-      setResetBalance(String(Number(backtestAccount.startingBalance)));
-    }
-  }, [backtestAccount?.startingBalance]);
 
   useEffect(() => {
     if (!orderLineDraftPatch) return;
@@ -1104,22 +1096,6 @@ export default function ReplayPanel({
     setOrderTakeProfit('');
     onBacktestOrderDraftChange?.(null);
   };
-  const resetBalanceValue = displayToQuoteAmount(resetBalance, displayCurrency, normalizedPhpRate);
-  const canResetAccount =
-    !isBacktestLoading &&
-    Number.isFinite(Number(resetBalanceValue)) &&
-    Number(resetBalanceValue) > 0;
-  const submitAccountReset = () => {
-    if (!canResetAccount) return;
-
-    const confirmed = window.confirm(
-      `Reset paper account to ${formatAccountMoney(resetBalanceValue)}? This deletes current positions and trade history.`
-    );
-
-    if (!confirmed) return;
-
-    onResetBacktestAccount(resetBalanceValue);
-  };
   const isDarkTheme = chartTheme?.mode === 'dark';
   const sectionBorderClass = isDarkTheme ? 'border-gray-800' : 'border-slate-200';
   const mutedTextClass = isDarkTheme ? 'text-gray-500' : 'text-slate-500';
@@ -1200,7 +1176,7 @@ export default function ReplayPanel({
         <RailButton
           icon={Wallet}
           active={activeGroup === 'backtest'}
-          title="Backtest Account"
+          title="Enter Position"
           onClick={() => toggleGroup('backtest')}
           chartTheme={chartTheme}
         />
@@ -1375,7 +1351,7 @@ export default function ReplayPanel({
       {activeGroup === 'backtest' && (
         <div className="pointer-events-auto">
           <Flyout
-            title="Backtest Account"
+            title="Enter Position"
             icon={Wallet}
             onClose={() => setActiveGroup(null)}
             bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
@@ -1442,33 +1418,6 @@ export default function ReplayPanel({
                   className={`h-8 w-full rounded border px-2 text-xs outline-none disabled:opacity-40 ${fieldClass}`}
                 />
               </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
-                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Equity</div>
-                <div className={`text-sm font-semibold ${valueTextClass}`}>
-                  {formatAccountMoney(backtestMetrics.equity)}
-                </div>
-              </div>
-              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
-                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Cash</div>
-                <div className={`text-sm font-semibold ${valueTextClass}`}>
-                  {formatAccountMoney(backtestMetrics.cashBalance)}
-                </div>
-              </div>
-              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
-                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Open PnL</div>
-                <div className={`text-sm font-semibold ${backtestMetrics.unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {formatAccountMoney(backtestMetrics.unrealizedPnl)}
-                </div>
-              </div>
-              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
-                <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Price</div>
-                <div className={`text-sm font-semibold ${valueTextClass}`}>
-                  {formatMoney(executionPrice)}
-                </div>
-              </div>
             </div>
 
             {backtestError && (
@@ -1716,52 +1665,6 @@ export default function ReplayPanel({
               </div>
             </div>
 
-            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
-              <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Account Reset</div>
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                <input
-                  value={resetBalance}
-                  onChange={(event) => setResetBalance(event.target.value)}
-                  inputMode="decimal"
-                  className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${
-                    resetBalance && !canResetAccount ? invalidFieldClass : fieldClass
-                  }`}
-                  placeholder={`${displayCurrency} balance`}
-                />
-                <ControlButton
-                  icon={RotateCcw}
-                  onClick={submitAccountReset}
-                  disabled={!canResetAccount}
-                  variant="danger"
-                  chartTheme={chartTheme}
-                >
-                  Reset
-                </ControlButton>
-              </div>
-              <div className={`text-[11px] ${mutedTextClass}`}>
-                Clears positions and trades, then sets starting cash.
-              </div>
-            </div>
-
-            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
-              <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Recent Trades</div>
-              <div className="max-h-32 space-y-1 overflow-y-auto pr-1">
-                {backtestAccount?.trades?.length ? (
-                  backtestAccount.trades.slice(0, 8).map((trade) => (
-                    <div key={trade.id} className={`flex items-center justify-between gap-2 rounded px-2 py-1 text-[11px] ${isDarkTheme ? 'bg-black-table-color' : 'bg-slate-50'}`}>
-                      <span className={`truncate ${isDarkTheme ? 'text-gray-300' : 'text-slate-700'}`}>
-                        {trade.action.toUpperCase()} {trade.side.toUpperCase()} {trade.symbol}
-                      </span>
-                      <span className={Number(trade.pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                        {trade.pnl == null ? formatAccountMoney(trade.notional) : formatAccountMoney(trade.pnl)}
-                      </span>
-                    </div>
-                  ))
-                ) : (
-                  <span className={`text-[11px] ${mutedTextClass}`}>No trades yet</span>
-                )}
-              </div>
-            </div>
           </Flyout>
         </div>
       )}

@@ -43,6 +43,10 @@ return [
         'redirect' => env('FACEBOOK_REDIRECT_URI'),
     ],
 
+    'market_data' => [
+        'verify_tls' => env('MARKET_HTTP_VERIFY', true),
+    ],
+
     'apple_api' => [
         'base_url' => env('APPLE_API_BASE_URL'),
         'bulk_enroll_endpoint' => env('APPLE_API_BULK_ENROLL_ENDPOINT'),
@@ -50,9 +54,9 @@ return [
         'check_transaction_status_endpoint' => env('APPLE_API_CHECK_TRANSACTION_STATUS_ENDPOINT'),
         'certificate_path' => env('APPLE_API_CERTIFICATE_PATH', ''),
         'certificate_key_path' => env('APPLE_API_CERTIFICATE_KEY_PATH', ''),
-        'ship_to' => env('SHIP_TO','0000742682'),
-        'timezone' => env('TIMEZONE','420'),   
-        'langCode' => env('LANGCODE','en')      
+        'ship_to' => env('APPLE_API_SHIP_TO'),
+        'timezone' => env('APPLE_API_TIMEZONE', '420'),
+        'langCode' => env('APPLE_API_LANGUAGE', 'en'),
     ],
 
 

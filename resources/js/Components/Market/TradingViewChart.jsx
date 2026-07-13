@@ -596,7 +596,7 @@ export default function TradingViewReplayChart({
     ['Choose your market', 'Select a symbol, Spot or Futures, and the timeframe from the chart header.'],
     ['Analyze the chart', 'Use Appearance for Volume, SMA, EMA, RSI, candle colors, size, and price alerts.'],
     ['Replay history', 'Start Replay and click the historical candle where your practice session should begin.'],
-    ['Execute and review', 'Use Wallet for paper orders, drawing tools for analysis, and Trade journal for review.'],
+    ['Execute and review', 'Use Enter Position for paper orders, Assets for demo balances, and Trade journal for review.'],
   ];
   const finishTour = () => { setTourStep(-1); axios.post('/chart-tour/complete').catch(() => setTourStep(0)); };
 
@@ -671,7 +671,22 @@ export default function TradingViewReplayChart({
     if (backtestAccount && typeof onBacktestAccountChange === 'function') {
       onBacktestAccountChange(backtestAccount);
     }
+
+    if (backtestAccount && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('backtradelab-backtest-account-changed', {
+        detail: backtestAccount,
+      }));
+    }
   }, [backtestAccount, onBacktestAccountChange]);
+
+  useEffect(() => {
+    const syncExternalAccountChange = (event) => {
+      if (event.detail) setBacktestAccount(event.detail);
+    };
+
+    window.addEventListener('backtradelab-backtest-account-external-change', syncExternalAccountChange);
+    return () => window.removeEventListener('backtradelab-backtest-account-external-change', syncExternalAccountChange);
+  }, []);
 
   useEffect(() => {
     isSpacePressedRef.current = isSpacePressed;
@@ -4266,22 +4281,6 @@ export default function TradingViewReplayChart({
 
   closeBacktestPositionRef.current = handleCloseBacktestPosition;
 
-  const handleResetBacktestAccount = async (startingBalance = null) => {
-    setIsBacktestLoading(true);
-    setBacktestError('');
-
-    try {
-      const response = await axios.post('/market-backtest/reset', {
-        ...(getPositiveNumber(startingBalance) != null ? { starting_balance: getPositiveNumber(startingBalance) } : {}),
-      });
-      setBacktestAccount(response.data?.account ?? null);
-    } catch (err) {
-      setBacktestError(err.response?.data?.message ?? err.message ?? 'Failed to reset backtest account');
-    } finally {
-      setIsBacktestLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (!replayMode || !executionCandle || !backtestAccount?.pendingPositions?.length) return;
 
@@ -4628,7 +4627,6 @@ export default function TradingViewReplayChart({
             onOpenBacktestPosition={handleOpenBacktestPosition}
             onCloseBacktestPosition={handleCloseBacktestPosition}
             onCancelBacktestPosition={handleCancelBacktestPosition}
-            onResetBacktestAccount={handleResetBacktestAccount}
             orderLineDraftPatch={orderLineDraftPatch}
             orderEntryRequest={chartOrderRequest}
             orderDraftClearRequest={orderDraftClearRequest}

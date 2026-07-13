@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
-import { AlertTriangle, BarChart3, BookOpen, LogOut, Menu, Moon, Search, Sun, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, BookOpen, LogOut, Menu, Moon, RefreshCw, Search, Sun, Wallet, X } from 'lucide-react';
 import axios from 'axios';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 import { useSidebar } from '../../Context/SidebarContext';
@@ -16,6 +16,10 @@ export default function TraderNavbar() {
     const [logo, setLogo] = useState('');
     const [symbols, setSymbols] = useState([]);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [showAssets, setShowAssets] = useState(false);
+    const [assetsAccount, setAssetsAccount] = useState(null);
+    const [assetsLoading, setAssetsLoading] = useState(false);
+    const [assetsError, setAssetsError] = useState('');
     const [activeSymbol, setActiveSymbol] = useState(() => {
         try {
             return JSON.parse(localStorage.getItem(`backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`) || 'null');
@@ -36,6 +40,23 @@ export default function TraderNavbar() {
         const syncSymbols = (event) => setSymbols(Array.isArray(event.detail) ? event.detail : []);
         window.addEventListener('backtradelab-symbols-changed', syncSymbols);
         return () => window.removeEventListener('backtradelab-symbols-changed', syncSymbols);
+    }, []);
+
+    useEffect(() => {
+        const syncAccount = (event) => {
+            if (event.detail) {
+                setAssetsAccount(event.detail);
+                setAssetsError('');
+            }
+        };
+        const syncActiveSymbol = (event) => event.detail && setActiveSymbol(event.detail);
+
+        window.addEventListener('backtradelab-backtest-account-changed', syncAccount);
+        window.addEventListener('backtradelab-active-symbol-change', syncActiveSymbol);
+        return () => {
+            window.removeEventListener('backtradelab-backtest-account-changed', syncAccount);
+            window.removeEventListener('backtradelab-active-symbol-change', syncActiveSymbol);
+        };
     }, []);
 
     const symbolKey = (item) => item?.symbol
@@ -61,6 +82,57 @@ export default function TraderNavbar() {
         const nextTheme = isDark ? 'bg-skin-white' : 'bg-skin-black';
         setTheme(nextTheme);
         axios.post('/update-theme', { theme: nextTheme.replace('bg-', '') }).catch(() => {});
+    };
+
+    const loadAssets = async () => {
+        setAssetsLoading(true);
+        setAssetsError('');
+
+        try {
+            const response = await axios.get('/market-backtest/account', {
+                params: {
+                    ...(activeSymbol?.symbol ? { symbol: activeSymbol.symbol } : {}),
+                    ...(activeSymbol?.exchange ? { exchange: activeSymbol.exchange } : {}),
+                    ...(activeSymbol?.category ? { category: activeSymbol.category } : {}),
+                },
+                headers: { Accept: 'application/json' },
+            });
+            setAssetsAccount(response.data?.account ?? null);
+        } catch (error) {
+            setAssetsError(error.response?.data?.message ?? 'Unable to load demo assets.');
+        } finally {
+            setAssetsLoading(false);
+        }
+    };
+
+    const toggleAssets = () => {
+        setShowAssets((current) => {
+            const next = !current;
+            if (next && !assetsAccount) loadAssets();
+            return next;
+        });
+    };
+
+    const resetDemoAccount = async () => {
+        if (!window.confirm('Reset Demo Account to 10,000 USDT? This deletes its positions and trade history.')) return;
+
+        setAssetsLoading(true);
+        setAssetsError('');
+        try {
+            const response = await axios.post('/market-backtest/reset', { starting_balance: 10000 });
+            const nextAccount = response.data?.account ?? null;
+            setAssetsAccount(nextAccount);
+            window.dispatchEvent(new CustomEvent('backtradelab-backtest-account-external-change', { detail: nextAccount }));
+        } catch (error) {
+            setAssetsError(error.response?.data?.message ?? 'Unable to reset the demo account.');
+        } finally {
+            setAssetsLoading(false);
+        }
+    };
+
+    const formatAssetMoney = (value, currency = assetsAccount?.quoteCurrency ?? 'USDT') => {
+        const amount = Number(value);
+        return `${Number.isFinite(amount) ? amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'} ${currency}`;
     };
 
     const logout = () => {
@@ -106,6 +178,79 @@ export default function TraderNavbar() {
             </nav>
 
             <div className={`ml-2 flex items-center gap-1 border-l pl-2 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                <div className="relative">
+                    <button
+                        type="button"
+                        onClick={toggleAssets}
+                        className={`flex h-9 items-center gap-2 rounded-md px-2 text-xs font-semibold transition ${showAssets ? 'bg-[#2962ff]/15 text-[#5b8cff]' : 'hover:bg-white/10'}`}
+                        aria-label="Open demo assets"
+                        aria-expanded={showAssets}
+                    >
+                        <Wallet size={16} />
+                        <span className="hidden lg:inline">Assets</span>
+                    </button>
+
+                    {showAssets && (
+                        <div className={`absolute right-0 top-11 z-[230] w-[min(92vw,380px)] overflow-hidden rounded-xl border shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
+                            <div className={`flex items-center justify-between border-b px-4 py-3 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2962ff]/15 text-[#5b8cff]"><Wallet size={18} /></span>
+                                    <div><div className="text-sm font-bold">Assets</div><div className="text-[10px] uppercase tracking-wider text-[#787b86]">Paper trading only</div></div>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <button type="button" onClick={loadAssets} disabled={assetsLoading} className="rounded-md p-2 text-[#787b86] hover:bg-white/10 hover:text-current disabled:opacity-50" aria-label="Refresh assets"><RefreshCw size={15} className={assetsLoading ? 'animate-spin' : ''} /></button>
+                                    <button type="button" onClick={() => setShowAssets(false)} className="rounded-md p-2 text-[#787b86] hover:bg-white/10 hover:text-current" aria-label="Close assets"><X size={16} /></button>
+                                </div>
+                            </div>
+
+                            <div className="max-h-[min(72vh,620px)] space-y-3 overflow-y-auto p-4">
+                                {assetsError && <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">{assetsError}</div>}
+                                {!assetsAccount && assetsLoading && <div className="py-8 text-center text-xs text-[#787b86]">Loading demo assets...</div>}
+                                {assetsAccount && (
+                                    <>
+                                        <div className={`rounded-lg border p-3 ${isDark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50'}`}>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div><div className="text-[10px] uppercase tracking-wider text-[#787b86]">Demo account</div><div className="mt-1 text-sm font-bold">{assetsAccount.name ?? 'Demo Account'}</div></div>
+                                                <span className="rounded-full bg-amber-500/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-amber-400">Simulated</span>
+                                            </div>
+                                            <div className="mt-4 text-[10px] uppercase tracking-wider text-[#787b86]">Total equity</div>
+                                            <div className="mt-1 text-2xl font-bold">{formatAssetMoney(assetsAccount.equity)}</div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {[
+                                                ['Available cash', formatAssetMoney(assetsAccount.cashBalance)],
+                                                ['Locked margin', formatAssetMoney(assetsAccount.lockedMargin)],
+                                                ['Open PnL', formatAssetMoney(assetsAccount.unrealizedPnl)],
+                                                ['Realized PnL', formatAssetMoney(assetsAccount.realizedPnl)],
+                                                ['Starting balance', formatAssetMoney(assetsAccount.startingBalance)],
+                                                ['Fees paid', formatAssetMoney(assetsAccount.feesPaid)],
+                                            ].map(([label, value]) => (
+                                                <div key={label} className={`rounded-md border p-2.5 ${isDark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50'}`}><div className="text-[9px] uppercase tracking-wider text-[#787b86]">{label}</div><div className="mt-1 truncate text-xs font-semibold">{value}</div></div>
+                                            ))}
+                                        </div>
+
+                                        <div className={`rounded-lg border p-3 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                                            <div className="text-[10px] font-bold uppercase tracking-wider text-[#787b86]">Current activity</div>
+                                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs"><span>Open positions</span><strong className="text-right">{assetsAccount.openPositions?.length ?? 0}</strong><span>Pending entries</span><strong className="text-right">{assetsAccount.pendingPositions?.length ?? 0}</strong><span>Session</span><strong className="truncate text-right">{assetsAccount.activeSession?.name ?? 'None'}</strong></div>
+                                        </div>
+
+                                        <div>
+                                            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#787b86]">Recent demo transactions</div>
+                                            <div className="max-h-36 space-y-1 overflow-y-auto">
+                                                {assetsAccount.trades?.length ? assetsAccount.trades.slice(0, 8).map((trade) => (
+                                                    <div key={trade.id} className={`flex items-center justify-between gap-2 rounded px-2.5 py-2 text-[11px] ${isDark ? 'bg-[#0b0e14]' : 'bg-slate-50'}`}><span className="truncate">{String(trade.action).toUpperCase()} {String(trade.side).toUpperCase()} {trade.symbol}</span><span className={Number(trade.pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>{trade.pnl == null ? formatAssetMoney(trade.notional) : formatAssetMoney(trade.pnl)}</span></div>
+                                                )) : <div className="py-3 text-center text-[11px] text-[#787b86]">No demo transactions yet</div>}
+                                            </div>
+                                        </div>
+
+                                        <button type="button" onClick={resetDemoAccount} disabled={assetsLoading} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-red-500/30 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-50"><RefreshCw size={14} /> Reset Demo Account</button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
                 <button type="button" onClick={toggleTheme} className="rounded-md p-2 hover:bg-white/10" title="Toggle theme">
                     {isDark ? <Sun size={16} /> : <Moon size={16} />}
                 </button>

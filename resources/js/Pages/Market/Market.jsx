@@ -10,7 +10,7 @@ const TOUR_STEPS = [
     ['Choose your market', 'Browse your saved Spot and Futures markets here, then open one in Workspace.'],
     ['Analyze the chart', 'In Workspace, use Appearance for Volume, SMA, EMA, RSI, candle colors, size, and price alerts.'],
     ['Replay history', 'Start Replay and click the historical candle where your practice session should begin.'],
-    ['Execute and review', 'Use Wallet for paper orders, drawing tools for analysis, and Trade journal for review.'],
+    ['Execute and review', 'Use Enter Position for paper orders, Assets for demo balances, and Trade journal for review.'],
 ];
 
 export default function MarketSummary() {

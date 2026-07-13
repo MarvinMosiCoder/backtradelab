@@ -787,7 +787,7 @@ class MarketDataController extends Controller
     private function marketHttp()
     {
         return Http::withOptions([
-            'verify' => filter_var(env('MARKET_HTTP_VERIFY', true), FILTER_VALIDATE_BOOL),
+            'verify' => filter_var(config('services.market_data.verify_tls', true), FILTER_VALIDATE_BOOL),
         ])
             ->withHeaders([
                 'User-Agent' => 'Mozilla/5.0',

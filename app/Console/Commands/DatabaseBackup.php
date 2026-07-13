@@ -3,6 +3,8 @@
 namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
+use RuntimeException;
+use Symfony\Component\Process\Process;
 
 class DatabaseBackup extends Command
 {
@@ -39,21 +41,39 @@ class DatabaseBackup extends Command
     {
         $ds = DIRECTORY_SEPARATOR;
 
-        $host = env('DB_HOST');
-        $username = env('DB_USERNAME');
-        $password = env('DB_PASSWORD');
-        $database = env('DB_DATABASE');
+        $connection = config('database.default');
+        $databaseConfig = config("database.connections.{$connection}", []);
+        $host = $databaseConfig['host'] ?? null;
+        $port = $databaseConfig['port'] ?? 3306;
+        $username = $databaseConfig['username'] ?? null;
+        $password = $databaseConfig['password'] ?? null;
+        $database = $databaseConfig['database'] ?? null;
+
+        if ($connection !== 'mysql' || !$host || !$username || !$database) {
+            throw new RuntimeException('The database backup command requires a configured MySQL connection.');
+        }
 
         $ts = time();
 
         $path = storage_path() . $ds . 'backups' . $ds . date('Y', $ts) . $ds . date('m', $ts) . $ds . date('d', $ts) . $ds;
         $file = date('Y-m-d-His', $ts) . '-dump-' . $database . '.sql';
-        $command = sprintf('mysqldump -h %s -u %s -p\'%s\' %s > %s', $host, $username, $password, $database, $path . $file);
-
         if (!is_dir($path)) {
             mkdir($path, 0755, true);
         }
 
-        exec($command);
+        $process = new Process([
+            'mysqldump',
+            '--host='.(string) $host,
+            '--port='.(string) $port,
+            '--user='.(string) $username,
+            '--result-file='.$path.$file,
+            (string) $database,
+        ], null, $password !== null ? ['MYSQL_PWD' => (string) $password] : null);
+        $process->setTimeout(null);
+        $process->mustRun();
+
+        $this->info("Database backup created at {$path}{$file}");
+
+        return self::SUCCESS;
     }
 }
