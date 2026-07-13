@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import { ArrowLeft, Check, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, ShieldCheck, X } from 'lucide-react';
@@ -38,6 +38,13 @@ export default function ChangePassword() {
     const [error, setError] = useState('');
     const [showSuccess, setShowSuccess] = useState(false);
     const [countdown, setCountdown] = useState(3);
+    const signingOut = useRef(false);
+
+    const signOut = useCallback(() => {
+        if (signingOut.current) return;
+        signingOut.current = true;
+        router.post('/logout');
+    }, []);
 
     const checks = useMemo(() => ({
         length: form.new_password.length >= 8,
@@ -54,19 +61,14 @@ export default function ChangePassword() {
     useEffect(() => {
         if (!showSuccess) return undefined;
 
-        const timer = window.setInterval(() => {
-            setCountdown((current) => {
-                if (current <= 1) {
-                    window.clearInterval(timer);
-                    router.post('/logout');
-                    return 0;
-                }
-                return current - 1;
-            });
-        }, 1000);
+        if (countdown <= 0) {
+            signOut();
+            return undefined;
+        }
 
-        return () => window.clearInterval(timer);
-    }, [showSuccess]);
+        const timer = window.setTimeout(() => setCountdown((current) => current - 1), 1000);
+        return () => window.clearTimeout(timer);
+    }, [countdown, showSuccess, signOut]);
 
     const handleChange = (event) => {
         setError('');
@@ -144,7 +146,7 @@ export default function ChangePassword() {
                         <h2 id="password-success-title" className="mt-5 text-xl font-bold">Password updated</h2>
                         <p className="mt-2 text-sm text-[#787b86]">For your security, you will be signed out in</p>
                         <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full border-4 border-[#2962ff]/25 text-2xl font-bold text-[#5b8cff]">{countdown}</div>
-                        <button type="button" onClick={() => router.post('/logout')} className="mt-5 text-xs font-semibold text-[#2962ff] hover:underline">Sign out now</button>
+                        <button type="button" onClick={signOut} className="mt-5 text-xs font-semibold text-[#2962ff] hover:underline">Sign out now</button>
                     </div>
                 </div>
             )}

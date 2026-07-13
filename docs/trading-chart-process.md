@@ -121,9 +121,9 @@ Login supports the existing admin-created email/password flow plus Google and Fa
 | `GET /auth/facebook/redirect` | Redirect to Facebook OAuth |
 | `GET /auth/facebook/callback` | Handle Facebook OAuth callback |
 
-OAuth does not create new users. The provider email must already exist in `adm_users`, the account must be active, and the user must have an assigned privilege. After a successful provider login, `LoginController` reuses the same menu, privilege, theme, profile, notification, and announcement session setup as password login. Social login skips the password-age/default-password force-change gate so an admin-created OAuth user is not blocked by a password they may not use.
+Google OAuth supports both sign-in and self-registration. The callback first matches an existing provider identity, then falls back to the returned email. If neither exists, it creates an active `adm_users` record with the first configured non-superadmin privilege, a secure random local password, Google identity fields, disabled password login, and a seven-day replay trial. Existing inactive accounts remain blocked. After either lookup or creation, `LoginController` reuses the same menu, privilege, theme, profile, notification, and announcement session setup as password login. Google redirects include `prompt=select_account`, so the browser displays the Google account picker even when a Google session is already active.
 
-OAuth-linked users store their latest provider identity on `adm_users`. If the account still has the admin-created temporary password, password login is disabled and Google/Facebook remains the valid sign-in method. From an authenticated social session, the user can create a strong local password without entering that unknown temporary password; this enables email/password login afterward. Accounts that already have a real local password keep password login enabled.
+OAuth-linked users store their latest provider identity on `adm_users`. Newly created Google accounts and accounts that still have the admin-created temporary password keep password login disabled. From an authenticated social session, the user can create a strong local password without entering the unknown generated or temporary password; this enables email/password login afterward. Accounts that already have a real local password keep password login enabled.
 
 The login form keeps the social actions visually recognizable in both dark and white public themes. The Google action uses a white button with the four-color Google SVG mark and dark label text. The Facebook action uses the standard Facebook blue button with white label text.
 
@@ -229,6 +229,8 @@ await fetch('/market-symbols', {
 ```
 
 The backend uppercases and validates symbols with `/^[A-Za-z0-9]+$/`, then stores them in `market_symbols` with the authenticated user, source exchange, market category, native exchange symbol, coin name, base coin, and quote coin. Database uniqueness is by `user + exchange + category + symbol`, so every user owns an independent saved-symbol list and the same market can be saved from multiple exchanges and as both spot and futures.
+
+Market-category storage keeps exchange-compatible values such as `spot` and `linear`. User-facing formatters display `spot` as `Spot` and `linear`/`inverse` as `Futures / Perpetual`, so traders do not see backend category terminology in chart headers, symbol pickers, Market Summary, navbar selectors, or watchlists.
 
 After a symbol is saved, `TradingViewChart.jsx` inserts it into the saved-symbol list, selects it as the active chart symbol, and the candle request reloads for that symbol.
 
@@ -456,7 +458,7 @@ The authenticated layout now has two visual shells. Superadmins retain the exist
 
 The superadmin shell uses the same deep terminal surfaces, compact borders, blue active states, icon-only collapsed rail, and role-aware navbar pattern as the trader UI while retaining its database-driven administrative menus. `AdminNavbar.jsx` provides compact Overview, Users, Feedback, and Settings shortcuts plus notifications, theme control, profile identity, and the same themed sign-out confirmation used by the trader experience. Its dashboard reports real total, active, inactive, and new-this-month user counts plus an active-account health bar. Profiles support display name, unique username, timezone, and trading-experience level in addition to profile images, email, and privilege.
 
-Trader logout uses a themed confirmation dialog inside `TraderNavbar.jsx` instead of the browser confirmation prompt. The change-password page uses the terminal theme, per-field show/hide controls, a live password-strength checklist, matching confirmation feedback, and server-enforced mixed-case/number/symbol requirements. After a successful password update, a non-dismissible success dialog counts down for three seconds before automatically logging the user out; an immediate sign-out action is also available.
+Trader logout uses a themed confirmation dialog inside `TraderNavbar.jsx` instead of the browser confirmation prompt. The change-password page uses the terminal theme, per-field show/hide controls, a live password-strength checklist, matching confirmation feedback, and server-enforced mixed-case/number/symbol requirements. After a successful password update, a non-dismissible success dialog counts down for three seconds before automatically logging the user out; an immediate sign-out action is also available. Both paths use a guarded one-time logout function so React Strict Mode cannot submit a duplicate POST after the first request invalidates the session and produce a `419 Page Expired` response.
 
 The mandatory `ForceChangePassword.jsx` flow uses the same responsive security design and three-second automatic logout dialog. It remains non-dismissible until the password is changed or an eligible scheduled change is waived. Waiver processing checks the server-side waiver limit before submitting the waiver, preventing the older race where the waive request could continue before eligibility was known. Temporary/default-password users cannot waive the required update.
 
@@ -503,7 +505,7 @@ The chart has visible time labels, a right price scale, and enabled native pan/z
 
 Chart colors are aligned with the authenticated admin theme from `ThemeContext`. When the admin theme is `bg-skin-black`, `TradingViewChart.jsx` applies the dark chart palette. Any other admin theme uses the white chart palette. The active palette controls the Lightweight Charts background, grid, axis text, price/time scale borders, selected replay price line, chart wrapper background in `ChartStage.jsx`, chart loading overlay, chart header/navbar panel, chart replay/tool sidebar panel, fullscreen background, text-input popover, and the background color used when entry/exit snapshots are captured. The chart grid intentionally uses low-opacity RGBA colors so the grid boxes stay visible without competing with candles: dark mode uses `rgba(148, 163, 184, 0.06)`, and white mode uses `rgba(100, 116, 139, 0.08)`. `ReplayPanel.jsx` also uses the active chart theme for rail icons, flyout text, tool buttons, tool editor dropdowns, preset controls, grouped drawing tools, and backtest account fields/cards so the controls remain readable in both dark and white themes.
 
-The chart loading overlay uses a chart-only workspace skeleton in `TradingViewChart.jsx`: an animated progress bar, simplified candle bars, and a loading label. It covers only the chart workspace and does not replace the surrounding application navigation.
+The initial loading overlay uses a full-canvas chart skeleton in `TradingViewChart.jsx` with gridlines, neutral-gray candle bodies and wicks, volume bars, toolbar placeholders, price-axis labels, time-axis labels, and a loading badge. It supports dark and light surfaces, contains no red/green trading colors, covers only the chart workspace, and does not replace the surrounding application navigation.
 
 The Lightweight Charts TradingView attribution logo is disabled in chart layout options. `ChartStage.jsx` renders the configured application logo from `/applogo` in the bottom-left chart position as the BacktradeLab chart brand mark.
 
@@ -933,7 +935,7 @@ Current known build warnings are unrelated to the chart changes:
 
 ## July 2026 workspace and market-summary update
 
-- `/dashboard` is the chart-first trader Workspace. `/market` is Market Summary and appears before Workspace in trader navigation.
+- `/market` is the default post-login landing page for non-superadmin traders and appears before Workspace in trader navigation. `/dashboard` remains the chart-first Workspace. Superadmins continue to land on `/dashboard`.
 - Market Summary reads the authenticated user's saved market symbols and opens a selected market in Workspace. Browser-persisted, user-scoped watchlist group management is located directly above the Workspace chart.
 - Fullscreen and embedded chart headers share symbol search, market/timeframe selection, replay, alert, indicator, and appearance controls.
 - Active Rise/Drop alerts are persisted per user, drawn as gray dashed price lines, checked against a latest-candle refresh every five seconds, and removed immediately after triggering. A trigger creates an admin notification and an in-workspace notice; browser notification remains an optional enhancement.
@@ -941,7 +943,7 @@ Current known build warnings are unrelated to the chart changes:
 - RSI uses a native, resizable lower pane. Disabling RSI moves the hidden series back to the primary pane so the empty lower pane is removed.
 - Executed trades use custom 18px rounded rectangular badges: green with a centered `B` for buy and red with a centered `S` for sell. The badges have no contrasting border. Long/short planning regions use lighter translucent fills so candles remain readable.
 - Drawing categories are collapsible, new drawing labels start empty, and the tool editor accepts both expanded swatches and direct hex colors.
-- Initial chart loading uses a workspace/chart skeleton with a progress bar instead of a generic page loader.
+- Initial chart loading uses a full gray chart skeleton with grid, candles, volume, toolbar, and axis placeholders instead of a generic page loader.
 - The shared sidebar toggle accepts an explicit boolean as well as toggle behavior. The admin navbar has two intentionally separate controls: the left hamburger toggles the existing sidebar, while the final mobile-only hamburger replaces hidden navbar module links with a dropdown for Overview, Users, Customer Support, Payments, Pricing, Payment Setup, and Settings.
 - Customer Support includes payment, subscription, account, and product categories and is available to administrators as a prioritized inbox.
 
@@ -967,7 +969,7 @@ Authenticated users can create persistent price alerts through `/market-price-al
 
 ### Onboarding and help
 
-The permanent `/help` page documents the chart-to-journal workflow and is linked from the trader sidebar. Each user receives a dismissible first-chart tour. Completion is stored server-side in `adm_users.chart_tour_completed_at`, so the tour is shown only until it is completed or skipped, including when the user changes browsers. The first step clearly announces the seven-day trial and links the workflow to the Subscription page.
+The permanent `/help` page documents the chart-to-journal workflow and is linked from the trader sidebar. Each user receives a dismissible first-login tour on Market Summary, the normal trader landing page. The final step opens Workspace; direct first access to Workspace retains the chart-level tour as a fallback. Completion is stored server-side in `adm_users.chart_tour_completed_at`, so completing or skipping either presentation dismisses it everywhere and across browsers. The first step clearly announces the seven-day trial and links the workflow to the Subscription page.
 
 ### Replay trial and access enforcement
 
@@ -1058,7 +1060,7 @@ Rejections also notify the user and can include an admin note. Provider-neutral 
 The chart now includes:
 
 1. Public `/` front page with navbar search, product/community/market/more links, hero content, login dropdown, browser-local dark/white theme preference, and black-theme-aligned dark controls.
-2. Dedicated `/login` sign-in form that follows the saved public theme, uses the same black dark-theme surfaces, and supports password, Google, and Facebook sign-in for existing admin-created users with brand-colored social buttons.
+2. Dedicated `/login` sign-in form that follows the saved public theme, uses the same black dark-theme surfaces, and supports password, Google, and Facebook sign-in with brand-colored social buttons; Google can create a new non-admin trader account and always displays the account picker.
 3. Chart-first `/dashboard` for non-superadmin trader users, with superadmin keeping the existing dashboard cards.
 4. Trader navbar quick links for Chart, PnL, and saved symbol selection.
 5. Lightweight Charts candlestick and volume rendering.

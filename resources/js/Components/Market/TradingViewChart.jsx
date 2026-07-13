@@ -127,6 +127,48 @@ function ChartDotsLoader({ isDark }) {
   );
 }
 
+function ChartSkeletonLoader({ isDark }) {
+  const candles = [
+    [62, 24, 16, true], [56, 31, 20, true], [48, 38, 24, false], [54, 27, 17, true],
+    [43, 45, 28, true], [37, 34, 21, false], [45, 39, 25, false], [51, 30, 18, true],
+    [42, 48, 31, true], [34, 42, 26, true], [29, 36, 22, false], [35, 32, 19, false],
+    [28, 44, 28, true], [22, 38, 23, true], [30, 31, 18, false], [25, 40, 25, true],
+    [18, 35, 21, true], [24, 29, 17, false], [20, 37, 23, true], [27, 33, 20, false],
+  ];
+  const surface = isDark ? '#0b0e14' : '#f8fafc';
+  const grid = isDark ? 'rgba(42,46,57,.65)' : 'rgba(203,213,225,.8)';
+  const muted = isDark ? 'bg-[#2a2e39]' : 'bg-slate-200';
+  const chartPlaceholder = isDark ? 'bg-[#434955]' : 'bg-slate-300';
+
+  return (
+    <div className="absolute inset-0 overflow-hidden rounded-lg" aria-label="Loading chart workspace" role="status" style={{ backgroundColor: surface }}>
+      <div className="absolute inset-x-0 top-0 z-10 flex h-10 items-center gap-2 border-b px-4" style={{ borderColor: grid }}>
+        <span className={`h-3 w-20 animate-pulse rounded ${muted}`} />
+        <span className={`h-3 w-12 animate-pulse rounded ${muted}`} />
+        <span className={`h-6 w-16 animate-pulse rounded ${muted}`} />
+      </div>
+      <div className="absolute bottom-7 left-0 right-14 top-10" style={{ backgroundImage: `linear-gradient(to right, ${grid} 1px, transparent 1px), linear-gradient(to bottom, ${grid} 1px, transparent 1px)`, backgroundSize: '12.5% 20%' }}>
+        <div className="absolute inset-x-3 bottom-[18%] top-[8%] flex animate-pulse items-stretch justify-between gap-1.5 opacity-70 sm:gap-2.5">
+          {candles.map(([top, wickHeight, bodyHeight], index) => <div key={index} className="relative h-full min-w-0 flex-1">
+            <span className={`absolute left-1/2 w-px -translate-x-1/2 opacity-70 ${chartPlaceholder}`} style={{ top: `${top - 5}%`, height: `${wickHeight}%` }} />
+            <span className={`absolute left-[20%] right-[20%] rounded-sm opacity-70 ${chartPlaceholder}`} style={{ top: `${top}%`, height: `${bodyHeight}%` }} />
+          </div>)}
+        </div>
+        <div className="absolute inset-x-3 bottom-0 flex h-[15%] animate-pulse items-end justify-between gap-1.5 opacity-40 sm:gap-2.5">
+          {candles.map((_, index) => <span key={index} className={`min-w-0 flex-1 ${chartPlaceholder}`} style={{ height: `${25 + ((index * 17) % 70)}%` }} />)}
+        </div>
+      </div>
+      <aside className="absolute bottom-7 right-0 top-10 w-14 border-l px-2 py-3" style={{ borderColor: grid }}>
+        {[0, 1, 2, 3, 4].map((item) => <span key={item} className={`mb-10 block h-1.5 w-full animate-pulse rounded ${muted}`} />)}
+      </aside>
+      <footer className="absolute inset-x-0 bottom-0 flex h-7 items-center justify-around border-t px-6" style={{ borderColor: grid }}>
+        {[0, 1, 2, 3, 4, 5].map((item) => <span key={item} className={`h-1.5 w-10 animate-pulse rounded ${muted}`} />)}
+      </footer>
+      <div className="absolute bottom-10 left-1/2 z-20 -translate-x-1/2 rounded-full border border-[#2962ff]/25 bg-[#2962ff]/10 px-3 py-1.5 text-[10px] font-semibold text-[#5b8cff]">Loading chart data…</div>
+    </div>
+  );
+}
+
 function cloneDrawingsForHistory(drawings) {
   if (typeof structuredClone === 'function') {
     return structuredClone(drawings);
@@ -2317,7 +2359,7 @@ export default function TradingViewReplayChart({
       isProgrammaticRangeChangeRef.current = false;
       scheduleOverlayRender();
     });
-  }, [scheduleOverlayRender, timeframe, visibleCandles.length]);
+  }, [exchange, marketCategory, scheduleOverlayRender, symbol, timeframe, visibleCandles.length]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -2333,7 +2375,7 @@ export default function TradingViewReplayChart({
       isProgrammaticRangeChangeRef.current = false;
       scheduleOverlayRender();
     });
-  }, [scheduleOverlayRender, timeframe, visibleCandles.length]);
+  }, [exchange, marketCategory, scheduleOverlayRender, symbol, timeframe, visibleCandles.length]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -4534,7 +4576,7 @@ export default function TradingViewReplayChart({
               style={{ backgroundColor: chartTheme.overlay }}
             >
               {loading ? (
-                <ChartDotsLoader isDark={chartTheme.mode === 'dark'} />
+                <ChartSkeletonLoader isDark={chartTheme.mode === 'dark'} />
               ) : error}
             </div>
           )}

@@ -18,6 +18,8 @@ use DB;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use App\Models\Announcement;
 use App\Models\AdmModels\AdmSettings;
 use App\Models\AdmModels\AdmAdminMenus;
@@ -32,7 +34,7 @@ class LoginController extends Controller
     public function index()
     {
         if(auth()->check()){
-            return redirect()->intended('dashboard');
+            return redirect()->intended($this->loginDestination());
         }
         return Inertia::render('Auth/Login');
     }
@@ -62,7 +64,7 @@ class LoginController extends Controller
 
         if (Auth::attempt($credentials)) {
             $this->completeLogin($request, Auth::user(), $session_details);
-            return redirect()->intended('dashboard');
+            return redirect()->intended($this->loginDestination($session_details));
         }
         return back()->withErrors([
             'email' => 'The provided credentials do not match our records',
@@ -72,7 +74,13 @@ class LoginController extends Controller
 
     public function redirectToProvider(string $provider)
     {
-        return Socialite::driver($provider)->redirect();
+        $driver = Socialite::driver($provider);
+
+        if ($provider === 'google') {
+            $driver->with(['prompt' => 'select_account']);
+        }
+
+        return $driver->redirect();
     }
 
     public function handleProviderCallback(Request $request, string $provider): RedirectResponse
@@ -97,25 +105,79 @@ class LoginController extends Controller
             ]);
         }
 
-        $users = AdmUser::where('email', $email)->first();
+        $providerId = (string) $socialUser->getId();
+        $users = AdmUser::where(function ($query) use ($provider, $providerId, $email) {
+            $query->where(function ($identityQuery) use ($provider, $providerId) {
+                $identityQuery->where('social_provider', $provider)
+                    ->where('social_provider_id', $providerId);
+            })->orWhere('email', $email);
+        })->first();
+
+        if (!$users) {
+            $defaultPrivilegeId = DB::table('adm_privileges')
+                ->where(function ($query) {
+                    $query->where('is_superadmin', 0)->orWhereNull('is_superadmin');
+                })
+                ->orderBy('id')
+                ->value('id');
+
+            if (!$defaultPrivilegeId) {
+                Log::error('Social account creation failed: no non-superadmin privilege exists', [
+                    'provider' => $provider,
+                    'email' => $email,
+                ]);
+
+                return redirect('login')->withErrors([
+                    'message' => 'Unable to create your account because no trader role is configured. Please contact Administrator!',
+                ]);
+            }
+
+            $userId = DB::table('adm_users')->insertGetId([
+                'name' => $socialUser->getName() ?: Str::before($email, '@'),
+                'email' => $email,
+                'email_verified_at' => now(),
+                'password' => Hash::make(Str::random(64)),
+                'id_adm_privileges' => $defaultPrivilegeId,
+                'status' => 'ACTIVE',
+                'social_provider' => $provider,
+                'social_provider_id' => $providerId,
+                'password_login_enabled' => false,
+                'replay_trial_started_at' => now(),
+                'replay_trial_ends_at' => now()->addDays(7),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $users = AdmUser::findOrFail($userId);
+        }
+
         [$error, $session_details] = $this->validateLoginUser($users);
         if($error){
             return redirect('login')->withErrors([
-                'message' => 'No active admin-created account exists for '.$email.'. Please contact Administrator!',
+                'message' => $error,
             ]);
         }
 
         $usesTemporaryPassword = \Hash::check('qwerty', $users->password);
         $users->forceFill([
             'social_provider' => $provider,
-            'social_provider_id' => (string) $socialUser->getId(),
+            'social_provider_id' => $providerId,
             'password_login_enabled' => $usesTemporaryPassword ? false : (bool) $users->password_login_enabled,
         ])->save();
 
         Auth::login($users);
         $this->completeLogin($request, $users, $session_details, true);
 
-        return redirect()->intended('dashboard');
+        return redirect()->intended($this->loginDestination($session_details));
+    }
+
+    private function loginDestination(?array $sessionDetails = null): string
+    {
+        $isSuperadmin = $sessionDetails
+            ? (bool) $sessionDetails['priv']->is_superadmin
+            : (bool) session('admin_is_superadmin');
+
+        return $isSuperadmin ? 'dashboard' : 'market';
     }
 
     private function validateLoginUser($users): array

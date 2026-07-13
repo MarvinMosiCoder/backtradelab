@@ -92,4 +92,8 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 - Verify watchlist create and rename validation, delete confirmation, last-group `Main` fallback, single-open accordion behavior, compact horizontal market chips, and that deleting a group never removes saved symbols.
 - Verify hovering a chart price keeps both shortcuts stable: alarm on the left end and order `+` on the right. Clicking alarm must open the Set Alert modal with the hovered price.
 - Verify completed trades render an 18px borderless rounded badge with `B` or `S` centered inside and remain aligned during pan, zoom, fullscreen, and timeframe changes.
+- Verify Google OAuth displays the account chooser on every attempt, logs matching provider identities or emails into the existing account, creates unknown emails with the configured non-superadmin trader privilege, and never self-registers a superadmin account.
+- Verify regular users land on `/market` after password and Google login while superadmins continue to land on `/dashboard`. For a user without `chart_tour_completed_at`, confirm Market Summary shows the onboarding steps, the final action opens Workspace, and Skip/completion prevents both Market Summary and chart fallback tours from returning.
+- Verify automatic and immediate logout after a password change each submit only one `/logout` request and return to `/login` without a `419 Page Expired` response.
+- Verify the initial Workspace loader is a neutral-gray chart skeleton in dark and light themes, with no red or green candle/volume placeholders.
 - Production offline alerts require a scheduled exchange-price worker; open-workspace polling alone is not an offline notification service.

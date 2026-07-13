@@ -5,6 +5,7 @@ import axios from 'axios';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 import { useSidebar } from '../../Context/SidebarContext';
 import { useTheme } from '../../Context/ThemeContext';
+import { marketCategoryLabel } from '../../utils/marketLabels';
 
 export default function TraderNavbar() {
     const { auth } = usePage().props;
@@ -89,7 +90,7 @@ export default function TraderNavbar() {
                     <option value="">Select market</option>
                     {symbols.map((item) => (
                         <option key={symbolKey(item)} value={symbolKey(item)}>
-                            {item.symbol} · {String(item.exchange).toUpperCase()} · {String(item.category).toUpperCase()}
+                            {item.symbol} · {String(item.exchange).toUpperCase()} · {marketCategoryLabel(item.category)}
                         </option>
                     ))}
                 </select>

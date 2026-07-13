@@ -41,7 +41,7 @@ use Inertia\Inertia;
 
 Route::get('/', function () {
     if (auth()->check()) {
-        return redirect()->intended('dashboard');
+        return redirect()->intended(session('admin_is_superadmin') ? 'dashboard' : 'market');
     }
 
     return Inertia::render('Public/Home');
