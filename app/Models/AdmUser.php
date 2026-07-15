@@ -90,8 +90,6 @@ class AdmUser extends Authenticatable
             $model->name = request()->input('name');
             $model->id_adm_privileges = request()->input('privilege_id');
             $model->password = 'qwerty';
-            $model->replay_trial_started_at = now();
-            $model->replay_trial_ends_at = now()->addDays(7);
         });
     }
 

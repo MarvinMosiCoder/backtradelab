@@ -48,7 +48,7 @@ class ReplayAccessController extends Controller
     }
     public function plans(Request $request)
     {
-        $query = SubscriptionPlan::orderBy('sort_order');
+        $query = SubscriptionPlan::whereIn('code', ['weekly', 'monthly', 'yearly'])->orderBy('sort_order');
         if (!$request->session()->get('admin_is_superadmin')) $query->where('is_active', true);
         return response()->json(['plans' => $query->get()]);
     }
@@ -76,10 +76,6 @@ class ReplayAccessController extends Controller
     public function userPage(Request $request)
     {
         $user = $request->user();
-        if (!$user->replay_trial_started_at) {
-            $user->forceFill(['replay_trial_started_at' => now(), 'replay_trial_ends_at' => now()->addDays(7)])->save();
-        }
-
         $trialActive = $user->replay_trial_ends_at && now()->lte($user->replay_trial_ends_at);
         $paidActive = $user->replay_access_ends_at && now()->lte($user->replay_access_ends_at);
         $activeUntil = collect([$user->replay_trial_ends_at, $user->replay_access_ends_at])
@@ -91,8 +87,9 @@ class ReplayAccessController extends Controller
 
         return Inertia::render('Subscriptions/UserIndex', [
             'subscription' => [
-                'status' => $paidActive ? 'active' : ($trialActive ? 'trial' : 'expired'),
+                'status' => $paidActive ? 'active' : ($trialActive ? 'trial' : ($user->replay_trial_started_at ? 'expired' : 'available')),
                 'allowed' => (bool) $request->session()->get('admin_is_superadmin') || $trialActive || $paidActive,
+                'trialAvailable' => !$user->replay_trial_started_at && !$paidActive,
                 'trialStartedAt' => optional($user->replay_trial_started_at)->toIso8601String(),
                 'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
                 'accessEndsAt' => optional($user->replay_access_ends_at)->toIso8601String(),
@@ -106,17 +103,70 @@ class ReplayAccessController extends Controller
     public function status(Request $request)
     {
         $user = $request->user();
-        if (!$user->replay_trial_started_at) {
-            $user->forceFill(['replay_trial_started_at' => now(), 'replay_trial_ends_at' => now()->addDays(7)])->save();
-        }
         $activeUntil = collect([$user->replay_trial_ends_at, $user->replay_access_ends_at])
             ->filter()->sortByDesc(fn ($date) => $date->getTimestamp())->first();
+        $paidActive = $user->replay_access_ends_at && now()->lte($user->replay_access_ends_at);
         return response()->json([
             'allowed' => (bool) $request->session()->get('admin_is_superadmin') || ($activeUntil && now()->lte($activeUntil)),
+            'trialAvailable' => !$user->replay_trial_started_at && !$paidActive,
+            'trialStartedAt' => optional($user->replay_trial_started_at)->toIso8601String(),
             'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
             'accessEndsAt' => optional($user->replay_access_ends_at)->toIso8601String(),
             'latestRequest' => SubscriptionRequest::where('adm_user_id', $user->id)->latest()->first(),
         ]);
+    }
+
+    public function activateTrial(Request $request)
+    {
+        $result = DB::transaction(function () use ($request) {
+            $user = AdmUser::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
+
+            if ($user->replay_trial_started_at) {
+                return ['activated' => false, 'user' => $user];
+            }
+
+            if ($user->replay_access_ends_at && now()->lte($user->replay_access_ends_at)) {
+                return ['activated' => false, 'user' => $user, 'paid_active' => true];
+            }
+
+            $startedAt = now();
+            $user->forceFill([
+                'replay_trial_started_at' => $startedAt,
+                'replay_trial_ends_at' => $startedAt->copy()->addDays(7),
+            ])->save();
+
+            return ['activated' => true, 'user' => $user->fresh()];
+        });
+
+        $user = $result['user'];
+        if (!$result['activated']) {
+            $active = $user->replay_trial_ends_at && now()->lte($user->replay_trial_ends_at);
+
+            if ($result['paid_active'] ?? false) {
+                return response()->json([
+                    'message' => 'Your paid replay access is already active. Your free trial remains available after it ends.',
+                    'allowed' => true,
+                    'trialAvailable' => false,
+                    'accessEndsAt' => optional($user->replay_access_ends_at)->toIso8601String(),
+                ], 409);
+            }
+
+            return response()->json([
+                'message' => $active ? 'Your free trial is already active.' : 'Your free trial has already been used.',
+                'allowed' => $active || ($user->replay_access_ends_at && now()->lte($user->replay_access_ends_at)),
+                'trialAvailable' => false,
+                'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
+            ], $active ? 200 : 409);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Your free seven-day trial is now active.',
+            'allowed' => true,
+            'trialAvailable' => false,
+            'trialStartedAt' => optional($user->replay_trial_started_at)->toIso8601String(),
+            'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
+        ], 201);
     }
 
     public function store(Request $request)

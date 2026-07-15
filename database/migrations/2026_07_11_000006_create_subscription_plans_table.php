@@ -26,8 +26,8 @@ return new class extends Migration {
 
         $now = now();
         DB::table('subscription_plans')->insertOrIgnore([
-            ['code' => 'monthly', 'name' => 'Monthly', 'duration_days' => 30, 'description' => 'Flexible access', 'is_featured' => false, 'sort_order' => 1, 'created_at' => $now, 'updated_at' => $now],
-            ['code' => 'quarterly', 'name' => 'Quarterly', 'duration_days' => 90, 'description' => 'Best for consistency', 'is_featured' => true, 'sort_order' => 2, 'created_at' => $now, 'updated_at' => $now],
+            ['code' => 'weekly', 'name' => 'Weekly', 'duration_days' => 7, 'description' => 'One week of flexible access', 'is_featured' => false, 'sort_order' => 1, 'created_at' => $now, 'updated_at' => $now],
+            ['code' => 'monthly', 'name' => 'Monthly', 'duration_days' => 30, 'description' => 'Best for consistent practice', 'is_featured' => true, 'sort_order' => 2, 'created_at' => $now, 'updated_at' => $now],
             ['code' => 'yearly', 'name' => 'Yearly', 'duration_days' => 365, 'description' => 'Long-term practice', 'is_featured' => false, 'sort_order' => 3, 'created_at' => $now, 'updated_at' => $now],
         ]);
     }

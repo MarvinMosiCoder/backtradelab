@@ -112,6 +112,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/market-price-alerts/check', [MarketPriceAlertController::class, 'check'])->middleware('throttle:market-write');
     Route::delete('/market-price-alerts/{marketPriceAlert}', [MarketPriceAlertController::class, 'destroy'])->middleware('throttle:market-write');
     Route::get('/replay-access', [ReplayAccessController::class, 'status']);
+    Route::post('/replay-trial/activate', [ReplayAccessController::class, 'activateTrial'])->middleware('throttle:market-write');
     Route::get('/subscription-plans', [ReplayAccessController::class, 'plans']);
     Route::get('/payment-settings', [ReplayAccessController::class, 'paymentSettings']);
     Route::get('/payment-settings/qr', [ReplayAccessController::class, 'paymentQr'])->name('payment-settings.qr');

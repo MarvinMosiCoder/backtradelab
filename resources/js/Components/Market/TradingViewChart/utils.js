@@ -6,7 +6,7 @@ export function formatPrice(value) {
 export function normalizeApiCandles(rawCandles) {
   if (!Array.isArray(rawCandles)) return [];
 
-  return rawCandles
+  const normalized = rawCandles
     .map((c) => {
       const rawTime =
         c?.time ??
@@ -53,8 +53,16 @@ export function normalizeApiCandles(rawCandles) {
 
       return candle;
     })
-    .filter(Boolean)
-    .sort((a, b) => a.time - b.time);
+    .filter(Boolean);
+
+  // Lightweight Charts requires strictly ordered, unique timestamps. Keep the
+  // newest payload for a timestamp so a live candle replaces its older value.
+  return Array.from(
+    normalized.reduce((candlesByTime, candle) => {
+      candlesByTime.set(candle.time, candle);
+      return candlesByTime;
+    }, new Map()).values()
+  ).sort((a, b) => a.time - b.time);
 }
 
 export function findNearestCandleIndex(candles, targetTime) {
@@ -139,8 +147,8 @@ export function distanceToSegment(point, a, b) {
   return Math.hypot(point.x - projX, point.y - projY);
 }
 
-export function buildStorageKey(symbol, exchange = 'bybit', category = 'spot') {
-  return `replay-drawings:${exchange}:${category}:${symbol}`;
+export function buildStorageKey(symbol, exchange = 'bybit', category = 'spot', userId = 'guest') {
+  return `replay-drawings:${userId}:${exchange}:${category}:${symbol}`;
 }
 
 export function buildLegacyStorageKey(symbol, timeframe) {

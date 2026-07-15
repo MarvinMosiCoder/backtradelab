@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { usePage } from '@inertiajs/react';
 import {
   Download,
   Pencil,
@@ -146,14 +147,18 @@ function normalizeTagText(value) {
 
 export default function TradeReport({ refreshKey = 0 }) {
   const { theme: adminTheme } = useTheme();
+  const { auth } = usePage().props;
+  const preferenceUserId = auth?.user?.id ?? 'guest';
+  const displayCurrencyStorageKey = `market-backtest-display-currency:${preferenceUserId}`;
+  const phpRateStorageKey = `market-backtest-php-rate:${preferenceUserId}`;
   const isDark = adminTheme === 'bg-skin-black';
   const [report, setReport] = useState({ summary: {}, trades: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState(() => (
-    getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
+    getStoredValue(displayCurrencyStorageKey, 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
-  const [phpRate, setPhpRate] = useState(() => getStoredValue('market-backtest-php-rate', '58'));
+  const [phpRate, setPhpRate] = useState(() => getStoredValue(phpRateStorageKey, '58'));
   const [editingTradeId, setEditingTradeId] = useState(null);
   const [journalDraft, setJournalDraft] = useState({});
   const [journalSaving, setJournalSaving] = useState(false);
@@ -191,15 +196,15 @@ export default function TradeReport({ refreshKey = 0 }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem('market-backtest-display-currency', displayCurrency);
+      localStorage.setItem(displayCurrencyStorageKey, displayCurrency);
     } catch {}
-  }, [displayCurrency]);
+  }, [displayCurrency, displayCurrencyStorageKey]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('market-backtest-php-rate', phpRate);
+      localStorage.setItem(phpRateStorageKey, phpRate);
     } catch {}
-  }, [phpRate]);
+  }, [phpRate, phpRateStorageKey]);
 
   const summary = report.summary ?? {};
   const sortedTrades = useMemo(() => {

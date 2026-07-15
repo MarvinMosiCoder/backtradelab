@@ -6,7 +6,7 @@ import { useTheme } from '../../Context/ThemeContext';
 import { marketCategoryLabel } from '../../utils/marketLabels';
 
 const TOUR_STEPS = [
-    ['Your 7-day backtesting trial is active', 'You have full replay and paper-backtesting access for seven days. Your trial countdown and renewal options are always available under Subscription.'],
+    ['Your free backtesting week is ready', 'Your seven-day countdown starts only when you activate it from Replay or Subscription.'],
     ['Choose your market', 'Browse your saved Spot and Futures markets here, then open one in Workspace.'],
     ['Analyze the chart', 'In Workspace, use Appearance for Volume, SMA, EMA, RSI, candle colors, size, and price alerts.'],
     ['Replay history', 'Start Replay and click the historical candle where your practice session should begin.'],

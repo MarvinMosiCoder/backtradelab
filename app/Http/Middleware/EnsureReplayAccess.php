@@ -13,18 +13,17 @@ class EnsureReplayAccess
 
         if ($request->session()->get('admin_is_superadmin')) return $next($request);
 
-        if (!$user->replay_trial_started_at) {
-            $user->forceFill([
-                'replay_trial_started_at' => now(),
-                'replay_trial_ends_at' => now()->addDays(7),
-            ])->save();
-        }
-
         $allowed = ($user->replay_trial_ends_at && now()->lte($user->replay_trial_ends_at))
             || ($user->replay_access_ends_at && now()->lte($user->replay_access_ends_at));
 
         if (!$allowed) {
-            return response()->json(['message' => 'Your replay access has expired.', 'code' => 'replay_subscription_required'], 402);
+            return response()->json([
+                'message' => $user->replay_trial_started_at
+                    ? 'Your replay access has expired.'
+                    : 'Activate your free seven-day trial to use replay and backtesting.',
+                'code' => 'replay_subscription_required',
+                'trialAvailable' => !$user->replay_trial_started_at,
+            ], 402);
         }
 
         return $next($request);

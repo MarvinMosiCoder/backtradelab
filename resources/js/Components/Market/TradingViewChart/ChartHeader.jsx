@@ -1,24 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { marketCategoryLabel } from '../../../utils/marketLabels';
 import { Bell, ChevronDown, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
-import { TIMEFRAMES, TIMEFRAME_SECONDS } from './constants';
+import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
 export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, replayMode, currentPrice, selectedReplayPrice, candleColors, candleSize, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onCandleColorChange, onCandleSizeChange, onIndicatorsChange, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
-  const [clockNow, setClockNow] = useState(() => Date.now());
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const isDark = chartTheme?.mode === 'dark';
-  useEffect(() => {
-    const timer = window.setInterval(() => setClockNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-  const candleSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
-  const secondsRemaining = Math.max(0, candleSeconds - (Math.floor(clockNow / 1000) % candleSeconds));
-  const candleCountdown = [Math.floor(secondsRemaining / 3600), Math.floor((secondsRemaining % 3600) / 60), secondsRemaining % 60].map((value) => String(value).padStart(2, '0')).join(':');
   const panelStyle = {
     backgroundColor: chartTheme?.panel ?? (isDark ? '#242627' : '#ffffff'),
     borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb'),
@@ -162,97 +154,16 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             {isIndicatorsOpen && (
               <div className={`absolute left-0 top-full z-[100] mt-2 w-72 max-w-[85vw] space-y-3 rounded-md border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={panelStyle}>
                 <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>Chart indicators</div>
-                <label className={`flex items-center justify-between gap-3 rounded-md border p-2 text-xs ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-slate-50'}`}>
-                  <span className="font-semibold">Volume</span>
-                  <input
-                    className="accent-[#2962ff]"
-                    type="checkbox"
-                    checked={indicators.volume}
-                    onChange={(e) =>
-                      onIndicatorsChange((current) => ({
-                        ...current,
-                        volume: e.target.checked,
-                      }))
-                    }
-                  />
-                </label>
-                {indicators.volume && (
-                  <label className="flex items-center gap-2 text-[10px]">
-                    <span className={labelClass}>Pane size</span>
-                    <input
-                      className="min-w-0 flex-1 accent-[#2962ff]"
-                      type="range"
-                      min="10"
-                      max="45"
-                      value={indicators.volumeSize}
-                      onChange={(e) =>
-                        onIndicatorsChange((current) => ({
-                          ...current,
-                          volumeSize: Number(e.target.value),
-                        }))
-                      }
-                    />
-                    <span className="w-8 text-right tabular-nums">{indicators.volumeSize}%</span>
-                  </label>
-                )}
                 {[
-                  ['sma', 'SMA', 'smaPeriod'],
-                  ['ema', 'EMA', 'emaPeriod'],
-                  ['rsi', 'RSI', 'rsiPeriod'],
-                ].map(([key, label, periodKey]) => (
-                  <div key={key} className={`rounded-md border p-2 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-slate-50'}`}>
-                    <div className="flex items-center gap-2 text-xs">
-                      <label className="flex flex-1 items-center gap-2 font-semibold">
-                        <input
-                          className="accent-[#2962ff]"
-                          type="checkbox"
-                          checked={indicators[key]}
-                          onChange={(e) =>
-                            onIndicatorsChange((current) => ({
-                              ...current,
-                              [key]: e.target.checked,
-                            }))
-                          }
-                        />
-                        {label}
-                      </label>
-                      <label className={`flex items-center gap-1 text-[10px] ${labelClass}`}>
-                        Period
-                        <input
-                          className={`${compactFieldClass} w-16`}
-                          type="number"
-                          min="2"
-                          max="200"
-                          value={indicators[periodKey]}
-                          onChange={(e) =>
-                            onIndicatorsChange((current) => ({
-                              ...current,
-                              [periodKey]: Math.min(200, Math.max(2, Number(e.target.value) || 2)),
-                            }))
-                          }
-                        />
-                      </label>
-                    </div>
-                    {key === 'rsi' && indicators.rsi && (
-                      <label className="mt-2 flex items-center gap-2 text-[10px]">
-                        <span className={labelClass}>Pane size</span>
-                        <input
-                          className="min-w-0 flex-1 accent-[#2962ff]"
-                          type="range"
-                          min="15"
-                          max="45"
-                          value={indicators.rsiSize ?? 25}
-                          onChange={(e) =>
-                            onIndicatorsChange((current) => ({
-                              ...current,
-                              rsiSize: Number(e.target.value),
-                            }))
-                          }
-                        />
-                        <span className="w-8 text-right tabular-nums">{indicators.rsiSize ?? 25}%</span>
-                      </label>
-                    )}
-                  </div>
+                  ['volume', 'Volume'],
+                  ['sma', 'SMA'],
+                  ['ema', 'EMA'],
+                  ['rsi', 'RSI'],
+                ].map(([key, label]) => (
+                  <label key={key} className={`flex items-center justify-between gap-3 rounded-md border p-2 text-xs font-semibold ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-slate-50'}`}>
+                    <span>{label}</span>
+                    <input className="h-4 w-4 accent-[#2962ff]" type="checkbox" checked={indicators[key]} onChange={(event) => onIndicatorsChange((current) => ({ ...current, [key]: event.target.checked }))} />
+                  </label>
                 ))}
               </div>
             )}
@@ -301,7 +212,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           <div className="min-w-0 px-1">
             <div className="truncate text-[10px] leading-none text-gray-400">{replayMode ? 'Replay' : 'Price'}</div>
             <div className="truncate text-sm font-bold leading-tight text-green-500">${formatPrice(currentPrice)}</div>
-            {!replayMode && <div className="text-[9px] leading-none text-[#787b86]">Closes in {candleCountdown}</div>}
           </div>
         </div>
       </div>
@@ -471,99 +381,16 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           {isIndicatorsOpen && (
             <div className={`absolute right-0 top-full z-[100] mt-2 w-72 max-w-[calc(100vw-1rem)] space-y-3 rounded-lg border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={panelStyle}>
               <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>Chart indicators</div>
-              <div className={`rounded-lg border p-2.5 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
-                <label className="flex items-center justify-between gap-2 text-xs font-semibold">
-                  <span>Volume</span>
-                  <input
-                    className="h-4 w-4 accent-[#2962ff]"
-                    type="checkbox"
-                    checked={indicators.volume}
-                    onChange={(e) =>
-                      onIndicatorsChange((c) => ({
-                        ...c,
-                        volume: e.target.checked,
-                      }))
-                    }
-                  />
-                </label>
-                {indicators.volume && (
-                  <label className={`mt-2 flex items-center gap-2 text-[10px] ${labelClass}`}>
-                    <span>Pane size</span>
-                    <input
-                      className="min-w-0 flex-1 accent-[#2962ff]"
-                      type="range"
-                      min="10"
-                      max="45"
-                      value={indicators.volumeSize}
-                      onChange={(e) =>
-                        onIndicatorsChange((c) => ({
-                          ...c,
-                          volumeSize: Number(e.target.value),
-                        }))
-                      }
-                    />
-                    <span className="w-8 text-right tabular-nums">{indicators.volumeSize}%</span>
-                  </label>
-                )}
-              </div>
               {[
-                ['sma', 'SMA', 'smaPeriod'],
-                ['ema', 'EMA', 'emaPeriod'],
-                ['rsi', 'RSI', 'rsiPeriod'],
-              ].map(([key, label, periodKey]) => (
-                <div key={key} className={`rounded-lg border p-2.5 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
-                  <div className="flex items-center gap-2 text-xs">
-                    <label className="flex flex-1 items-center gap-2 font-semibold">
-                      <input
-                        className="h-4 w-4 accent-[#2962ff]"
-                        type="checkbox"
-                        checked={indicators[key]}
-                        onChange={(e) =>
-                          onIndicatorsChange((c) => ({
-                            ...c,
-                            [key]: e.target.checked,
-                          }))
-                        }
-                      />
-                      {label}
-                    </label>
-                    <label className={`flex items-center gap-1.5 text-[10px] ${labelClass}`}>
-                      <span>Period</span>
-                      <input
-                        className={`${fieldClass} w-16 bg-transparent px-2 text-center`}
-                        type="number"
-                        min="2"
-                        max="200"
-                        value={indicators[periodKey]}
-                        onChange={(e) =>
-                          onIndicatorsChange((c) => ({
-                            ...c,
-                            [periodKey]: Math.min(200, Math.max(2, Number(e.target.value) || 2)),
-                          }))
-                        }
-                      />
-                    </label>
-                  </div>
-                  {key === 'rsi' && indicators.rsi && (
-                    <label className={`mt-2 flex items-center gap-2 text-[10px] ${labelClass}`}>
-                      <span>Pane size</span>
-                      <input
-                        className="min-w-0 flex-1 accent-[#2962ff]"
-                        type="range"
-                        min="15"
-                        max="45"
-                        value={indicators.rsiSize ?? 25}
-                        onChange={(e) =>
-                          onIndicatorsChange((c) => ({
-                            ...c,
-                            rsiSize: Number(e.target.value),
-                          }))
-                        }
-                      />
-                      <span className="w-8 text-right tabular-nums">{indicators.rsiSize ?? 25}%</span>
-                    </label>
-                  )}
-                </div>
+                ['volume', 'Volume'],
+                ['sma', 'SMA'],
+                ['ema', 'EMA'],
+                ['rsi', 'RSI'],
+              ].map(([key, label]) => (
+                <label key={key} className={`flex items-center justify-between gap-3 rounded-lg border p-2.5 text-xs font-semibold ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                  <span>{label}</span>
+                  <input className="h-4 w-4 accent-[#2962ff]" type="checkbox" checked={indicators[key]} onChange={(event) => onIndicatorsChange((current) => ({ ...current, [key]: event.target.checked }))} />
+                </label>
               ))}
             </div>
           )}
@@ -584,7 +411,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             <span className={`h-2 w-2 shrink-0 rounded-full ${replayMode ? 'bg-amber-400' : 'bg-emerald-500'}`} />
             <div className="min-w-0">
               <div className="truncate text-[9px] font-semibold uppercase tracking-wider text-gray-400">{replayMode ? 'Replay price' : 'Live price'}</div>
-              {!replayMode && <div className="truncate text-[9px] leading-none text-[#787b86]">Closes in {candleCountdown}</div>}
             </div>
           </div>
           <div className={`min-w-0 text-right ${isDark ? 'text-white' : 'text-gray-800'}`}>

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { usePage } from '@inertiajs/react';
 import {
   Bold,
   BoxSelect,
@@ -873,6 +874,10 @@ export default function ReplayPanel({
   overlayWidth,
   className = '',
 }) {
+  const { auth } = usePage().props;
+  const preferenceUserId = auth?.user?.id ?? 'guest';
+  const displayCurrencyStorageKey = `market-backtest-display-currency:${preferenceUserId}`;
+  const phpRateStorageKey = `market-backtest-php-rate:${preferenceUserId}`;
   const [activeGroup, setActiveGroup] = useState(null);
   const [activeEditorMenu, setActiveEditorMenu] = useState(null);
   const [presetNameDraft, setPresetNameDraft] = useState('');
@@ -885,9 +890,9 @@ export default function ReplayPanel({
   const [orderTakeProfit, setOrderTakeProfit] = useState('');
   const [showOrderDraft, setShowOrderDraft] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState(() => (
-    getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
+    getStoredValue(displayCurrencyStorageKey, 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
-  const [phpRate, setPhpRate] = useState(() => getStoredValue('market-backtest-php-rate', '58'));
+  const [phpRate, setPhpRate] = useState(() => getStoredValue(phpRateStorageKey, '58'));
 
   const handleToolChange = (nextTool) => {
     onToolChange((currentTool) => (currentTool === nextTool ? null : nextTool));
@@ -941,15 +946,15 @@ export default function ReplayPanel({
 
   useEffect(() => {
     try {
-      localStorage.setItem('market-backtest-display-currency', displayCurrency);
+      localStorage.setItem(displayCurrencyStorageKey, displayCurrency);
     } catch {}
-  }, [displayCurrency]);
+  }, [displayCurrency, displayCurrencyStorageKey]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('market-backtest-php-rate', phpRate);
+      localStorage.setItem(phpRateStorageKey, phpRate);
     } catch {}
-  }, [phpRate]);
+  }, [phpRate, phpRateStorageKey]);
 
   useEffect(() => {
     if (!orderLineDraftPatch) return;

@@ -144,8 +144,6 @@ class LoginController extends Controller
                 'social_provider' => $provider,
                 'social_provider_id' => $providerId,
                 'password_login_enabled' => false,
-                'replay_trial_started_at' => now(),
-                'replay_trial_ends_at' => now()->addDays(7),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

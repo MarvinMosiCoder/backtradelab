@@ -26,7 +26,7 @@ function formatPriceLabel(value) {
   });
 }
 
-function ChartCandleCountdown({ timeframe }) {
+function ChartCandleCountdown({ timeframe, priceCoordinate, overlayHeight, chartTheme }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -41,13 +41,24 @@ function ChartCandleCountdown({ timeframe }) {
     Math.floor((remaining % 3600) / 60),
     remaining % 60,
   ].map((value) => String(value).padStart(2, '0')).join(':');
+  const top = Number.isFinite(Number(priceCoordinate))
+    ? Math.min(Math.max(Number(priceCoordinate) + 14, 4), Math.max(Number(overlayHeight) - 26, 4))
+    : null;
+
+  if (top == null) return null;
 
   return (
     <div
-      className="pointer-events-none absolute bottom-7 right-1 z-10 rounded border border-[#2a2e39] bg-[#131722]/95 px-1.5 py-1 text-[10px] font-semibold tabular-nums text-[#b2b5be] shadow"
+      className="pointer-events-none absolute right-0 z-10 min-w-[72px] rounded-sm border px-1.5 py-1 text-center text-[10px] font-semibold leading-none tabular-nums shadow"
+      style={{
+        top,
+        backgroundColor: chartTheme?.panel ?? '#131722',
+        borderColor: chartTheme?.border ?? '#2a2e39',
+        color: chartTheme?.text ?? '#b2b5be',
+      }}
       title={`${timeframe} candle closes in ${label}`}
     >
-      {label}
+      <span className="mr-1 opacity-70">Close</span>{label}
     </div>
   );
 }
@@ -1154,6 +1165,7 @@ export default function ChartStage({
   isFullscreen,
   timeframe,
   replayMode,
+  currentPriceCoordinate,
   isSpacePressed,
   isReplayPricePickActive,
   tool,
@@ -1256,7 +1268,14 @@ export default function ChartStage({
         </span>
       </button>
 
-      {!replayMode && <ChartCandleCountdown timeframe={timeframe} />}
+      {!replayMode && (
+        <ChartCandleCountdown
+          timeframe={timeframe}
+          priceCoordinate={currentPriceCoordinate}
+          overlayHeight={overlaySize.height}
+          chartTheme={chartTheme}
+        />
+      )}
 
       <DrawingOverlay
         renderedDrawings={renderedDrawings}

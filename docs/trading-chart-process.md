@@ -125,7 +125,7 @@ Login supports the existing admin-created email/password flow plus Google and Fa
 | `GET /auth/facebook/redirect` | Redirect to Facebook OAuth |
 | `GET /auth/facebook/callback` | Handle Facebook OAuth callback |
 
-Google OAuth supports both sign-in and self-registration. The callback first matches an existing provider identity, then falls back to the returned email. If neither exists, it creates an active `adm_users` record with the first configured non-superadmin privilege, a secure random local password, Google identity fields, disabled password login, and a seven-day replay trial. Existing inactive accounts remain blocked. After either lookup or creation, `LoginController` reuses the same menu, privilege, theme, profile, notification, and announcement session setup as password login. Google redirects include `prompt=select_account`, so the browser displays the Google account picker even when a Google session is already active.
+Google OAuth supports both sign-in and self-registration. The callback first matches an existing provider identity, then falls back to the returned email. If neither exists, it creates an active `adm_users` record with the first configured non-superadmin privilege, a secure random local password, Google identity fields, and disabled password login. The free replay trial remains unstarted until the user explicitly activates it. Existing inactive accounts remain blocked. After either lookup or creation, `LoginController` reuses the same menu, privilege, theme, profile, notification, and announcement session setup as password login. Google redirects include `prompt=select_account`, so the browser displays the Google account picker even when a Google session is already active.
 
 OAuth-linked users store their latest provider identity on `adm_users`. Newly created Google accounts and accounts that still have the admin-created temporary password keep password login disabled. From an authenticated social session, the user can create a strong local password without entering the unknown generated or temporary password; this enables email/password login afterward. Accounts that already have a real local password keep password login enabled.
 
@@ -267,6 +267,8 @@ When replay mode is active, timeframe changes anchor the candle request around t
 
 Fetched candles are cached in memory by exchange, market category, symbol, timeframe, and replay anchor. If the user switches back to a previously loaded timeframe, `TradingViewChart.jsx` renders the cached candles immediately and refreshes them in the background. Timeframe changes do not show the blocking chart loader while existing candle data is already visible; the current chart stays on screen until cached or freshly fetched candles are applied. The full loading overlay is reserved for the initial empty chart load. Before changing timeframe, the frontend captures the current visible center time and logical bar span, then restores that bar span around the matching candle after the new timeframe renders. This avoids `fitContent()` and keeps the user's zoom density from shrinking on every timeframe switch. Replay drawing framing can still override this when it needs to keep the replay candle and drawings visible. The current active candle request is aborted when a newer timeframe request starts, so rapid timeframe clicks do not let older responses replace the newest chart. In live mode, the chart also prefetches nearby common timeframes after the active timeframe loads.
 
+Live candle polling preserves the user's current horizontal viewport. The chart instance is not recreated when `allCandles` changes, and `fitContent()` runs only once for a newly selected exchange/category/symbol/timeframe scope. Replacing or chronologically inserting the active candle therefore does not override manual pan or zoom. Intentional navigation commands remain programmatic: changing timeframe restores the captured viewport, replay Follow tracks the replay edge, and Back to Live explicitly calls `scrollToRealTime()`.
+
 The UI timeframe is mapped to the selected exchange interval in `MarketDataController.php`.
 
 | UI Timeframe | API Interval |
@@ -314,7 +316,7 @@ The UI timeframe is mapped to the selected exchange interval in `MarketDataContr
 
 ### 5. Frontend Normalization
 
-The frontend also normalizes the response with `normalizeApiCandles()` so it can tolerate either object-style or array-style candle payloads.
+The frontend also normalizes the response with `normalizeApiCandles()` so it can tolerate either object-style or array-style candle payloads. The normalizer rejects non-finite OHLCV values, collapses duplicate timestamps with the newest payload winning, and sorts the result oldest to newest. Live polling passes the existing candles and latest exchange candle through the same normalizer instead of blindly appending, so a repeated or older candle cannot give Lightweight Charts duplicate or out-of-order time points.
 
 Normalized candles are stored in:
 
@@ -386,7 +388,7 @@ Unsubmitted Entry/SL/TP plans can be cleared either from the ticket or by clicki
 
 Replay progress is persisted separately per authenticated user, exchange, market category, and symbol in `market_replay_progress`, with a user-scoped synchronous browser mirror under `market-replay-progress:{userId}:{market}`. If that user has a saved checkpoint, its timestamp and selected replay price are restored when the chart opens. If no checkpoint exists, the chart opens live at the current price and stays out of replay until the user clicks `Start Replay`. Each server write carries `client_saved_at` so a delayed older request cannot overwrite a newer replay candle. Normal playback saves to the server with a short debounce, while component unmount and browser page exit flush the latest value. `Back to Live` returns the current view to live candles without deleting the saved replay checkpoint. The replay `Reset`/`Go Latest` action explicitly replaces the checkpoint with the latest candle.
 
-The default candle width is `24`, and the user's later candle-width selection continues to be stored in `market-chart-candle-size` in `localStorage`.
+The default candle width is `24`. Candle width and candle colors are browser-persisted per authenticated user under `market-chart-candle-size:{userId}` and `market-chart-candle-colors:{userId}`. Legacy unscoped values are not imported into an account, preventing appearance settings from crossing accounts on a shared browser.
 
 Each authenticated user can use a database-backed demo account while replaying candles. `MarketBacktestController.php` creates a default `Demo Account` with `10,000 USDT` the first time the replay account panel is opened.
 
@@ -530,19 +532,28 @@ Outside fullscreen, `ChartHeader.jsx` uses a TradingView-style command bar. At d
 
 Below the `lg` breakpoint, both embedded and fullscreen headers collapse into a hamburger labeled with the active symbol. Activating it opens a scrollable, theme-aware controls dropdown; at `lg` and above the normal command bar is restored. The fullscreen compact header uses the available viewport width below `lg`, capped at `36rem`, so its mobile/tablet dropdown does not inherit a narrow button width.
 
-The embedded Indicators menu is explicitly themed rather than inheriting page text colors. Volume, SMA, EMA, and RSI are grouped into dark or light cards with matching borders and surfaces, blue-accent checkboxes/sliders, editable periods, and percentage readouts for Volume and RSI pane sizes.
+The embedded Indicators menu is explicitly themed rather than inheriting page text colors. Volume, SMA, EMA, and RSI appear as simple dark/light name-toggle rows. Indicator configuration is intentionally absent from this add/remove menu.
 
-Fullscreen mode uses the compact wrapping header variant with the same active symbol and indicator state. Its symbol picker uses green symbol labels, explicit `Open` buttons, and theme-aware search/results. Its Indicators menu exposes Volume size, SMA/EMA/RSI periods, and RSI pane size. The compact header remains above the chart, while `ReplayPanel` uses a higher stacking layer so drawing Tool Settings, replay controls, and flyouts remain visible above the header when they overlap.
+Fullscreen mode uses the compact wrapping header variant with the same active symbol and indicator state. Its symbol picker uses green symbol labels, explicit `Open` buttons, and theme-aware search/results. Its Indicators menu uses the same name-only Volume/SMA/EMA/RSI toggles as the embedded header. The compact header remains above the chart, while `ReplayPanel` uses a higher stacking layer so drawing Tool Settings, replay controls, and flyouts remain visible above the header when they overlap.
 
 Volume bars are derived from visible candles:
 
 ```javascript
-const visibleVolume = visibleCandles.map((c) => ({
-  time: c.time,
-  value: c.volume,
-  color: c.close >= c.open ? '#26a69a88' : '#ef535088',
-}));
+const visibleVolume = visibleCandles.reduce((volume, candle) => {
+  const time = Number(candle.time);
+  const value = Number(candle.volume);
+  if (!Number.isFinite(time) || !Number.isFinite(value)) return volume;
+
+  volume.push({
+    time,
+    value,
+    color: candle.close >= candle.open ? '#26a69a88' : '#ef535088',
+  });
+  return volume;
+}, []);
 ```
+
+The finite-value guard prevents malformed exchange volume points from reaching the Lightweight Charts Histogram series. The overlay `ResizeObserver` also retains and checks its observed wrapper element, so a queued resize callback safely exits after the chart has unmounted.
 
 ---
 
@@ -633,10 +644,10 @@ After a two-point drawing is completed, the active tool is reset to default so t
 
 Long and short position drawings use the same stored chart coordinates as lines. The first click sets entry; the second click sets the target/time and creates an initial mirrored stop. After placement, the target and stop have separate resize handles, so the green profit zone and red loss zone can be adjusted independently. The overlay shows reward/risk, target percent, stop percent, and duration. The profit/loss zones use transparent green/red fills without a full dark backdrop. Visible candles after the entry are scanned with high/low prices; when price reaches the target or stop box edge, the time-progressing area stops at that price, while otherwise it follows the latest post-entry candle close. A 1px gray dashed connector line runs from the entry point to the current/hit price. Entry, target, and stop prices also render as plain colored text on the right-side vertical price area: neutral for entry, green for target, and red for stop. Forecast displays price delta, percent change, and elapsed time with a dashed arrow pointing to the forecast endpoint. Fibonacci retracement and trend-based extension drawings render TradingView-style horizontal levels projected to the right side of the chart, with each ratio and price shown in its own small badge inside the chart overlay rather than in the right price panel; each level uses a fixed level color while the guide/anchor line keeps the tool color.
 
-Drawings are stored per symbol:
+The database remains the authoritative drawing store. The optional browser mirror is scoped by authenticated user and market:
 
 ```javascript
-`replay-drawings:${symbol}`
+`replay-drawings:${userId}:${exchange}:${category}:${symbol}`
 ```
 
 Drawings are saved to the backend through `/market-drawings` and may be mirrored in `localStorage` for the current browser, but browser-local data is never loaded or uploaded into an account automatically when no server record exists.
@@ -724,7 +735,7 @@ When switching timeframe, drawing timestamps are projected through the full load
 
 During timeframe changes, loading and error states render as absolute overlays on top of the existing chart instead of taking normal layout space above it. This keeps the chart container and drawing overlay dimensions stable while candles reload, preventing temporary chart/overlay misalignment when moving from higher timeframes such as `1h` to lower timeframes such as `15m`. Drawing projection uses the timeframe of the candle data currently loaded on screen until the new candle data has arrived, so saved drawing timestamps are not temporarily recalculated against the wrong interval during the loading gap.
 
-Timeframe changes restore the previous center time with a logical span reduced to 72% of the prior span, producing a consistent zoom-in. The live price display also shows a one-second-updating countdown to the active timeframe candle close; replay mode hides that live countdown.
+Timeframe changes restore the previous center time with a logical span reduced to 72% of the prior span, producing a consistent zoom-in. In live mode, a compact one-second-updating candle-close box is anchored directly below the current-price label on the right price scale and moves vertically with the live price. Replay mode hides the live countdown.
 
 ---
 
@@ -971,7 +982,9 @@ Alerts trigger while Workspace is open because the browser refreshes the latest 
 
 ### Indicators and volume
 
-The chart Appearance menu manages candle styling plus removable Volume, configurable volume height, SMA, EMA, and RSI indicators. SMA, EMA, and RSI periods are editable. Indicator visibility, periods, and volume height are stored in the browser under `market-chart-indicators`.
+The Indicators menu is an add/remove list containing only the Volume, SMA, EMA, and RSI names with toggles; configuration controls are not shown in that menu. Displayed SMA and EMA indicators have small clickable name targets in the main pane, while RSI has one inside the RSI pane. These targets make selection reliable even when the canvas library reports the underlying candlestick as the hovered series. Clicking a target or a successfully hit rendered SMA/EMA/RSI series opens only that indicator's contextual settings panel; settings remain hidden until selection, and clicking elsewhere closes them. SMA, EMA, and RSI expose period, line color, line width, and removal, while RSI also exposes pane size. Volume has no left-side chart target or contextual settings panel and is controlled only by its name toggle. The panel prefers the space below the clicked indicator and moves above it when required to stay within chart bounds. Indicator visibility and settings are stored per authenticated user in the browser under `market-chart-indicators:{userId}`. Legacy unscoped indicator values are not imported, so a newly signed-in account starts from its own saved settings or the defaults.
+
+Backtest display currency and the editable PHP/USDT conversion rate are also browser-persisted per authenticated user under `market-backtest-display-currency:{userId}` and `market-backtest-php-rate:{userId}`. The Enter Position ticket, Trade Calendar, and PnL Report use the same user-scoped key names. These are display preferences only; paper-account balances and order records remain database-backed and user-owned.
 
 ### Price alerts
 
@@ -983,7 +996,7 @@ The permanent `/help` page documents the chart-to-journal workflow and is linked
 
 ### Replay trial and access enforcement
 
-New accounts receive a seven-day replay trial through `replay_trial_started_at` and `replay_trial_ends_at` on `adm_users`. Paid access is stored separately in `replay_access_ends_at`. Existing accounts without trial timestamps receive their trial timestamps when replay access is first evaluated.
+New accounts can activate one seven-day replay trial through the subscription modal. The countdown does not begin at registration, login, page load, or a status check. `POST /replay-trial/activate` atomically sets `replay_trial_started_at` and `replay_trial_ends_at` the first time the user confirms activation. Paid access is stored separately in `replay_access_ends_at`.
 
 Replay progress writes and paper-backtest actions are protected server-side by the `replay.access` middleware. Superadmins bypass this restriction. All frontend replay entry paths also call `/replay-access`: restoring saved progress, Start Replay, Set Replay Price, Back, Forward, and Play. Active replay is rechecked once per minute and closes when access expires. An expired user receives HTTP `402` with the `replay_subscription_required` code and the chart opens the subscription interface instead of starting replay.
 
@@ -1004,7 +1017,7 @@ Plan definitions are stored in `subscription_plans` rather than hard-coded in Re
 
 | Field | Purpose |
 |------|---------|
-| `code` | Stable plan identifier such as `monthly`, `quarterly`, or `yearly` |
+| `code` | Stable plan identifier such as `weekly`, `monthly`, or `yearly` |
 | `name` | User-facing plan name |
 | `duration_days` | Replay-access days granted after approval |
 | `price` | Required plan amount; nullable until configured |
@@ -1020,7 +1033,7 @@ Superadmins manage prices, durations, descriptions, featured state, and availabi
 
 ### Manual payment and approval workflow
 
-The subscription modal first displays Monthly, Quarterly, and Yearly plan cards, database prices, durations, features, and featured-plan styling. The payment step preserves the selected-plan feature list and displays database-controlled GCash instructions. It includes the account name and number, a copy-number action, payment rules, and an optional QR code positioned beside the account details. The user then enters the GCash reference and optional image proof.
+The subscription modal first offers one explicit seven-day free-trial activation when the account has not used it, followed by Weekly, Monthly, and Yearly paid plan cards with database prices, durations, features, and featured-plan styling. The payment step preserves the selected-plan feature list and displays database-controlled GCash instructions. It includes the account name and number, a copy-number action, payment rules, and an optional QR code positioned beside the account details. The user then enters the GCash reference and optional image proof.
 
 GCash instructions are stored in `payment_settings` and managed by superadmins at `/admin/payment-settings`. QR images are served through an authenticated route instead of relying on a public storage URL.
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import { usePage } from '@inertiajs/react';
 import {
   CalendarDays,
   ChevronLeft,
@@ -114,6 +115,10 @@ function getPnlClass(value, isDark) {
 
 export default function TradeCalendar() {
   const { theme: adminTheme } = useTheme();
+  const { auth } = usePage().props;
+  const preferenceUserId = auth?.user?.id ?? 'guest';
+  const displayCurrencyStorageKey = `market-backtest-display-currency:${preferenceUserId}`;
+  const phpRateStorageKey = `market-backtest-php-rate:${preferenceUserId}`;
   const isDark = adminTheme === 'bg-skin-black';
   const [report, setReport] = useState({ account: null, trades: [] });
   const [loading, setLoading] = useState(false);
@@ -121,9 +126,9 @@ export default function TradeCalendar() {
   const [monthDate, setMonthDate] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [showCalendarPicker, setShowCalendarPicker] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState(() => (
-    getStoredValue('market-backtest-display-currency', 'USDT') === 'PHP' ? 'PHP' : 'USDT'
+    getStoredValue(displayCurrencyStorageKey, 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
-  const [phpRate, setPhpRate] = useState(() => getStoredValue('market-backtest-php-rate', '58'));
+  const [phpRate, setPhpRate] = useState(() => getStoredValue(phpRateStorageKey, '58'));
 
   const loadReport = async () => {
     setLoading(true);
@@ -152,15 +157,15 @@ export default function TradeCalendar() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('market-backtest-display-currency', displayCurrency);
+      localStorage.setItem(displayCurrencyStorageKey, displayCurrency);
     } catch {}
-  }, [displayCurrency]);
+  }, [displayCurrency, displayCurrencyStorageKey]);
 
   useEffect(() => {
     try {
-      localStorage.setItem('market-backtest-php-rate', phpRate);
+      localStorage.setItem(phpRateStorageKey, phpRate);
     } catch {}
-  }, [phpRate]);
+  }, [phpRate, phpRateStorageKey]);
 
   const dailyStats = useMemo(() => {
     const stats = {};
