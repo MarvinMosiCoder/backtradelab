@@ -13,7 +13,7 @@ APP_URL=https://your-domain.example
 LEGAL_OPERATOR_NAME="Your legal operator name"
 LEGAL_CONTACT_EMAIL=privacy@your-domain.example
 LEGAL_JURISDICTION="Republic of the Philippines"
-LEGAL_EFFECTIVE_DATE="July 13, 2026"
+LEGAL_EFFECTIVE_DATE="July 15, 2026"
 
 CACHE_DRIVER=redis
 SESSION_DRIVER=redis
@@ -30,6 +30,13 @@ GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"
 FACEBOOK_CLIENT_ID=
 FACEBOOK_CLIENT_SECRET=
 FACEBOOK_REDIRECT_URI="${APP_URL}/auth/facebook/callback"
+
+PAYMONGO_ENABLED=false
+PAYMONGO_MODE=live
+PAYMONGO_SECRET_KEY=
+PAYMONGO_WEBHOOK_SECRET=
+PAYMONGO_PAYMENT_METHODS=card,gcash
+PAYMONGO_LIVE_ENABLED=false
 ```
 
 Use unique database, Redis, mail, OAuth, and object-storage credentials. Never copy local credentials or commit the production `.env` file.
@@ -48,7 +55,7 @@ Use unique database, Redis, mail, OAuth, and object-storage credentials. Never c
 
 - Managed MySQL with automated backups and point-in-time recovery where available.
 - Redis for shared cache, sessions, rate limiting, and queued work.
-- S3-compatible private object storage for chart snapshots, payment proofs, payment-chat attachments, and payment QR images.
+- S3-compatible private object storage for chart snapshots and preserved historical payment proofs/chat attachments.
 - A queue worker supervised and restarted automatically.
 - HTTPS at the load balancer or web server.
 - A CDN for compiled assets and public snapshots.
@@ -78,22 +85,24 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 - Load-test candle requests, replay progress, order placement, and reports.
 - Verify database restore procedures, not only backup creation.
 - Monitor HTTP errors, slow database queries, failed queue jobs, exchange latency, disk usage, and Redis availability.
-- Configure the manual payment instructions shown to users, restrict access to uploaded payment proofs, and audit every subscription approval.
-- Configure and verify the GCash account name, account number, payment rules, and QR image in `/admin/payment-settings` before enabling plans.
-- Do not add a GCash account number to migrations, source files, `.env.example`, or frontend code. Payment recipient settings are database-managed and intentionally begin empty on a new installation.
-- Before accepting real subscriptions through GCash, obtain any required written commercial-use authorization or approved GCash for Business arrangement. A personal wallet may be used for development/testing, but GCash's terms prohibit commercial use without prior written authorization. Confirm business registration, tax, invoicing, refund, and consumer-protection obligations with qualified advisers.
-- Confirm payment proof, QR, and chat-attachment download routes require authentication and authorize the request owner or a superadmin.
-- Test payment submission retries, double-clicks, and simultaneous browser tabs. Submission tokens must return the original request, and each user must have at most one pending request.
-- Test approval and rejection while the user payment chat is open. The user should receive the decision within the five-second polling interval and approval confirmation should redirect to the workspace.
+- Keep `PAYMONGO_ENABLED=false` in production until live credentials are issued and business registration, tax, invoicing, refund, consumer-protection, and PayMongo requirements have been reviewed. Live checkout additionally requires `PAYMONGO_MODE=live`, an `sk_live_` key, and the deliberate `PAYMONGO_LIVE_ENABLED=true` gate.
+- For local/staging sandbox checkout, use `PAYMONGO_MODE=test` with an `sk_test_` key. Test mode is rejected when `APP_ENV=production`; verified sandbox payments grant access only in non-production.
+- Register exactly one PayMongo webhook at `https://your-domain.example/webhooks/paymongo` for `checkout_session.payment.paid`. Store its signing secret only in `PAYMONGO_WEBHOOK_SECRET`; rotate it if exposed.
+- Confirm the public webhook receives the unmodified raw request body and `Paymongo-Signature` header. Invalid or older-than-five-minute signatures must fail, duplicates must not extend access twice, and transient processing errors must return an error so PayMongo retries.
+- Run Laravel's scheduler every minute so `payments:reconcile-paymongo` can recover pending Checkout Sessions. Verify the admin transaction monitor's Recheck action uses the same reconciliation path.
+- Check merchant capabilities before launch. Configuring `card,gcash` does not guarantee both methods are enabled on the PayMongo account; checkout must offer only the intersection and fail clearly when none are available.
+- Test checkout retries, double-clicks, and simultaneous tabs. UUID submission tokens must return the original transaction and never create a second entitlement for the same checkout.
+- Confirm successful browser redirects never grant access by themselves. Activation must require a retrieved or webhook-delivered paid session with matching amount, currency, mode, and transaction identity.
+- Confirm archived manual payment proofs and chat attachments remain authenticated and authorized for the record owner or a superadmin, with no routes capable of creating messages, uploading proofs, or approving old records.
 - Configure a non-null PHP price for every active subscription plan before launch; unpriced plans are intentionally unavailable to users.
 - Confirm the active paid plan set is Weekly, Monthly, and Yearly. Configure the new Weekly price after running the July 15, 2026 pricing migration; the migration intentionally creates it without a price and retires Quarterly from the selectable plan list.
 - Verify a new user's seven-day replay trial remains unstarted after registration, login, Market Summary, Workspace load, and `GET /replay-access`. Clicking a replay or backtesting action must open the subscription modal, and only the explicit `Activate free week` action may set the trial start and end timestamps.
 - Verify trial activation is one-time and concurrency-safe: repeated clicks or simultaneous tabs must not extend or restart the seven-day period. Users with active paid access must not consume their unused free trial.
-- Confirm plan duration and price changes follow the intended policy for pending requests. Request amounts are captured at submission, while access duration is loaded from the plan at approval time.
-- Approvals currently extend from the later of the current paid expiry or approval time. Confirm this renewal policy before launch.
-- Store payment proofs, payment-chat attachments, and payment QR images on private object storage. The application uses authorized download routes, but the local disk remains the current storage backend in development.
+- Confirm each Checkout Session snapshots the server-controlled amount, currency, and plan duration. Later plan edits must not alter an existing transaction.
+- Verified one-time payments extend from the later of the current paid expiry or payment activation time. Multiple legitimate purchases add their snapshotted durations; duplicate processing of one transaction adds nothing.
+- Keep preserved payment proofs and payment-chat attachments on private object storage. The application uses authorized download routes, but the local disk remains the current storage backend in development.
 - Run price-alert evaluation from a supervised scheduler/queue for notifications when users do not have a chart open. The chart performs immediate checks while it is open.
-- When adding a payment gateway, verify signed webhooks and map successful provider payments onto the existing replay entitlement rather than trusting browser callbacks.
+- Test successful, failed, abandoned, delayed-webhook, duplicate-webhook, and missed-webhook recovery with PayMongo's documented sandbox cards and simulated GCash flow before any live rollout.
 
 ## Current performance protections
 
@@ -109,7 +118,7 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 
 - Verify the admin navbar's left hamburger toggles the existing sidebar without changing its navigation behavior.
 - Below the `lg` breakpoint, verify desktop module links are hidden and the final navbar hamburger opens a dropdown rather than navigating directly. Confirm every dropdown module routes correctly and the menu closes after selection or backdrop click.
-- Verify dark and light themes on user subscription, plan selection, payment submission, admin payment review, pricing, and payment settings.
+- Verify dark and light themes on user subscription, plan selection, PayMongo handoff, transaction history, admin transaction monitoring, and pricing.
 - Verify fullscreen symbol search has readable input and option text in both themes.
 - Verify embedded and fullscreen symbol pickers retain the same active symbol. Confirm fullscreen results use green symbol labels and an explicit `Open` action in both themes.
 - Verify the embedded chart command bar stays on one row at desktop widths and wraps without overlap on tablet and phone widths.
@@ -130,6 +139,8 @@ After changing environment or routes, rebuild Laravel's cached configuration wit
 - Verify completed trades render an 18px borderless rounded badge with `B` or `S` centered inside and remain aligned during pan, zoom, fullscreen, and timeframe changes.
 - Verify Google OAuth displays the account chooser on every attempt, logs matching provider identities or emails into the existing account, creates unknown emails with the configured non-superadmin trader privilege, and never self-registers a superadmin account.
 - Verify `/privacy-policy` and `/terms-of-service` are public, responsive, linked from the homepage/login page, use the configured legal identity, and match the URLs registered on the Google OAuth consent screen.
+- In a fresh browser profile, verify the essential-cookie notice appears on public and authenticated pages, its Privacy Policy link works, and “Got it” keeps it dismissed after navigation and reload.
+- Inspect a normal page load and confirm fonts, Font Awesome, and SweetAlert assets are served by the application build rather than Google Fonts, jsDelivr, or cdnjs.
 - Verify the trader navbar Assets wallet in dark and light themes. Confirm it shows simulated equity, cash, locked margin, open/realized PnL, starting balance, fees, position counts, session, and recent transactions; refresh and confirmation-protected reset must synchronize with the chart.
 - Verify the chart rail says `Enter Position` rather than `Backtest Account`. Confirm the flyout shows one compact available-balance wallet card synchronized with the demo account and selected USDT/PHP display currency. Full equity/fees/history cards, account reset, and recent transactions must remain in Assets, while session, order entry, pending-entry cancellation, and open-position closing remain available in Enter Position.
 - Send more than five invalid password attempts for one email/IP within a minute and confirm the login form displays the retry message. Also verify the broader IP, password-reset, social-redirect, and callback limits return `429`/retry headers as intended.

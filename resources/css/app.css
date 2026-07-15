@@ -17,6 +17,7 @@ html {
 
 body {
     min-width: 320px;
+    font-family: "Poppins", sans-serif;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
 }

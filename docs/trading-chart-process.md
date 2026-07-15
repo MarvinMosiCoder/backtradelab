@@ -153,7 +153,7 @@ FACEBOOK_CLIENT_SECRET=
 FACEBOOK_REDIRECT_URI="${APP_URL}/auth/facebook/callback"
 ```
 
-Public legal pages are available at `/privacy-policy` and `/terms-of-service`. Both use the public dark/white theme, are linked from the homepage footer and login form, and are excluded from the authenticated application layout. Their operator identity is configured through `LEGAL_OPERATOR_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_JURISDICTION`, and `LEGAL_EFFECTIVE_DATE`. The Google OAuth consent screen must use the same production privacy-policy and terms URLs shown on the verified BacktradeLab domain.
+Public legal pages are available at `/privacy-policy` and `/terms-of-service`. Both use the public dark/white theme, are linked from the homepage footer and login form, and are excluded from the authenticated application layout. Their operator identity is configured through `LEGAL_OPERATOR_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_JURISDICTION`, and `LEGAL_EFFECTIVE_DATE`. The Google OAuth consent screen must use the same production privacy-policy and terms URLs shown on the verified BacktradeLab domain. A global essential-cookie notice appears until the browser stores `backtradelab-cookie-notice:v1=acknowledged`; it is informational, does not gate required session or preference storage, and links to the Privacy Policy. Changing the key version intentionally shows the revised notice again.
 
 Authentication entry points use named Laravel rate limiters. Password login permits five attempts per minute for an email/IP combination and thirty attempts per minute for an IP. A successful password login clears the email/IP limiter. Password-reset requests permit three attempts per minute per email/IP and ten per hour per IP; reset confirmation permits ten per minute per IP. Social-login redirects permit twenty per minute per IP and callbacks permit sixty. Production must use a shared Redis cache and correctly configured trusted proxies so these limits are consistent across application servers and use the real client IP.
 
@@ -1015,9 +1015,10 @@ Users can inspect their current access at `/subscription`. The page displays:
 - Free trial, active membership, or expired status.
 - Trial and paid-access expiration dates.
 - Remaining access days.
-- Manual payment request history.
-- Pending, approved, or rejected review status.
-- Reference, recorded amount, submission/review timestamps, proof link, and admin notes.
+- Unified PayMongo and archived manual transaction history.
+- Provider, test/live mode, amount, method, reference, status, paid date, and duration snapshot.
+- A safe status-recheck action for pending PayMongo Checkout Sessions.
+- Authorized read-only proof and conversation access for historical manual records.
 
 The trader subscription page reads `ThemeContext` and uses separate dark and white palettes for its hero, access metrics, payment-history cards, status badges, metadata, admin notes, proof actions, and empty state. The plan/payment modal and payment conversation use the same active theme so the subscription workflow remains consistent with the trader shell.
 
@@ -1029,7 +1030,7 @@ Plan definitions are stored in `subscription_plans` rather than hard-coded in Re
 |------|---------|
 | `code` | Stable plan identifier such as `weekly`, `monthly`, or `yearly` |
 | `name` | User-facing plan name |
-| `duration_days` | Replay-access days granted after approval |
+| `duration_days` | Replay-access days snapshotted when checkout is created |
 | `price` | Required plan amount; nullable until configured |
 | `currency` | Display currency, currently `PHP` |
 | `description` | Short plan-card description |
@@ -1037,60 +1038,50 @@ Plan definitions are stored in `subscription_plans` rather than hard-coded in Re
 | `is_active` | Controls whether traders can select the plan |
 | `sort_order` | Controls plan-card ordering |
 
-The authenticated `GET /subscription-plans` endpoint returns active plans to traders and all plans to superadmins. Plans without a configured price display `Price pending` and cannot be selected. The backend loads the selected active plan and assigns its database price to the payment request; it does not trust an amount submitted by the browser.
+The authenticated `GET /subscription-plans` endpoint returns active plans to traders and all plans to superadmins. Plans without a configured positive price cannot be checked out. The backend loads the selected active plan, converts its database price to integer centavos, and snapshots the amount, currency, and duration; it does not trust values submitted by the browser.
 
 Superadmins manage prices, durations, descriptions, featured state, and availability at `/admin/subscription-plans`. The three initial records are created without prices, so an administrator must configure them before accepting subscriptions.
 
-### Manual payment and approval workflow
+### PayMongo Checkout workflow
 
-The subscription modal first offers one explicit seven-day free-trial activation when the account has not used it, followed by Weekly, Monthly, and Yearly paid plan cards with database prices, durations, features, and featured-plan styling. The payment step preserves the selected-plan feature list and displays database-controlled GCash instructions. It includes the account name and number, a copy-number action, payment rules, and an optional QR code positioned beside the account details. The user then enters the GCash reference and optional image proof.
+The subscription modal offers the one-time free trial when eligible, followed by Weekly, Monthly, and Yearly one-time plans. Selecting a paid plan creates a server-side PayMongo Checkout Session and redirects the top-level browser to PayMongo's hosted page. The configured `card,gcash` list is intersected with the merchant capability response, so methods unavailable to the account are never requested. Checkout is never embedded in an iframe.
 
-GCash instructions are stored in `payment_settings` and managed by superadmins at `/admin/payment-settings`. QR images are served through an authenticated route instead of relying on a public storage URL.
+`subscription_requests` is the payment ledger. It stores the unique submission token, provider Checkout Session and payment IDs, server-controlled amount and currency, plan-duration snapshot, test/live mode, normalized state, sanitized provider message, and paid/failed timestamps. UUID submission tokens make checkout retries idempotent.
 
-No GCash account number or account name is seeded or committed in source control. A superadmin must configure the intended receiving account, rules, and optional QR image in `/admin/payment-settings`; these operational settings belong in the database rather than `.env` because administrators manage them at runtime and customers must see the recipient details during checkout. The legacy committed default is removed by `2026_07_13_000001_remove_committed_payment_defaults.php` only when the untouched template metadata still matches, preserving an administrator-customized record.
+PayMongo calls the public, CSRF-exempt `POST /webhooks/paymongo` endpoint for `checkout_session.payment.paid`. The endpoint verifies the raw body using the timestamped `Paymongo-Signature`, the correct `te` or `li` HMAC-SHA256 signature, the webhook secret, and a five-minute replay tolerance. Provider event IDs are stored uniquely in `pay_mongo_webhook_events`, so duplicate delivery returns success without extending access again.
 
-Using a personal GCash wallet for real subscription collections may violate GCash's restriction on commercial use without prior written authorization. Development/testing may use manual settings, but production operators should obtain written authorization or an approved GCash for Business arrangement and meet applicable Philippine registration, tax, invoicing, and consumer-protection obligations before accepting customer payments.
+The entitlement service locks the transaction and user, verifies transaction identity, amount, currency, and mode, and extends `adm_users.replay_access_ends_at` from the later of now or the existing paid expiry using the snapshotted duration. Browser return URLs only trigger a server-side Checkout Session retrieval; redirects never grant access directly. Scheduled `payments:reconcile-paymongo` and the admin Recheck action recover paid sessions after missed or delayed webhooks.
 
-Manual requests are stored in `subscription_requests` with the selected plan code, server-assigned price, payment method, reference, proof path, provider metadata, review state, reviewer, timestamps, notes, and a unique submission token. Superadmins review requests at `/admin/subscriptions`.
+Sandbox checkout requires `PAYMONGO_MODE=test`, an `sk_test_` key, and a non-production application environment. Verified test payments activate access only in that environment. Production requires live mode, an `sk_live_` key, and the separate `PAYMONGO_LIVE_ENABLED=true` compliance gate.
 
-Submission tokens make retries idempotent. A database lock serializes submissions from multiple tabs, and the backend permits only one pending request per user. Retrying a completed HTTP submission returns the existing request rather than creating another record or notification.
-
-Each request owns a two-sided conversation in `subscription_messages`. Users and admins can send text, images, PDF files, documents, spreadsheets, CSV, or text attachments up to 10 MB. Proofs and chat attachments use authenticated download routes. After payment submission, chat opens automatically. While open, it polls every five seconds for messages and review status.
-
-When a request is approved:
-
-1. The backend reloads the plan duration from `subscription_plans`.
-2. `adm_users.replay_access_ends_at` is extended from the later of the approval time or the current paid expiry.
-3. The request records its reviewer and review timestamp.
-4. The user receives an in-system subscription notification and an automatic payment-chat response.
-5. The open user chat displays a Subscription Successful modal with enabled features and the access expiration time.
-6. Confirming the success modal redirects the user to `/dashboard`.
-
-Rejections also notify the user and can include an admin note. Provider-neutral fields (`provider` and `provider_payment_id`) allow a future payment gateway webhook to reuse the same entitlement process.
+The obsolete manual write flow, approval/rejection controls, payment settings, recipient QR, and message posting routes are removed. Unresolved manual drafts/pending records are archived during migration without access activation. Existing proofs, conversations, messages, attachments, and approved/rejected history remain available through authorized read-only routes.
 
 ### Subscription files and routes
 
 | File or route | Purpose |
 |------|---------|
-| `resources/js/Components/Market/TradingViewChart/SubscriptionModal.jsx` | Responsive plan comparison and manual-payment submission |
+| `resources/js/Components/Market/TradingViewChart/SubscriptionModal.jsx` | Plan comparison and PayMongo hosted-checkout handoff |
 | `resources/js/Pages/Subscriptions/UserIndex.jsx` | User access summary and payment history |
-| `resources/js/Pages/Subscriptions/AdminIndex.jsx` | Superadmin request review |
+| `resources/js/Pages/Subscriptions/AdminIndex.jsx` | Provider transaction monitor and reconciliation |
 | `resources/js/Pages/Subscriptions/AdminPlans.jsx` | Superadmin database pricing controls |
-| `resources/js/Pages/Subscriptions/AdminPaymentSettings.jsx` | Editable GCash account, rules, and QR configuration |
-| `resources/js/Components/Subscriptions/PaymentChat.jsx` | User/admin payment conversation, attachments, polling, and approval result modal |
-| `app/Http/Controllers/ReplayAccessController.php` | Trial status, plans, requests, pricing updates, and approvals |
+| `resources/js/Components/Subscriptions/PaymentChat.jsx` | Read-only historical manual-payment conversation |
+| `app/Http/Controllers/ReplayAccessController.php` | Trial status, plans, checkout, history, and reconciliation |
+| `app/Http/Controllers/PayMongoWebhookController.php` | Signed, idempotent paid-event processing |
+| `app/Services/Payments/PayMongoCheckoutService.php` | Checkout creation, retrieval, validation, and status reconciliation |
+| `app/Services/Payments/SubscriptionEntitlementService.php` | Transaction-safe, idempotent replay-access activation |
 | `app/Http/Middleware/EnsureReplayAccess.php` | Server-side replay authorization |
 | `app/Models/SubscriptionPlan.php` | Database plan model |
-| `app/Models/SubscriptionRequest.php` | Manual/provider payment request model |
-| `app/Models/SubscriptionMessage.php` | Payment conversation message and attachment model |
-| `app/Models/PaymentSetting.php` | Dynamic manual-payment instructions |
+| `app/Models/SubscriptionRequest.php` | Provider transaction and archived-manual ledger model |
+| `app/Models/PayMongoWebhookEvent.php` | Unique provider-event processing ledger |
 | `GET /subscription` | User subscription page |
 | `GET /subscription-plans` | Available plan data |
-| `POST /subscription-requests` | Submit a manual payment request |
-| `GET/POST /subscription-requests/{request}/messages` | Load or send payment chat messages |
-| `GET /admin/payment-settings` | Admin GCash settings page |
-| `POST /admin/payment-settings` | Save GCash details, rules, and QR image |
-| `GET /admin/subscriptions` | Admin payment review page |
+| `POST /subscription-checkouts` | Create an idempotent hosted Checkout Session |
+| `GET /subscription-checkout/return/{token}` | Authenticated return and server reconciliation |
+| `GET /subscription-checkouts/{request}/status` | Authorized status refresh |
+| `POST /webhooks/paymongo` | Public signed PayMongo paid-event receiver |
+| `GET /subscription-requests/{request}/messages` | Read archived payment conversation |
+| `GET /admin/subscriptions` | Admin transaction monitor |
+| `POST /admin/subscriptions/{request}/reconcile` | Admin-triggered provider recheck |
 | `GET /admin/subscription-plans` | Admin plan-pricing page |
 | `PUT /admin/subscription-plans` | Save plan configuration |
 

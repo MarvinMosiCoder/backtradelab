@@ -1,30 +1,35 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Download, Paperclip, Send, X } from 'lucide-react';
+import { Download, X } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
-import { router, usePage } from '@inertiajs/react';
 
 export default function PaymentChat({ request, onClose }) {
   const { theme } = useTheme();
-  const {auth}=usePage().props; const isAdmin=Boolean(auth?.sessions?.admin_is_superadmin);
   const dark = theme === 'bg-skin-black';
-  const panel = dark ? 'border-[#2a2e39] bg-[#0b0e14] text-white' : 'border-slate-200 bg-white text-slate-900';
-  const surface = dark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-slate-50';
-  const input = dark ? 'border-[#2a2e39] bg-[#0b0e14] text-white' : 'border-slate-300 bg-white text-slate-900';
-  const [messages,setMessages]=useState([]), [text,setText]=useState(''), [file,setFile]=useState(null), [loading,setLoading]=useState(true), [saving,setSaving]=useState(false), [error,setError]=useState('');
-  const [requestStatus,setRequestStatus]=useState(request.status??'pending'),[decision,setDecision]=useState(null);
-  const bottomRef=useRef(null);
-  useEffect(()=>{let cancelled=false;const load=()=>axios.get(`/subscription-requests/${request.id}/messages`).then(r=>{if(cancelled)return;setMessages(r.data?.messages??[]);const next=r.data?.request?.status;if(next&&next!==requestStatus){setRequestStatus(next);if(!isAdmin&&(next==='approved'||next==='rejected'))setDecision({...r.data.request,status:next});}}).catch(()=>!cancelled&&setError('Unable to load the conversation.')).finally(()=>!cancelled&&setLoading(false));load();const timer=window.setInterval(load,5000);return()=>{cancelled=true;window.clearInterval(timer)};},[request.id,requestStatus,isAdmin]);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-  const submit=async(event)=>{event.preventDefault();setSaving(true);setError('');const data=new FormData();if(text.trim())data.append('message',text.trim());if(file)data.append('attachment',file);try{const r=await axios.post(`/subscription-requests/${request.id}/messages`,data);setMessages(current=>[...current,r.data.message]);setText('');setFile(null);}catch(e){setError(e.response?.data?.message??Object.values(e.response?.data?.errors??{}).flat()[0]??'Unable to send message.');}finally{setSaving(false);}};
-  return <div className="fixed inset-0 z-[10020] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center">
-    {decision&&<div className="fixed inset-0 z-[10030] flex items-center justify-center bg-black/75 p-4"><div className={`w-full max-w-md rounded-2xl border p-6 text-center shadow-2xl ${panel}`}><div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full text-2xl ${decision.status==='approved'?'bg-emerald-500/15 text-emerald-500':'bg-red-500/15 text-red-500'}`}>{decision.status==='approved'?'✓':'!'}</div><h2 className="mt-4 text-xl font-bold">{decision.status==='approved'?'Subscription successful!':'Payment was not approved'}</h2><p className="mt-2 text-sm text-[#787b86]">{decision.status==='approved'?'You can now use market replay, paper backtesting, saved sessions, drawings, and trade journal features.':decision.admin_notes||'Open the conversation to ask the administrator for assistance.'}</p>{decision.status==='approved'&&decision.access_ends_at&&<p className="mt-3 text-xs font-semibold text-emerald-500">Access active until {new Date(decision.access_ends_at).toLocaleString()}</p>}<button onClick={()=>decision.status==='approved'?router.visit('/dashboard'):setDecision(null)} className="mt-5 h-11 w-full rounded-lg bg-[#2962ff] font-bold text-white">{decision.status==='approved'?'Go to workspace':'Return to conversation'}</button></div></div>}
-    <div className={`flex h-[min(720px,92vh)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border shadow-2xl ${panel}`}>
-      <header className={`flex items-center justify-between border-b p-4 ${surface}`}><div><h2 className="font-bold">Payment conversation</h2><p className="text-xs text-[#787b86]">{request.plan} · {request.payment_reference?`Ref ${request.payment_reference}`:'Payment details not submitted yet'}</p></div><button onClick={onClose} className="rounded p-2 text-[#787b86] hover:bg-black/10"><X size={18}/></button></header>
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">{loading&&<p className="text-center text-sm text-[#787b86]">Loading conversation…</p>}{!loading&&!messages.length&&<div className="py-16 text-center"><p className="font-semibold">Start a conversation</p><p className="mt-1 text-xs text-[#787b86]">Ask about verification or send another proof file.</p></div>}{messages.map(item=><div key={item.id} className={`flex ${item.mine?'justify-end':'justify-start'}`}><div className={`max-w-[85%] rounded-2xl px-3 py-2 ${item.mine?'bg-[#2962ff] text-white':surface}`}><div className="mb-1 text-[10px] font-bold opacity-70">{item.user?.name}</div>{item.message&&<p className="whitespace-pre-wrap text-sm">{item.message}</p>}{item.attachment_url&&<a href={item.attachment_url} className="mt-2 flex items-center gap-2 rounded-lg bg-black/10 p-2 text-xs font-semibold"><Download size={14}/><span className="truncate">{item.attachment_name}</span></a>}<time className="mt-1 block text-[9px] opacity-60">{new Date(item.created_at).toLocaleString()}</time></div></div>)}<div ref={bottomRef}/></div>
-      <form onSubmit={submit} className={`border-t p-3 ${surface}`}><div className="flex items-end gap-2"><label className={`flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-lg border text-[#787b86] ${input}`}><Paperclip size={17}/><input className="hidden" type="file" accept="image/*,.pdf,.txt,.csv,.doc,.docx,.xls,.xlsx" onChange={e=>setFile(e.target.files?.[0]??null)}/></label><textarea rows="2" value={text} onChange={e=>setText(e.target.value)} placeholder="Write a message…" className={`min-h-10 flex-1 resize-none rounded-lg border px-3 py-2 text-sm outline-none focus:border-[#2962ff] ${input}`}/><button disabled={saving||(!text.trim()&&!file)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2962ff] text-white disabled:opacity-40"><Send size={16}/></button></div>{file&&<div className="mt-2 flex items-center justify-between rounded bg-black/10 px-2 py-1 text-xs"><span className="truncate">{file.name}</span><button type="button" onClick={()=>setFile(null)}><X size={13}/></button></div>}{error&&<p className="mt-2 text-xs text-red-500">{error}</p>}<p className="mt-2 text-[10px] text-[#787b86]">Images, PDF, documents, spreadsheets, CSV or text · maximum 10 MB</p></form>
-    </div>
+    let cancelled = false;
+    axios.get(`/subscription-requests/${request.id}/messages`)
+      .then(response => !cancelled && setMessages(response.data?.messages ?? []))
+      .catch(() => !cancelled && setError('Unable to load the archived conversation.'))
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [request.id]);
+
+  const shell = dark ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900';
+  const surface = dark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50';
+  return <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/75 p-4">
+    <section className={`flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border shadow-2xl ${shell}`} aria-label="Archived payment conversation">
+      <header className={`flex items-start justify-between border-b p-5 ${surface}`}><div><h2 className="text-lg font-bold">Archived payment conversation</h2><p className="mt-1 text-xs text-[#787b86]">This manual-payment record is preserved for reference and cannot receive new messages.</p></div><button type="button" onClick={onClose} className="rounded p-2 text-[#787b86]" aria-label="Close conversation"><X size={18}/></button></header>
+      <div className="flex-1 space-y-3 overflow-y-auto p-5">
+        {loading && <p className="text-sm text-[#787b86]">Loading conversation…</p>}
+        {error && <p className="rounded-lg bg-red-500/10 p-3 text-sm text-red-500">{error}</p>}
+        {!loading && !messages.length && <p className="py-10 text-center text-sm text-[#787b86]">No archived messages.</p>}
+        {messages.map(message => <article key={message.id} className={`max-w-[85%] rounded-xl border p-3 ${message.mine ? 'ml-auto border-[#2962ff]/40 bg-[#2962ff]/10' : surface}`}><div className="text-[10px] font-bold uppercase tracking-wider text-[#787b86]">{message.user?.name ?? 'User'} · {new Date(message.created_at).toLocaleString()}</div>{message.message && <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{message.message}</p>}{message.attachment_url && <a href={message.attachment_url} className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#5b8cff]"><Download size={14}/>{message.attachment_name ?? 'Download attachment'}</a>}</article>)}
+      </div>
+    </section>
   </div>;
 }

@@ -34,7 +34,8 @@ export default function TermsOfService({ legal }) {
             </LegalSection>
 
             <LegalSection title="4. Trials, plans, and payments">
-                <p>Eligible users may receive a limited replay trial. Paid plan prices, currencies, durations, and features are shown before submission. A manual payment request does not activate access until approved. Payment references and proofs must be truthful and must belong to a transaction you are authorized to submit.</p>
+                <p>Eligible users may receive a limited replay trial. Paid plans are one-time, non-renewing purchases processed on PayMongo's hosted checkout. Prices, currencies, durations, and available payment methods are shown before checkout. Replay access is granted only after BacktradeLab verifies a successful provider payment; a browser return or screenshot alone does not activate access.</p>
+                <p>Test-mode checkout may be offered in local or staging environments. Test transactions move no real money but may activate replay access in that non-production environment for testing. Production checkout remains unavailable until live payments are deliberately enabled.</p>
                 <p>Unless a mandatory consumer law requires otherwise, fees for access already granted are non-refundable. If we approve a refund, we may revoke or adjust the related access. Plan availability, pricing, and features may change prospectively; changes do not reduce an already approved access period unless required to address misuse, law, or security.</p>
             </LegalSection>
 
@@ -46,7 +47,7 @@ export default function TermsOfService({ legal }) {
                     <li>Use bots, scraping, or excessive automated requests except through an interface we expressly authorize.</li>
                     <li>Reverse engineer the service except where the law expressly permits it.</li>
                     <li>Misrepresent simulated results as guaranteed or verified real-world performance.</li>
-                    <li>Upload payment proofs, messages, snapshots, or other content containing information you have no right to use.</li>
+                    <li>Upload snapshots or other content containing information you have no right to use.</li>
                 </LegalList>
             </LegalSection>
 
@@ -57,7 +58,7 @@ export default function TermsOfService({ legal }) {
 
             <LegalSection title="7. Our service and third parties">
                 <p>BacktradeLab and its software, design, branding, and documentation are owned by {operator} or its licensors. These Terms grant only a limited, revocable, non-transferable right to use the service.</p>
-                <p>The service relies on third parties such as Google, Facebook, market-data exchanges, hosting providers, and payment channels. Their services and terms are separate from ours. We are not responsible for third-party outages, decisions, data, or content beyond the responsibility imposed by law.</p>
+                <p>The service relies on third parties such as Google, Facebook, market-data exchanges, hosting providers, and PayMongo. Their services and terms are separate from ours. We are not responsible for third-party outages, decisions, data, or content beyond the responsibility imposed by law.</p>
             </LegalSection>
 
             <LegalSection title="8. Availability, changes, and termination">

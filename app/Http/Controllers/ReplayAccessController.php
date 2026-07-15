@@ -1,75 +1,50 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Models\AdmModels\AdmNotifications;
-use App\Models\SubscriptionRequest;
-use App\Models\SubscriptionPlan;
-use App\Models\SubscriptionMessage;
 use App\Models\AdmUser;
-use App\Models\PaymentSetting;
+use App\Models\SubscriptionMessage;
+use App\Models\SubscriptionPlan;
+use App\Models\SubscriptionRequest;
+use App\Services\Payments\PayMongoCheckoutService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
+use RuntimeException;
+use Throwable;
 
 class ReplayAccessController extends Controller
 {
-    public function paymentSettings(Request $request)
-    {
-        $setting = PaymentSetting::where('provider', 'gcash')->first();
-        return response()->json(['settings' => $setting ? [
-            'account_number' => $setting->account_number, 'account_name' => $setting->account_name,
-            'rules' => $setting->rules, 'qr_code_url' => $setting->qr_code_path ? route('payment-settings.qr') : null,
-        ] : null]);
-    }
+    public function __construct(private readonly PayMongoCheckoutService $checkouts) {}
 
-    public function adminPaymentSettingsPage(Request $request)
-    {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
-        return Inertia::render('Subscriptions/AdminPaymentSettings');
-    }
-
-    public function updatePaymentSettings(Request $request)
-    {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
-        $data = $request->validate(['account_number' => 'required|string|max:40', 'account_name' => 'required|string|max:120', 'rules' => 'nullable|string|max:5000', 'qr_code' => 'nullable|image|max:4096', 'remove_qr_code' => 'nullable|boolean']);
-        $setting = PaymentSetting::firstOrCreate(['provider' => 'gcash'], ['account_number' => $data['account_number'], 'account_name' => $data['account_name']]);
-        if (($data['remove_qr_code'] ?? false) && $setting->qr_code_path) { Storage::disk('public')->delete($setting->qr_code_path); $setting->qr_code_path = null; }
-        if ($request->hasFile('qr_code')) { if ($setting->qr_code_path) Storage::disk('public')->delete($setting->qr_code_path); $setting->qr_code_path = $request->file('qr_code')->store('payment-settings', 'public'); }
-        $setting->fill(['account_number' => $data['account_number'], 'account_name' => $data['account_name'], 'rules' => $data['rules'] ?? null])->save();
-        return response()->json(['success' => true, 'message' => 'GCash payment details saved.']);
-    }
-
-    public function paymentQr(Request $request)
-    {
-        $path = PaymentSetting::where('provider', 'gcash')->value('qr_code_path');
-        abort_unless($path && Storage::disk('public')->exists($path), 404);
-        return Storage::disk('public')->response($path);
-    }
     public function plans(Request $request)
     {
         $query = SubscriptionPlan::whereIn('code', ['weekly', 'monthly', 'yearly'])->orderBy('sort_order');
         if (!$request->session()->get('admin_is_superadmin')) $query->where('is_active', true);
-        return response()->json(['plans' => $query->get()]);
+
+        return response()->json([
+            'plans' => $query->get(),
+            'checkout' => $this->checkouts->availability(),
+        ]);
     }
 
     public function adminPlansPage(Request $request)
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
+        $this->requireAdmin($request);
         return Inertia::render('Subscriptions/AdminPlans');
     }
 
     public function updatePlans(Request $request)
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
+        $this->requireAdmin($request);
         $data = $request->validate([
             'plans' => 'required|array|min:1', 'plans.*.id' => 'required|exists:subscription_plans,id',
-            'plans.*.price' => 'nullable|numeric|min:0|max:99999999', 'plans.*.duration_days' => 'required|integer|min:1|max:3650',
+            'plans.*.price' => 'nullable|numeric|min:0.01|max:99999999', 'plans.*.duration_days' => 'required|integer|min:1|max:3650',
             'plans.*.description' => 'nullable|string|max:160', 'plans.*.is_featured' => 'required|boolean', 'plans.*.is_active' => 'required|boolean',
         ]);
-        foreach ($data['plans'] as $item) {
-            SubscriptionPlan::whereKey($item['id'])->update($item);
-        }
+        foreach ($data['plans'] as $item) SubscriptionPlan::whereKey($item['id'])->update($item);
+
         return response()->json(['success' => true, 'plans' => SubscriptionPlan::orderBy('sort_order')->get()]);
     }
 
@@ -80,10 +55,6 @@ class ReplayAccessController extends Controller
         $paidActive = $user->replay_access_ends_at && now()->lte($user->replay_access_ends_at);
         $activeUntil = collect([$user->replay_trial_ends_at, $user->replay_access_ends_at])
             ->filter()->sortByDesc(fn ($date) => $date->getTimestamp())->first();
-        $requests = SubscriptionRequest::where('adm_user_id', $user->id)->withCount('messages')->latest()->get()->map(function ($item) {
-            $item->payment_proof_url = $item->payment_proof_path ? route('subscription.proof', $item) : null;
-            return $item;
-        });
 
         return Inertia::render('Subscriptions/UserIndex', [
             'subscription' => [
@@ -95,7 +66,9 @@ class ReplayAccessController extends Controller
                 'accessEndsAt' => optional($user->replay_access_ends_at)->toIso8601String(),
                 'activeUntil' => optional($activeUntil)->toIso8601String(),
                 'daysRemaining' => $activeUntil && now()->lte($activeUntil) ? now()->diffInDays($activeUntil) + 1 : 0,
-                'requests' => $requests,
+                'requests' => SubscriptionRequest::where('adm_user_id', $user->id)
+                    ->withCount('messages')->latest()->get()->map(fn ($payment) => $this->paymentPayload($payment)),
+                'checkout' => $this->checkouts->availability(),
             ],
         ]);
     }
@@ -106,13 +79,15 @@ class ReplayAccessController extends Controller
         $activeUntil = collect([$user->replay_trial_ends_at, $user->replay_access_ends_at])
             ->filter()->sortByDesc(fn ($date) => $date->getTimestamp())->first();
         $paidActive = $user->replay_access_ends_at && now()->lte($user->replay_access_ends_at);
+
         return response()->json([
             'allowed' => (bool) $request->session()->get('admin_is_superadmin') || ($activeUntil && now()->lte($activeUntil)),
             'trialAvailable' => !$user->replay_trial_started_at && !$paidActive,
             'trialStartedAt' => optional($user->replay_trial_started_at)->toIso8601String(),
             'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
             'accessEndsAt' => optional($user->replay_access_ends_at)->toIso8601String(),
-            'latestRequest' => SubscriptionRequest::where('adm_user_id', $user->id)->latest()->first(),
+            'latestRequest' => optional(SubscriptionRequest::where('adm_user_id', $user->id)->latest()->first(), fn ($payment) => $this->paymentPayload($payment)),
+            'checkout' => $this->checkouts->availability(),
         ]);
     }
 
@@ -120,37 +95,25 @@ class ReplayAccessController extends Controller
     {
         $result = DB::transaction(function () use ($request) {
             $user = AdmUser::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
-
-            if ($user->replay_trial_started_at) {
-                return ['activated' => false, 'user' => $user];
-            }
-
+            if ($user->replay_trial_started_at) return ['activated' => false, 'user' => $user];
             if ($user->replay_access_ends_at && now()->lte($user->replay_access_ends_at)) {
                 return ['activated' => false, 'user' => $user, 'paid_active' => true];
             }
-
             $startedAt = now();
-            $user->forceFill([
-                'replay_trial_started_at' => $startedAt,
-                'replay_trial_ends_at' => $startedAt->copy()->addDays(7),
-            ])->save();
-
+            $user->forceFill(['replay_trial_started_at' => $startedAt, 'replay_trial_ends_at' => $startedAt->copy()->addDays(7)])->save();
             return ['activated' => true, 'user' => $user->fresh()];
         });
 
         $user = $result['user'];
         if (!$result['activated']) {
             $active = $user->replay_trial_ends_at && now()->lte($user->replay_trial_ends_at);
-
             if ($result['paid_active'] ?? false) {
                 return response()->json([
                     'message' => 'Your paid replay access is already active. Your free trial remains available after it ends.',
-                    'allowed' => true,
-                    'trialAvailable' => false,
+                    'allowed' => true, 'trialAvailable' => false,
                     'accessEndsAt' => optional($user->replay_access_ends_at)->toIso8601String(),
                 ], 409);
             }
-
             return response()->json([
                 'message' => $active ? 'Your free trial is already active.' : 'Your free trial has already been used.',
                 'allowed' => $active || ($user->replay_access_ends_at && now()->lte($user->replay_access_ends_at)),
@@ -160,106 +123,113 @@ class ReplayAccessController extends Controller
         }
 
         return response()->json([
-            'success' => true,
-            'message' => 'Your free seven-day trial is now active.',
-            'allowed' => true,
+            'success' => true, 'message' => 'Your free seven-day trial is now active.', 'allowed' => true,
             'trialAvailable' => false,
             'trialStartedAt' => optional($user->replay_trial_started_at)->toIso8601String(),
             'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
         ], 201);
     }
 
-    public function store(Request $request)
+    public function createCheckout(Request $request)
     {
-        $data = $request->validate([
-            'plan' => 'required|string|max:50', 'payment_method' => 'required|string|max:50',
-            'payment_reference' => 'required|string|max:100',
-            'payment_proof' => 'nullable|image|max:4096',
-            'request_id' => 'nullable|integer|exists:subscription_requests,id',
-            'submission_token' => 'required|uuid',
-        ]);
-        $existingSubmission = SubscriptionRequest::where('submission_token', $data['submission_token'])->where('adm_user_id', $request->user()->id)->first();
-        if ($existingSubmission) return response()->json(['success' => true, 'request' => $existingSubmission, 'duplicate' => true]);
+        $data = $request->validate(['plan' => 'required|string|max:50', 'submission_token' => 'required|uuid']);
         $plan = SubscriptionPlan::where('code', $data['plan'])->where('is_active', true)->firstOrFail();
-        abort_if($plan->price === null, 422, 'This plan does not have a configured price yet.');
-        $data['amount'] = $plan->price;
-        $data['adm_user_id'] = $request->user()->id;
-        unset($data['payment_proof']);
-        $requestId = $data['request_id'] ?? null;
-        unset($data['request_id']);
-        $record = DB::transaction(function () use ($request, $requestId, $data) {
-            AdmUser::whereKey($request->user()->id)->lockForUpdate()->firstOrFail();
-            $duplicate = SubscriptionRequest::where('submission_token', $data['submission_token'])->where('adm_user_id', $request->user()->id)->first();
-            if ($duplicate) return $duplicate;
-            if (!$requestId) {
-                $pending = SubscriptionRequest::where('adm_user_id', $request->user()->id)->where('status', 'pending')->latest()->first();
-                if ($pending) return $pending;
+
+        try {
+            $payment = $this->checkouts->create($request->user(), $plan, $data['submission_token']);
+            if (!$payment->provider_checkout_url || !in_array($payment->status, ['pending', 'paid'], true)) {
+                throw new RuntimeException($payment->provider_status_message ?: 'This checkout is not available.');
             }
-            $values = $data;
-            if ($request->hasFile('payment_proof')) $values['payment_proof_path'] = $request->file('payment_proof')->store('subscription-proofs', 'public');
-            if ($requestId) {
-                $draft = SubscriptionRequest::whereKey($requestId)->where('adm_user_id', $request->user()->id)->where('status', 'draft')->firstOrFail();
-                $draft->update($values + ['status' => 'pending']);
-                return $draft->fresh();
-            }
-            return SubscriptionRequest::create($values);
-        });
-        if ($record->submission_token !== $data['submission_token']) return response()->json(['message' => 'You already have a payment request awaiting review.', 'request' => $record], 409);
-        if (!$requestId && !$record->wasRecentlyCreated) return response()->json(['success' => true, 'request' => $record, 'duplicate' => true]);
-        $this->notifyAdmins('New payment request from '.$request->user()->name.' ('.$plan->name.').');
-        return response()->json(['success' => true, 'request' => $record], 201);
+            return response()->json([
+                'checkout_url' => $payment->provider_checkout_url,
+                'payment' => $this->paymentPayload($payment),
+            ], $payment->wasRecentlyCreated ? 201 : 200);
+        } catch (Throwable $exception) {
+            report($exception);
+            return response()->json(['message' => $exception->getMessage() ?: 'Unable to start PayMongo checkout.'], 503);
+        }
     }
 
-    public function startConversation(Request $request)
+    public function checkoutReturn(Request $request, string $token)
     {
-        $data = $request->validate(['plan' => 'required|string|max:50']);
-        $plan = SubscriptionPlan::where('code', $data['plan'])->where('is_active', true)->firstOrFail();
-        $record = SubscriptionRequest::where('adm_user_id', $request->user()->id)->where('plan', $plan->code)->where('status', 'draft')->latest()->first();
-        if (!$record) {
-            $record = SubscriptionRequest::create(['adm_user_id' => $request->user()->id, 'plan' => $plan->code, 'payment_method' => 'gcash_manual', 'amount' => $plan->price, 'status' => 'draft']);
-            $this->notifyAdmins('New payment inquiry from '.$request->user()->name.' ('.$plan->name.').');
+        $payment = SubscriptionRequest::where('submission_token', $token)
+            ->where('adm_user_id', $request->user()->id)->firstOrFail();
+        $result = 'pending';
+        try {
+            $payment = $this->checkouts->reconcile($payment);
+            $result = $payment->status;
+        } catch (Throwable $exception) {
+            report($exception);
         }
-        return response()->json(['success' => true, 'request' => $record], 201);
+
+        return redirect()->route('subscription.index', ['payment' => $result]);
+    }
+
+    public function checkoutStatus(Request $request, SubscriptionRequest $subscriptionRequest)
+    {
+        $this->authorizePayment($request, $subscriptionRequest);
+        if ($subscriptionRequest->provider === 'paymongo' && $subscriptionRequest->status === 'pending') {
+            try {
+                $subscriptionRequest = $this->checkouts->reconcile($subscriptionRequest);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+        return response()->json(['payment' => $this->paymentPayload($subscriptionRequest->fresh())]);
     }
 
     public function adminPage(Request $request)
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
+        $this->requireAdmin($request);
         return Inertia::render('Subscriptions/AdminIndex');
     }
 
     public function adminIndex(Request $request)
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
-        return SubscriptionRequest::query()->with('user:id,name,email')->withCount('messages')->latest()->paginate(30)->through(function ($item) {
-            $item->payment_proof_url = $item->payment_proof_path ? route('subscription.proof', $item) : null;
-            return $item;
-        });
+        $this->requireAdmin($request);
+        $query = SubscriptionRequest::query()->with('user:id,name,email')->withCount('messages')->latest();
+        if ($request->filled('provider')) $query->where('provider', $request->string('provider')->toString());
+        if ($request->filled('status')) $query->where('status', $request->string('status')->toString());
+        if ($request->filled('mode')) $query->where('livemode', $request->string('mode')->toString() === 'live');
+
+        return $query->paginate(30)->through(fn ($payment) => $this->paymentPayload($payment, true));
     }
 
-    public function review(Request $request, SubscriptionRequest $subscriptionRequest)
+    public function adminReconcile(Request $request, SubscriptionRequest $subscriptionRequest)
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
-        abort_unless($subscriptionRequest->status === 'pending', 409, 'This payment request has already been reviewed.');
-        $data = $request->validate(['status' => 'required|in:approved,rejected', 'admin_notes' => 'nullable|string|max:2000', 'days' => 'nullable|integer|min:1|max:730']);
-        DB::transaction(function () use ($subscriptionRequest, $request, $data) {
-            $subscriptionRequest->update(['status' => $data['status'], 'admin_notes' => $data['admin_notes'] ?? null, 'reviewed_by' => $request->user()->id, 'reviewed_at' => now()]);
-            if ($data['status'] === 'approved') {
-                $planDays = SubscriptionPlan::where('code', $subscriptionRequest->plan)->value('duration_days') ?? 30;
-                $currentExpiry = $subscriptionRequest->user->replay_access_ends_at;
-                $startsAt = $currentExpiry && $currentExpiry->isFuture() ? $currentExpiry->copy() : now();
-                $subscriptionRequest->user->forceFill(['replay_access_ends_at' => $startsAt->addDays($data['days'] ?? $planDays)])->save();
-            }
-            $content = $data['status'] === 'approved'
-                ? 'Subscription successful! You can now use market replay, paper backtesting, saved sessions, drawings, and trade journal features.'
-                : 'Payment rejected. Please open your payment request to review the admin response.';
-            $chatMessage = $data['status'] === 'approved'
-                ? $content.' Access is active until '.$subscriptionRequest->user->fresh()->replay_access_ends_at->format('M j, Y g:i A').'.'
-                : 'Your payment request was rejected.'.(!empty($data['admin_notes']) ? ' Admin response: '.$data['admin_notes'] : ' Please contact the administrator in this chat for assistance.');
-            $subscriptionRequest->messages()->create(['adm_user_id' => $request->user()->id, 'message' => $chatMessage]);
-            AdmNotifications::query()->create(['adm_user_id' => $subscriptionRequest->adm_user_id, 'type' => 'subscription', 'content' => $content, 'url' => '/subscription', 'is_read' => 0]);
-        });
-        return response()->json(['success' => true, 'message' => $data['status'] === 'approved' ? 'Payment approved and replay access activated.' : 'Payment request rejected and the user was notified.']);
+        $this->requireAdmin($request);
+        try {
+            $payment = $this->checkouts->reconcile($subscriptionRequest);
+            return response()->json(['success' => true, 'payment' => $this->paymentPayload($payment, true)]);
+        } catch (Throwable $exception) {
+            report($exception);
+            return response()->json(['message' => $exception->getMessage() ?: 'Unable to reconcile the payment.'], 422);
+        }
+    }
+
+    public function messages(Request $request, SubscriptionRequest $subscriptionRequest)
+    {
+        $this->authorizePayment($request, $subscriptionRequest);
+        return response()->json([
+            'request' => $this->paymentPayload($subscriptionRequest),
+            'messages' => $subscriptionRequest->messages()->with('user:id,name')->oldest()->get()
+                ->map(fn ($message) => $this->messagePayload($message, $request)),
+            'read_only' => true,
+        ]);
+    }
+
+    public function proof(Request $request, SubscriptionRequest $subscriptionRequest)
+    {
+        $this->authorizePayment($request, $subscriptionRequest);
+        abort_unless($subscriptionRequest->payment_proof_path && Storage::disk('public')->exists($subscriptionRequest->payment_proof_path), 404);
+        return Storage::disk('public')->response($subscriptionRequest->payment_proof_path);
+    }
+
+    public function messageAttachment(Request $request, SubscriptionMessage $subscriptionMessage)
+    {
+        $this->authorizePayment($request, $subscriptionMessage->subscriptionRequest);
+        abort_unless($subscriptionMessage->attachment_path && Storage::disk('public')->exists($subscriptionMessage->attachment_path), 404);
+        return Storage::disk('public')->download($subscriptionMessage->attachment_path, $subscriptionMessage->attachment_name);
     }
 
     public function completeTour(Request $request)
@@ -268,66 +238,55 @@ class ReplayAccessController extends Controller
         return response()->json(['success' => true]);
     }
 
-    public function messages(Request $request, SubscriptionRequest $subscriptionRequest)
-    {
-        $this->authorizeSubscriptionRequest($request, $subscriptionRequest);
-        $subscriptionRequest->refresh();
-        return response()->json([
-            'request' => ['id' => $subscriptionRequest->id, 'status' => $subscriptionRequest->status, 'admin_notes' => $subscriptionRequest->admin_notes, 'reviewed_at' => $subscriptionRequest->reviewed_at, 'access_ends_at' => optional($subscriptionRequest->user->replay_access_ends_at)->toIso8601String()],
-            'messages' => $subscriptionRequest->messages()->with('user:id,name')->oldest()->get()->map(fn ($message) => $this->messagePayload($message, $request)),
-        ]);
-    }
-
-    public function storeMessage(Request $request, SubscriptionRequest $subscriptionRequest)
-    {
-        $isAdmin = $this->authorizeSubscriptionRequest($request, $subscriptionRequest);
-        $data = $request->validate([
-            'message' => 'nullable|string|max:5000',
-            'attachment' => 'nullable|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,txt,csv,doc,docx,xls,xlsx',
-        ]);
-        abort_if(blank($data['message'] ?? null) && !$request->hasFile('attachment'), 422, 'Write a message or attach a file.');
-        $values = ['adm_user_id' => $request->user()->id, 'message' => $data['message'] ?? null];
-        if ($request->hasFile('attachment')) {
-            $file = $request->file('attachment');
-            $values += ['attachment_path' => $file->store('subscription-chat', 'public'), 'attachment_name' => $file->getClientOriginalName(), 'attachment_mime' => $file->getMimeType(), 'attachment_size' => $file->getSize()];
-        }
-        $message = $subscriptionRequest->messages()->create($values)->load('user:id,name');
-        if ($isAdmin) {
-            AdmNotifications::query()->create(['adm_user_id' => $subscriptionRequest->adm_user_id, 'type' => 'subscription chat', 'content' => 'Admin sent a message about your payment request.', 'url' => '/subscription', 'is_read' => 0]);
-        } else {
-            $this->notifyAdmins('New payment chat message from '.$request->user()->name.'.');
-        }
-        return response()->json(['success' => true, 'message' => $this->messagePayload($message, $request)], 201);
-    }
-
-    public function proof(Request $request, SubscriptionRequest $subscriptionRequest)
-    {
-        $this->authorizeSubscriptionRequest($request, $subscriptionRequest);
-        abort_unless($subscriptionRequest->payment_proof_path && Storage::disk('public')->exists($subscriptionRequest->payment_proof_path), 404);
-        return Storage::disk('public')->response($subscriptionRequest->payment_proof_path);
-    }
-
-    public function messageAttachment(Request $request, SubscriptionMessage $subscriptionMessage)
-    {
-        $this->authorizeSubscriptionRequest($request, $subscriptionMessage->subscriptionRequest);
-        abort_unless($subscriptionMessage->attachment_path && Storage::disk('public')->exists($subscriptionMessage->attachment_path), 404);
-        return Storage::disk('public')->download($subscriptionMessage->attachment_path, $subscriptionMessage->attachment_name);
-    }
-
-    private function authorizeSubscriptionRequest(Request $request, SubscriptionRequest $subscriptionRequest): bool
+    private function authorizePayment(Request $request, SubscriptionRequest $payment): bool
     {
         $isAdmin = (bool) $request->session()->get('admin_is_superadmin');
-        abort_unless($isAdmin || $subscriptionRequest->adm_user_id === $request->user()->id, 403);
+        abort_unless($isAdmin || $payment->adm_user_id === $request->user()->id, 403);
         return $isAdmin;
+    }
+
+    private function requireAdmin(Request $request): void
+    {
+        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
+    }
+
+    private function paymentPayload(SubscriptionRequest $payment, bool $includeUser = false): array
+    {
+        $payload = [
+            'id' => $payment->id,
+            'plan' => $payment->plan,
+            'provider' => $payment->provider,
+            'payment_method' => $payment->payment_method,
+            'payment_reference' => $payment->payment_reference,
+            'provider_checkout_id' => $payment->provider_checkout_id,
+            'provider_payment_id' => $payment->provider_payment_id,
+            'amount' => $payment->amount,
+            'currency' => $payment->currency ?: 'PHP',
+            'duration_days' => $payment->duration_days,
+            'mode' => $payment->livemode ? 'live' : 'test',
+            'status' => $payment->status,
+            'provider_status_message' => $payment->provider_status_message,
+            'admin_notes' => $payment->admin_notes,
+            'paid_at' => optional($payment->paid_at)->toIso8601String(),
+            'failed_at' => optional($payment->failed_at)->toIso8601String(),
+            'reviewed_at' => optional($payment->reviewed_at)->toIso8601String(),
+            'created_at' => optional($payment->created_at)->toIso8601String(),
+            'messages_count' => $payment->messages_count ?? $payment->messages()->count(),
+            'payment_proof_url' => $payment->payment_proof_path ? route('subscription.proof', $payment) : null,
+            'legacy' => $payment->provider === 'manual',
+        ];
+        if ($includeUser) $payload['user'] = $payment->user;
+        return $payload;
     }
 
     private function messagePayload(SubscriptionMessage $message, Request $request): array
     {
-        return ['id' => $message->id, 'message' => $message->message, 'user' => $message->user, 'mine' => $message->adm_user_id === $request->user()->id, 'attachment_name' => $message->attachment_name, 'attachment_mime' => $message->attachment_mime, 'attachment_url' => $message->attachment_path ? route('subscription.message-attachment', $message) : null, 'created_at' => $message->created_at];
-    }
-
-    private function notifyAdmins(string $content): void
-    {
-        AdmUser::whereHas('role', fn ($query) => $query->where('is_superadmin', 1))->pluck('id')->each(fn ($id) => AdmNotifications::query()->create(['adm_user_id' => $id, 'type' => 'subscription', 'content' => $content, 'url' => '/admin/subscriptions', 'is_read' => 0]));
+        return [
+            'id' => $message->id, 'message' => $message->message, 'user' => $message->user,
+            'mine' => $message->adm_user_id === $request->user()->id,
+            'attachment_name' => $message->attachment_name, 'attachment_mime' => $message->attachment_mime,
+            'attachment_url' => $message->attachment_path ? route('subscription.message-attachment', $message) : null,
+            'created_at' => $message->created_at,
+        ];
     }
 }

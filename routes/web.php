@@ -21,6 +21,7 @@ use App\Http\Controllers\MarketToolSettingController;
 use App\Http\Controllers\MarketPriceAlertController;
 use App\Http\Controllers\ReplayAccessController;
 use App\Http\Controllers\UserFeedbackController;
+use App\Http\Controllers\PayMongoWebhookController;
 use App\Http\Controllers\Users\ChangePasswordController;
 use App\Http\Controllers\Users\ForceChangePasswordController;
 use App\Http\Controllers\Users\ProfilePageController;
@@ -91,6 +92,8 @@ Route::group(['middleware' => ['auth', 'account.active', 'web']], function () {
     Route::post('announcement/saveEditAnnouncement', [AnnouncementsController::class, 'saveEditAnnouncement'])->name('saveEditAnnouncement');
 });
 
+Route::post('/webhooks/paymongo', PayMongoWebhookController::class)->middleware('throttle:api')->name('webhooks.paymongo');
+
 Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('market', function () {
@@ -114,23 +117,19 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/replay-access', [ReplayAccessController::class, 'status']);
     Route::post('/replay-trial/activate', [ReplayAccessController::class, 'activateTrial'])->middleware('throttle:market-write');
     Route::get('/subscription-plans', [ReplayAccessController::class, 'plans']);
-    Route::get('/payment-settings', [ReplayAccessController::class, 'paymentSettings']);
-    Route::get('/payment-settings/qr', [ReplayAccessController::class, 'paymentQr'])->name('payment-settings.qr');
-    Route::get('/admin/payment-settings', [ReplayAccessController::class, 'adminPaymentSettingsPage'])->name('admin.payment-settings');
-    Route::post('/admin/payment-settings', [ReplayAccessController::class, 'updatePaymentSettings'])->middleware('throttle:market-write');
     Route::put('/admin/subscription-plans', [ReplayAccessController::class, 'updatePlans'])->middleware('throttle:market-write');
     Route::get('/admin/subscription-plans', [ReplayAccessController::class, 'adminPlansPage'])->name('admin.subscription-plans');
     Route::get('/subscription', [ReplayAccessController::class, 'userPage'])->name('subscription.index');
-    Route::post('/subscription-requests', [ReplayAccessController::class, 'store'])->middleware('throttle:market-write');
-    Route::post('/subscription-conversations', [ReplayAccessController::class, 'startConversation'])->middleware('throttle:market-write');
+    Route::post('/subscription-checkouts', [ReplayAccessController::class, 'createCheckout'])->middleware('throttle:market-write')->name('subscription.checkout.create');
+    Route::get('/subscription-checkout/return/{token}', [ReplayAccessController::class, 'checkoutReturn'])->name('subscription.checkout.return');
+    Route::get('/subscription-checkouts/{subscriptionRequest}/status', [ReplayAccessController::class, 'checkoutStatus'])->name('subscription.checkout.status');
     Route::get('/subscription-requests/{subscriptionRequest}/messages', [ReplayAccessController::class, 'messages']);
-    Route::post('/subscription-requests/{subscriptionRequest}/messages', [ReplayAccessController::class, 'storeMessage'])->middleware('throttle:market-write');
     Route::get('/subscription-requests/{subscriptionRequest}/proof', [ReplayAccessController::class, 'proof'])->name('subscription.proof');
     Route::get('/subscription-messages/{subscriptionMessage}/attachment', [ReplayAccessController::class, 'messageAttachment'])->name('subscription.message-attachment');
     Route::post('/chart-tour/complete', [ReplayAccessController::class, 'completeTour'])->middleware('throttle:market-write');
     Route::get('/admin/subscriptions', [ReplayAccessController::class, 'adminPage']);
     Route::get('/admin/subscriptions/items', [ReplayAccessController::class, 'adminIndex']);
-    Route::put('/admin/subscriptions/{subscriptionRequest}', [ReplayAccessController::class, 'review'])->middleware('throttle:market-write');
+    Route::post('/admin/subscriptions/{subscriptionRequest}/reconcile', [ReplayAccessController::class, 'adminReconcile'])->middleware('throttle:market-write');
     Route::get('/feedback', [UserFeedbackController::class, 'userPage'])->name('feedback.index');
     Route::get('/feedback/items', [UserFeedbackController::class, 'index'])->name('feedback.items');
     Route::post('/feedback/items', [UserFeedbackController::class, 'store'])->middleware('throttle:feedback-write')->name('feedback.store');

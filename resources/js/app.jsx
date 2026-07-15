@@ -1,13 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { createInertiaApp, router  } from "@inertiajs/react";
+import Swal from "sweetalert2";
 import Layout from "@/Layouts/layout/layout.jsx";
+import CookieNotice from "./Components/Privacy/CookieNotice";
 import { ThemeProvider } from "./Context/ThemeContext";
 import { AuthProvider, useAuth } from "./Context/AuthContext";
 import getAppName from './Components/SystemSettings/ApplicationName';
 import AppInitializer from "./AppInitializer";
 import '../css/nprogress-custom.css';
 import { SidebarProvider } from './Context/SidebarContext';
+import '@fontsource/poppins/latin-300-italic.css';
+import '@fontsource/poppins/latin-400.css';
+import '@fontsource/poppins/latin-500.css';
+import '@fontsource/poppins/latin-600.css';
+import '@fontsource/poppins/latin-700.css';
+import '@fortawesome/fontawesome-free/css/all.min.css';
+import 'sweetalert2/dist/sweetalert2.min.css';
+
+globalThis.Swal = Swal;
+
 getAppName().then(appName => {
     createInertiaApp({
         title: title => `${appName} | ${title ? `${title}` : 'System'}`,
@@ -38,6 +50,7 @@ getAppName().then(appName => {
                         <SidebarProvider>
                             <App {...props} />
                             <AppInitializer />
+                            <CookieNotice />
                         </SidebarProvider>
                     </AuthProvider>
                 </React.StrictMode>

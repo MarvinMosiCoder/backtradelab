@@ -47,6 +47,17 @@ return [
         'verify_tls' => env('MARKET_HTTP_VERIFY', true),
     ],
 
+    'paymongo' => [
+        'enabled' => env('PAYMONGO_ENABLED', false),
+        'mode' => env('PAYMONGO_MODE', 'test'),
+        'secret_key' => env('PAYMONGO_SECRET_KEY'),
+        'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
+        'payment_methods' => array_values(array_filter(array_map('trim', explode(',', env('PAYMONGO_PAYMENT_METHODS', 'card,gcash'))))),
+        'live_enabled' => env('PAYMONGO_LIVE_ENABLED', false),
+        'base_url' => env('PAYMONGO_BASE_URL', 'https://api.paymongo.com/v1'),
+        'signature_tolerance' => (int) env('PAYMONGO_SIGNATURE_TOLERANCE', 300),
+    ],
+
     'apple_api' => [
         'base_url' => env('APPLE_API_BASE_URL'),
         'bulk_enroll_endpoint' => env('APPLE_API_BULK_ENROLL_ENDPOINT'),

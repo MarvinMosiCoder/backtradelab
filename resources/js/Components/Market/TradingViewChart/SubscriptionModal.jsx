@@ -1,35 +1,88 @@
-import React,{useEffect,useState} from 'react';
+import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import {ArrowLeft,ArrowRight,Check,Copy,Crown,Sparkles,X} from 'lucide-react';
-import PaymentChat from '../../Subscriptions/PaymentChat';
-import {useTheme} from '../../../Context/ThemeContext';
+import { ArrowLeft, ArrowRight, Check, CreditCard, Crown, ExternalLink, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { useTheme } from '../../../Context/ThemeContext';
 
-const FEATURES=['Unlimited market replay','Paper trading sessions','Drawing tools and indicators','Trade journal and reports','Snapshots and saved progress'];
-function createSubmissionToken(){
- if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();
- const bytes=new Uint8Array(16);
- if(globalThis.crypto?.getRandomValues)globalThis.crypto.getRandomValues(bytes);else for(let i=0;i<bytes.length;i+=1)bytes[i]=Math.floor(Math.random()*256);
- bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;
- const hex=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
- return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+const FEATURES = ['Unlimited market replay', 'Paper trading sessions', 'Drawing tools and indicators', 'Trade journal and reports', 'Snapshots and saved progress'];
+
+function createSubmissionToken() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-export default function SubscriptionModal({onClose,onTrialActivated}){
- const {theme}=useTheme(),dark=theme==='bg-skin-black';
- const [step,setStep]=useState('plans'),[plans,setPlans]=useState([]),[loading,setLoading]=useState(true),[form,setForm]=useState({plan:'',payment_method:'gcash_manual',payment_reference:''}),[proof,setProof]=useState(null),[status,setStatus]=useState(''),[saving,setSaving]=useState(false),[settings,setSettings]=useState(null),[copied,setCopied]=useState(false),[conversation,setConversation]=useState(null),[submitted,setSubmitted]=useState(false),[chat,setChat]=useState(false),[trialAvailable,setTrialAvailable]=useState(false),[activatingTrial,setActivatingTrial]=useState(false);
- const [submissionToken]=useState(createSubmissionToken);
- const selected=plans.find(p=>p.code===form.plan)??plans[0];
- useEffect(()=>{let off=false;Promise.all([axios.get('/subscription-plans'),axios.get('/payment-settings'),axios.get('/replay-access')]).then(([p,s,a])=>{if(off)return;const items=p.data?.plans??[];setPlans(items);setSettings(s.data?.settings??null);setTrialAvailable(a.data?.trialAvailable===true);setForm(f=>({...f,plan:(items.find(i=>i.is_featured)??items[0])?.code??''}));}).catch(()=>setStatus('Unable to load subscription information.')).finally(()=>!off&&setLoading(false));return()=>{off=true};},[]);
- const activateTrial=async()=>{setActivatingTrial(true);setStatus('');try{const response=await axios.post('/replay-trial/activate');setTrialAvailable(false);setStatus(response.data?.message??'Your free seven-day trial is active.');onTrialActivated?.(response.data)}catch(error){setTrialAvailable(error.response?.data?.trialAvailable===true);setStatus(error.response?.data?.message??'Unable to activate your free trial.')}finally{setActivatingTrial(false)}};
- const copy=async()=>{await navigator.clipboard.writeText(settings.account_number);setCopied(true);setTimeout(()=>setCopied(false),1800)};
- const submit=async e=>{e.preventDefault();setSaving(true);setStatus('');const data=new FormData();Object.entries(form).forEach(([k,v])=>data.append(k,v));data.append('submission_token',submissionToken);if(proof)data.append('payment_proof',proof);if(conversation?.status==='draft')data.append('request_id',conversation.id);try{const r=await axios.post('/subscription-requests',data);setConversation(r.data.request);setSubmitted(true);setStatus('Payment request submitted for administrator review.');setChat(true)}catch(e){const existing=e.response?.data?.request;if(e.response?.status===409&&existing){setConversation(existing);setSubmitted(true);}setStatus(Object.values(e.response?.data?.errors??{}).flat()[0]??e.response?.data?.message??'Unable to submit request.')}finally{setSaving(false)}};
- const shell=dark?'border-[#2a2e39] bg-[#0b0e14] text-white':'border-slate-200 bg-white text-slate-900',surface=dark?'border-[#2a2e39] bg-[#131722]':'border-slate-200 bg-slate-50',input=dark?'border-[#2a2e39] bg-[#131722] text-white':'border-slate-300 bg-white text-slate-900';
- return <>{chat&&conversation&&<PaymentChat request={conversation} onClose={()=>setChat(false)}/>}<div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm"><div className={`my-auto w-full max-w-4xl overflow-hidden rounded-2xl border shadow-2xl ${shell}`}>
- <header className={`flex items-start justify-between border-b px-5 py-4 sm:px-7 ${surface}`}><div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={14}/>Replay access</div><h2 className="mt-1 text-xl font-bold sm:text-2xl">Build your trading practice</h2><p className="mt-1 text-sm text-[#787b86]">Activate your free week when you are ready, or choose a paid plan.</p></div><button onClick={onClose} className="p-2 text-[#787b86]"><X size={19}/></button></header>
- {step==='plans'&&trialAvailable&&<div className="mx-5 mt-5 flex flex-col justify-between gap-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-5 sm:mx-7 sm:flex-row sm:items-center"><div><div className="text-xs font-bold uppercase tracking-[.16em] text-emerald-500">Free trial</div><h3 className="mt-1 text-xl font-bold">7 days free</h3><p className="mt-1 text-sm text-[#787b86]">Your countdown starts only after you activate it. This free trial can be used once.</p>{status&&<p className="mt-2 text-sm text-blue-500">{status}</p>}</div><button type="button" disabled={activatingTrial} onClick={activateTrial} className="h-11 shrink-0 rounded-lg bg-emerald-500 px-5 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50">{activatingTrial?'Activating…':'Activate free week'}</button></div>}
- {step==='plans'&&!trialAvailable&&status&&<div className="mx-5 mt-5 rounded-lg bg-blue-500/10 p-3 text-sm text-blue-500 sm:mx-7">{status}</div>}
- {step==='plans'?<div className="p-5 sm:p-7">{loading?<div className="py-16 text-center text-[#787b86]">Loading plans…</div>:<div className="grid gap-3 md:grid-cols-3">{plans.map(plan=>{const chosen=form.plan===plan.code,configured=plan.price!==null,Icon=plan.is_featured?Crown:Sparkles;return <button key={plan.id} disabled={!configured} onClick={()=>setForm(f=>({...f,plan:plan.code}))} className={`relative rounded-xl border p-5 text-left transition disabled:opacity-50 ${chosen?'border-[#2962ff] bg-[#2962ff]/10 shadow-[0_0_0_1px_#2962ff]':surface}`}>{plan.is_featured&&<span className="absolute right-3 top-3 rounded-full bg-[#2962ff] px-2 py-1 text-[9px] font-bold text-white">POPULAR</span>}<span className={`flex h-10 w-10 items-center justify-center rounded-lg ${chosen?'bg-[#2962ff] text-white':'bg-black/5 text-[#787b86]'}`}><Icon size={18}/></span><h3 className="mt-4 text-lg font-bold">{plan.name}</h3><p className="mt-1 text-2xl font-bold">{configured?`${plan.currency} ${Number(plan.price).toLocaleString(undefined,{minimumFractionDigits:2})}`:'Price pending'}</p><p className="mt-1 text-xs text-[#787b86]">{plan.duration_days} days</p><p className="mt-1 text-xs text-[#787b86]">{plan.description}</p><div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#5b8cff]"><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${chosen?'border-[#2962ff] bg-[#2962ff] text-white':'border-[#434955]'}`}>{chosen&&<Check size={12}/>}</span>{chosen?'Selected':'Select plan'}</div></button>})}</div>}<div className={`mt-5 grid gap-2 rounded-xl border p-4 sm:grid-cols-2 ${surface}`}>{FEATURES.map(f=><div key={f} className="flex items-center gap-2 text-sm"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500"><Check size={12}/></span>{f}</div>)}</div><div className="mt-5 flex justify-end"><button disabled={!selected?.price} onClick={()=>setStep('payment')} className="flex h-11 items-center gap-2 rounded-lg bg-[#2962ff] px-5 font-bold text-white disabled:opacity-50">Continue with {selected?.name}<ArrowRight size={16}/></button></div></div>
- :<form onSubmit={submit} className="grid md:grid-cols-[.8fr_1.2fr]"><aside className={`border-b p-5 sm:p-7 md:border-b-0 md:border-r ${surface}`}><button type="button" onClick={()=>setStep('plans')} className="flex items-center gap-2 text-xs text-[#787b86]"><ArrowLeft size={14}/>Change plan</button><div className="mt-6 text-xs font-bold uppercase text-[#5b8cff]">Selected plan</div><h3 className="mt-2 text-2xl font-bold">{selected?.name}</h3><p className="mt-1 text-2xl font-bold">{selected?.currency} {Number(selected?.price??0).toLocaleString(undefined,{minimumFractionDigits:2})}</p><p className="text-sm text-[#787b86]">{selected?.duration_days} days replay access</p><div className="mt-5 space-y-3">{FEATURES.map(f=><div key={f} className="flex items-center gap-2 text-xs"><Check size={13} className="text-emerald-500"/>{f}</div>)}</div></aside>
- <div className="p-5 sm:p-7"><h3 className="text-lg font-bold">GCash payment details</h3><p className="mt-1 text-sm text-[#787b86]">Pay exactly <b>{selected?.currency} {Number(selected?.price??0).toLocaleString(undefined,{minimumFractionDigits:2})}</b>.</p>{settings&&<div className={`mt-4 grid gap-4 rounded-xl border p-4 ${settings.qr_code_url?'sm:grid-cols-[1fr_150px]':''} ${surface}`}><div><div className="text-[10px] font-bold uppercase text-[#787b86]">Account number</div><div className="mt-1 flex flex-wrap items-center gap-2"><b className="text-lg tracking-wide">{settings.account_number}</b><button type="button" onClick={copy} className="flex items-center gap-1 rounded bg-[#2962ff]/15 px-2 py-1 text-xs font-semibold text-[#5b8cff]"><Copy size={13}/>{copied?'Copied':'Copy'}</button></div><div className="mt-1 text-sm text-[#787b86]">Account Name: {settings.account_name}</div>{settings.rules&&<><div className="mt-4 text-[10px] font-bold uppercase text-[#787b86]">Rules</div><ul className="mt-1 space-y-1 text-xs">{settings.rules.split(/\r?\n/).filter(Boolean).map((r,i)=><li key={i}>• {r}</li>)}</ul></>}</div>{settings.qr_code_url&&<a href={settings.qr_code_url} target="_blank" rel="noreferrer" className="block h-[150px] w-[150px] overflow-hidden rounded-lg bg-white p-1"><img src={settings.qr_code_url} alt="GCash QR code" className="h-full w-full object-contain"/></a>}</div>}
- <div className="mt-4 grid gap-4"><label className="grid gap-1 text-xs font-semibold">GCash reference number<input required disabled={submitted} value={form.payment_reference} onChange={e=>setForm({...form,payment_reference:e.target.value})} className={`h-11 rounded-lg border px-3 text-sm outline-none ${input}`}/></label><label className="grid gap-1 text-xs font-semibold">Payment screenshot<input disabled={submitted} type="file" accept="image/*" onChange={e=>setProof(e.target.files?.[0]??null)} className={`rounded-lg border p-3 ${input}`}/></label></div>{status&&<div className="mt-4 rounded-lg bg-blue-500/10 p-3 text-sm text-blue-500">{status}</div>}<button disabled={saving||submitted} className="mt-5 h-11 w-full rounded-lg bg-[#2962ff] font-bold text-white disabled:opacity-50">{submitted?'Submitted for review':saving?'Submitting…':'Submit for admin review'}</button></div></form>}
- </div></div></>;
+
+export default function SubscriptionModal({ onClose, onTrialActivated }) {
+  const { theme } = useTheme();
+  const dark = theme === 'bg-skin-black';
+  const [step, setStep] = useState('plans');
+  const [plans, setPlans] = useState([]);
+  const [selectedCode, setSelectedCode] = useState('');
+  const [checkout, setCheckout] = useState({ enabled: false, mode: 'test', payment_methods: [], message: '' });
+  const [trialAvailable, setTrialAvailable] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [activatingTrial, setActivatingTrial] = useState(false);
+  const [status, setStatus] = useState('');
+  const [submissionToken] = useState(createSubmissionToken);
+  const selected = plans.find(plan => plan.code === selectedCode) ?? plans[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([axios.get('/subscription-plans'), axios.get('/replay-access')]).then(([planResponse, accessResponse]) => {
+      if (cancelled) return;
+      const items = planResponse.data?.plans ?? [];
+      setPlans(items);
+      setCheckout(planResponse.data?.checkout ?? accessResponse.data?.checkout ?? {});
+      setTrialAvailable(accessResponse.data?.trialAvailable === true);
+      setSelectedCode((items.find(item => item.is_featured) ?? items[0])?.code ?? '');
+    }).catch(() => setStatus('Unable to load subscription information.')).finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, []);
+
+  const activateTrial = async () => {
+    setActivatingTrial(true); setStatus('');
+    try {
+      const response = await axios.post('/replay-trial/activate');
+      setTrialAvailable(false); setStatus(response.data?.message ?? 'Your free seven-day trial is active.');
+      onTrialActivated?.(response.data);
+    } catch (error) {
+      setTrialAvailable(error.response?.data?.trialAvailable === true);
+      setStatus(error.response?.data?.message ?? 'Unable to activate your free trial.');
+    } finally { setActivatingTrial(false); }
+  };
+
+  const startCheckout = async () => {
+    setSaving(true); setStatus('');
+    try {
+      const response = await axios.post('/subscription-checkouts', { plan: selected.code, submission_token: submissionToken });
+      if (!response.data?.checkout_url) throw new Error('Checkout URL missing');
+      window.location.assign(response.data.checkout_url);
+    } catch (error) {
+      setStatus(error.response?.data?.message ?? 'Unable to start secure PayMongo checkout.');
+      setSaving(false);
+    }
+  };
+
+  const shell = dark ? 'border-[#2a2e39] bg-[#0b0e14] text-white' : 'border-slate-200 bg-white text-slate-900';
+  const surface = dark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-slate-50';
+  return <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm"><section className={`my-auto w-full max-w-4xl overflow-hidden rounded-2xl border shadow-2xl ${shell}`} aria-label="Replay subscription checkout">
+    <header className={`flex items-start justify-between border-b px-5 py-4 sm:px-7 ${surface}`}><div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={14}/>Replay access</div><h2 className="mt-1 text-xl font-bold sm:text-2xl">Build your trading practice</h2><p className="mt-1 text-sm text-[#787b86]">Activate your free week or purchase one-time access through PayMongo.</p></div><button type="button" onClick={onClose} className="p-2 text-[#787b86]" aria-label="Close"><X size={19}/></button></header>
+    {step === 'plans' && trialAvailable && <div className="mx-5 mt-5 flex flex-col justify-between gap-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-5 sm:mx-7 sm:flex-row sm:items-center"><div><div className="text-xs font-bold uppercase tracking-[.16em] text-emerald-500">Free trial</div><h3 className="mt-1 text-xl font-bold">7 days free</h3><p className="mt-1 text-sm text-[#787b86]">Your countdown starts only after activation and can be used once.</p></div><button type="button" disabled={activatingTrial} onClick={activateTrial} className="h-11 shrink-0 rounded-lg bg-emerald-500 px-5 text-sm font-bold text-white disabled:opacity-50">{activatingTrial ? 'Activating…' : 'Activate free week'}</button></div>}
+    {step === 'plans' ? <div className="p-5 sm:p-7">{loading ? <div className="py-16 text-center text-[#787b86]">Loading plans…</div> : <div className="grid gap-3 md:grid-cols-3">{plans.map(plan => { const chosen = selectedCode === plan.code, configured = plan.price !== null && Number(plan.price) > 0, Icon = plan.is_featured ? Crown : Sparkles; return <button type="button" key={plan.id} disabled={!configured} onClick={() => setSelectedCode(plan.code)} className={`relative rounded-xl border p-5 text-left transition disabled:opacity-50 ${chosen ? 'border-[#2962ff] bg-[#2962ff]/10 shadow-[0_0_0_1px_#2962ff]' : surface}`}>{plan.is_featured && <span className="absolute right-3 top-3 rounded-full bg-[#2962ff] px-2 py-1 text-[9px] font-bold text-white">POPULAR</span>}<span className={`flex h-10 w-10 items-center justify-center rounded-lg ${chosen ? 'bg-[#2962ff] text-white' : 'bg-black/5 text-[#787b86]'}`}><Icon size={18}/></span><h3 className="mt-4 text-lg font-bold">{plan.name}</h3><p className="mt-1 text-2xl font-bold">{configured ? `${plan.currency} ${Number(plan.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : 'Price pending'}</p><p className="mt-1 text-xs text-[#787b86]">{plan.duration_days} days · one-time payment</p><p className="mt-1 text-xs text-[#787b86]">{plan.description}</p><div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#5b8cff]"><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${chosen ? 'border-[#2962ff] bg-[#2962ff] text-white' : 'border-[#434955]'}`}>{chosen && <Check size={12}/>}</span>{chosen ? 'Selected' : 'Select plan'}</div></button>; })}</div>}
+      <div className={`mt-5 grid gap-2 rounded-xl border p-4 sm:grid-cols-2 ${surface}`}>{FEATURES.map(feature => <div key={feature} className="flex items-center gap-2 text-sm"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500"><Check size={12}/></span>{feature}</div>)}</div>
+      {status && <div className="mt-4 rounded-lg bg-blue-500/10 p-3 text-sm text-blue-500">{status}</div>}
+      <div className="mt-5 flex justify-end"><button type="button" disabled={!selected?.price} onClick={() => setStep('payment')} className="flex h-11 items-center gap-2 rounded-lg bg-[#2962ff] px-5 font-bold text-white disabled:opacity-50">Continue with {selected?.name}<ArrowRight size={16}/></button></div>
+    </div> : <div className="grid md:grid-cols-[.8fr_1.2fr]"><aside className={`border-b p-5 sm:p-7 md:border-b-0 md:border-r ${surface}`}><button type="button" onClick={() => { setStep('plans'); setStatus(''); }} className="flex items-center gap-2 text-xs text-[#787b86]"><ArrowLeft size={14}/>Change plan</button><div className="mt-6 text-xs font-bold uppercase text-[#5b8cff]">Selected plan</div><h3 className="mt-2 text-2xl font-bold">{selected?.name}</h3><p className="mt-1 text-2xl font-bold">{selected?.currency} {Number(selected?.price ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p><p className="text-sm text-[#787b86]">{selected?.duration_days} days replay access</p><div className="mt-5 space-y-3">{FEATURES.map(feature => <div key={feature} className="flex items-center gap-2 text-xs"><Check size={13} className="text-emerald-500"/>{feature}</div>)}</div></aside>
+      <div className="p-5 sm:p-7"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#2962ff]/10 text-[#5b8cff]"><ShieldCheck size={24}/></div><h3 className="mt-4 text-xl font-bold">Secure PayMongo checkout</h3><p className="mt-2 text-sm leading-6 text-[#787b86]">You will continue to PayMongo to choose Card or GCash and authorize a one-time payment. Replay access activates only after BacktradeLab verifies the payment with PayMongo.</p>
+        <div className={`mt-4 rounded-xl border p-4 ${surface}`}><div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2 text-sm font-bold"><CreditCard size={17}/>Available methods</div><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase ${checkout.mode === 'test' ? 'bg-amber-500/15 text-amber-500' : 'bg-emerald-500/15 text-emerald-500'}`}>{checkout.mode} mode</span></div><p className="mt-2 text-sm capitalize text-[#787b86]">{checkout.payment_methods?.length ? checkout.payment_methods.join(' · ') : 'No methods currently available'}</p></div>
+        {checkout.enabled && checkout.mode === 'test' && <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-600"><b>Sandbox payment:</b> no real money moves. For a successful card test, PayMongo documents card <code>4343 4343 4343 4345</code>, any future expiry, and any three-digit CVC. GCash test checkout supplies simulated success/failure actions. <a href="https://developers.paymongo.com/docs/testing" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-bold underline">Testing guide<ExternalLink size={11}/></a></div>}
+        {!checkout.enabled && <div className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">{checkout.message || 'PayMongo checkout is unavailable.'}</div>}
+        {status && <div className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">{status}</div>}
+        <button type="button" disabled={!checkout.enabled || saving} onClick={startCheckout} className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#2962ff] font-bold text-white disabled:opacity-50">{saving ? 'Opening secure checkout…' : 'Continue to PayMongo'}<ExternalLink size={16}/></button><p className="mt-3 text-center text-[11px] text-[#787b86]">One-time purchase. No automatic renewal.</p></div>
+    </div>}
+  </section></div>;
 }
