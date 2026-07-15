@@ -26,6 +26,9 @@ class AdmUser extends Authenticatable
         'email',
         'password',
         'status',
+        'deactivated_at',
+        'deactivation_reason',
+        'deactivated_by',
         'theme',
         'timezone',
         'trading_experience',
@@ -71,6 +74,7 @@ class AdmUser extends Authenticatable
         'replay_trial_ends_at' => 'datetime',
         'replay_access_ends_at' => 'datetime',
         'chart_tour_completed_at' => 'datetime',
+        'deactivated_at' => 'datetime',
     ];
 
     public function scopeGetData($query){

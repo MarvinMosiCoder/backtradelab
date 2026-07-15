@@ -32,6 +32,12 @@ const ProfilePage = ({ page_title, user }) => {
         trading_experience: user?.trading_experience ?? '',
     });
     const [detailsMessage, setDetailsMessage] = useState('');
+    const [showDeactivate, setShowDeactivate] = useState(false);
+    const [deactivationReason, setDeactivationReason] = useState('');
+    const [deactivationConfirmation, setDeactivationConfirmation] = useState('');
+    const [deactivationPassword, setDeactivationPassword] = useState('');
+    const [deactivationError, setDeactivationError] = useState('');
+    const requiresDeactivationPassword = Boolean(user?.password_login_enabled);
 
     useEffect(() => {
         setTitle(page_title);
@@ -123,6 +129,23 @@ const ProfilePage = ({ page_title, user }) => {
             const firstError = Object.values(error.response?.data?.errors ?? {}).flat().find(Boolean);
             setDetailsMessage(firstError ?? error.response?.data?.message ?? 'Unable to update profile details.');
         } finally {
+            setLoading(false);
+        }
+    };
+
+    const deactivateAccount = async () => {
+        setLoading(true);
+        setDeactivationError('');
+        try {
+            const { data } = await axios.post('/profile/deactivate', {
+                confirmation: deactivationConfirmation,
+                password: deactivationPassword,
+                reason: deactivationReason,
+            });
+            window.location.assign(data.redirect ?? '/login');
+        } catch (error) {
+            const firstError = Object.values(error.response?.data?.errors ?? {}).flat().find(Boolean);
+            setDeactivationError(firstError ?? error.response?.data?.message ?? 'Unable to deactivate the account.');
             setLoading(false);
         }
     };
@@ -286,6 +309,25 @@ const ProfilePage = ({ page_title, user }) => {
                             </button>
                         </div>
                     </form>
+
+                    <section className={`mt-8 w-full rounded-xl border p-5 ${theme === 'bg-skin-black' ? 'border-red-500/30 bg-red-950/20 text-[#d1d4dc]' : 'border-red-200 bg-red-50 text-slate-900'}`}>
+                        <h2 className="text-sm font-bold text-red-500">Deactivate account</h2>
+                        <p className="mt-2 text-xs leading-5 text-[#787b86]">Deactivation signs you out, disables price alerts, freezes paper-trading activity, and blocks all account access. Your charts, drawings, sessions, orders, journal, payment records, and trading history are preserved. Trial and paid-access dates continue to run. An administrator is required to reactivate the account.</p>
+                        {!showDeactivate ? (
+                            <button type="button" onClick={() => setShowDeactivate(true)} className="mt-4 h-10 rounded-lg border border-red-500 px-4 text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white">Deactivate my account</button>
+                        ) : (
+                            <div className="mt-4 grid gap-3">
+                                <label className="text-xs font-semibold">Reason (optional)<textarea rows="3" maxLength="500" value={deactivationReason} onChange={(event) => setDeactivationReason(event.target.value)} className="mt-1.5 w-full rounded-lg border border-red-500/40 bg-transparent px-3 py-2 text-sm outline-none focus:border-red-500" /></label>
+                                {requiresDeactivationPassword && <label className="text-xs font-semibold">Current password<input type="password" value={deactivationPassword} onChange={(event) => setDeactivationPassword(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-red-500/40 bg-transparent px-3 text-sm outline-none focus:border-red-500" autoComplete="current-password" /></label>}
+                                <label className="text-xs font-semibold">Type DEACTIVATE to confirm<input value={deactivationConfirmation} onChange={(event) => setDeactivationConfirmation(event.target.value.toUpperCase())} className="mt-1.5 h-10 w-full rounded-lg border border-red-500/40 bg-transparent px-3 text-sm outline-none focus:border-red-500" /></label>
+                                {deactivationError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-500">{deactivationError}</div>}
+                                <div className="flex flex-wrap gap-2">
+                                    <button type="button" onClick={deactivateAccount} disabled={loading || deactivationConfirmation !== 'DEACTIVATE' || (requiresDeactivationPassword && !deactivationPassword)} className="h-10 rounded-lg bg-red-600 px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{loading ? 'Deactivating…' : 'Confirm deactivation'}</button>
+                                    <button type="button" onClick={() => { setShowDeactivate(false); setDeactivationError(''); }} disabled={loading} className="h-10 rounded-lg border border-gray-500 px-4 text-xs font-semibold">Cancel</button>
+                                </div>
+                            </div>
+                        )}
+                    </section>
                 </ContentPanel>
                 <Modal
                     theme={theme === 'bg-skin-white' ? primayActiveColor : theme}

@@ -76,6 +76,36 @@ function relativeStrengthIndex(candles, period) {
   }).filter(Boolean);
 }
 
+function movingAverageConvergenceDivergence(candles, fastPeriod, slowPeriod, signalPeriod) {
+  if (!candles.length) return { macd: [], signal: [], histogram: [] };
+
+  const fastMultiplier = 2 / (fastPeriod + 1);
+  const slowMultiplier = 2 / (slowPeriod + 1);
+  const signalMultiplier = 2 / (signalPeriod + 1);
+  let fastEma = Number(candles[0].close);
+  let slowEma = fastEma;
+  let signalEma = 0;
+
+  const macd = [];
+  const signal = [];
+  const histogram = [];
+
+  candles.forEach((candle, index) => {
+    const close = Number(candle.close);
+    fastEma = index === 0 ? close : (close * fastMultiplier) + (fastEma * (1 - fastMultiplier));
+    slowEma = index === 0 ? close : (close * slowMultiplier) + (slowEma * (1 - slowMultiplier));
+    const macdValue = fastEma - slowEma;
+    signalEma = index === 0 ? macdValue : (macdValue * signalMultiplier) + (signalEma * (1 - signalMultiplier));
+    const signalValue = signalEma;
+
+    macd.push({ time: candle.time, value: macdValue });
+    signal.push({ time: candle.time, value: signalValue });
+    histogram.push({ time: candle.time, value: macdValue - signalValue });
+  });
+
+  return { macd, signal, histogram };
+}
+
 const CHART_THEMES = {
   dark: {
     mode: 'dark',
@@ -476,6 +506,9 @@ export default function TradingViewReplayChart({
   const smaSeriesRef = useRef(null);
   const emaSeriesRef = useRef(null);
   const rsiSeriesRef = useRef(null);
+  const macdSeriesRef = useRef(null);
+  const macdSignalSeriesRef = useRef(null);
+  const macdHistogramSeriesRef = useRef(null);
   const alertPriceLinesRef = useRef(new Map());
   const indicatorsRef = useRef({});
   const allCandlesRef = useRef([]);
@@ -549,8 +582,8 @@ export default function TradingViewReplayChart({
       : DEFAULT_CANDLE_SIZE;
   });
   const [indicators, setIndicators] = useState(() => {
-    try { return { volume: true, sma: false, smaPeriod: 20, smaColor: '#2962ff', smaLineWidth: 2, ema: false, emaPeriod: 20, emaColor: '#f59e0b', emaLineWidth: 2, rsi: false, rsiPeriod: 14, rsiSize: 25, rsiColor: '#a855f7', rsiLineWidth: 2, ...JSON.parse(localStorage.getItem(indicatorStorageKey) || '{}') }; }
-    catch { return { volume: true, sma: false, smaPeriod: 20, smaColor: '#2962ff', smaLineWidth: 2, ema: false, emaPeriod: 20, emaColor: '#f59e0b', emaLineWidth: 2, rsi: false, rsiPeriod: 14, rsiSize: 25, rsiColor: '#a855f7', rsiLineWidth: 2 }; }
+    try { return { volume: true, volumeVisible: true, volumeSize: 20, sma: false, smaVisible: true, smaPeriod: 20, smaColor: '#2962ff', smaLineWidth: 2, ema: false, emaVisible: true, emaPeriod: 20, emaColor: '#f59e0b', emaLineWidth: 2, rsi: false, rsiVisible: true, rsiPeriod: 14, rsiSize: 25, rsiColor: '#a855f7', rsiLineWidth: 2, macd: false, macdVisible: true, macdFastPeriod: 12, macdSlowPeriod: 26, macdSignalPeriod: 9, macdSize: 25, macdColor: '#2962ff', macdSignalColor: '#f59e0b', macdUpColor: '#26a69a', macdDownColor: '#ef5350', macdLineWidth: 2, ...JSON.parse(localStorage.getItem(indicatorStorageKey) || '{}') }; }
+    catch { return { volume: true, volumeVisible: true, volumeSize: 20, sma: false, smaVisible: true, smaPeriod: 20, smaColor: '#2962ff', smaLineWidth: 2, ema: false, emaVisible: true, emaPeriod: 20, emaColor: '#f59e0b', emaLineWidth: 2, rsi: false, rsiVisible: true, rsiPeriod: 14, rsiSize: 25, rsiColor: '#a855f7', rsiLineWidth: 2, macd: false, macdVisible: true, macdFastPeriod: 12, macdSlowPeriod: 26, macdSignalPeriod: 9, macdSize: 25, macdColor: '#2962ff', macdSignalColor: '#f59e0b', macdUpColor: '#26a69a', macdDownColor: '#ef5350', macdLineWidth: 2 }; }
   });
   const [selectedIndicator, setSelectedIndicator] = useState(null);
   const [indicatorSettingsPosition, setIndicatorSettingsPosition] = useState(null);
@@ -677,11 +710,27 @@ export default function TradingViewReplayChart({
     const coordinate = series.priceToCoordinate(Number(currentPrice));
     return Number.isFinite(Number(coordinate)) ? Number(coordinate) : null;
   }, [currentPrice, overlayRenderVersion, overlaySize.height]);
-  const rsiPaneTop = useMemo(() => {
-    if (!indicators.rsi) return null;
-    const mainPane = chartRef.current?.panes?.()[0];
-    return mainPane ? mainPane.getHeight() : overlaySize.height * (1 - ((Number(indicators.rsiSize) || 25) / 100));
-  }, [indicators.rsi, indicators.rsiSize, overlayRenderVersion, overlaySize.height]);
+  const mainPaneHeight = useMemo(() => {
+    const height = Number(chartRef.current?.panes?.()[0]?.getHeight?.());
+    return Number.isFinite(height) && height > 0 ? Math.min(height, overlaySize.height) : overlaySize.height;
+  }, [overlayRenderVersion, overlaySize.height]);
+  const indicatorPaneTops = useMemo(() => {
+    const panes = chartRef.current?.panes?.() ?? [];
+    const tops = {};
+    let paneIndex = 1;
+    let top = mainPaneHeight;
+
+    if (indicators.rsi && indicators.rsiVisible !== false) {
+      tops.rsi = top;
+      top += panes[paneIndex]?.getHeight?.() ?? 0;
+      paneIndex += 1;
+    }
+    if (indicators.macd && indicators.macdVisible !== false) {
+      tops.macd = top;
+    }
+
+    return tops;
+  }, [indicators.macd, indicators.macdVisible, indicators.rsi, indicators.rsiVisible, mainPaneHeight, overlayRenderVersion]);
 
   const executionCandle = replayMode ? allCandles[replayIndex] : null;
   const executionPrice = executionCandle?.close ?? currentPrice;
@@ -2084,6 +2133,9 @@ export default function TradingViewReplayChart({
     const smaSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
     const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
     const rsiSeries = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false }, 1);
+    const macdSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false }, 2);
+    const macdSignalSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false }, 2);
+    const macdHistogramSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, base: 0, visible: false }, 2);
 
     volumeSeries.priceScale().applyOptions({
       scaleMargins: {
@@ -2101,7 +2153,11 @@ export default function TradingViewReplayChart({
     const handleChartClick = (param) => {
       if (!isReplayPricePickActiveRef.current) {
         const hoveredSeries = param?.hoveredSeries;
-        let indicatorType = hoveredSeries === smaSeriesRef.current
+        let indicatorType = hoveredSeries === volumeSeriesRef.current
+          ? 'volume'
+          : [macdSeriesRef.current, macdSignalSeriesRef.current, macdHistogramSeriesRef.current].includes(hoveredSeries)
+            ? 'macd'
+          : hoveredSeries === smaSeriesRef.current
             ? 'sma'
             : hoveredSeries === emaSeriesRef.current
               ? 'ema'
@@ -2112,15 +2168,54 @@ export default function TradingViewReplayChart({
         if (!indicatorType && param?.point && param?.seriesData) {
           const pointY = Number(param.point.y);
           const paneIndex = Number(param.paneIndex ?? 0);
+          const isRsiVisible = indicatorsRef.current.rsi && indicatorsRef.current.rsiVisible !== false;
+          const rsiPane = isRsiVisible ? 1 : -1;
+          const macdPane = indicatorsRef.current.macd && indicatorsRef.current.macdVisible !== false
+            ? (isRsiVisible ? 2 : 1)
+            : -1;
+
+          const volumeSeries = volumeSeriesRef.current;
+          const volumeValue = Number(param.seriesData.get(volumeSeries)?.value);
+          if (volumeSeries && indicatorsRef.current.volume && indicatorsRef.current.volumeVisible !== false && paneIndex === 0 && Number.isFinite(volumeValue)) {
+            const volumeY = Number(volumeSeries.priceToCoordinate(volumeValue));
+            const volumeBaseY = Number(volumeSeries.priceToCoordinate(0));
+            if (
+              Number.isFinite(volumeY) &&
+              Number.isFinite(volumeBaseY) &&
+              pointY >= Math.min(volumeY, volumeBaseY) - 4 &&
+              pointY <= Math.max(volumeY, volumeBaseY) + 4
+            ) {
+              indicatorType = 'volume';
+            }
+          }
+
+          const macdHistogram = macdHistogramSeriesRef.current;
+          const macdHistogramValue = Number(param.seriesData.get(macdHistogram)?.value);
+          if (!indicatorType && macdHistogram && macdPane === paneIndex && Number.isFinite(macdHistogramValue)) {
+            const histogramY = Number(macdHistogram.priceToCoordinate(macdHistogramValue));
+            const histogramBaseY = Number(macdHistogram.priceToCoordinate(0));
+            if (
+              Number.isFinite(histogramY) &&
+              Number.isFinite(histogramBaseY) &&
+              pointY >= Math.min(histogramY, histogramBaseY) - 4 &&
+              pointY <= Math.max(histogramY, histogramBaseY) + 4
+            ) {
+              indicatorType = 'macd';
+            }
+          }
+
           const candidates = [
             { type: 'sma', series: smaSeriesRef.current, pane: 0 },
             { type: 'ema', series: emaSeriesRef.current, pane: 0 },
-            { type: 'rsi', series: rsiSeriesRef.current, pane: 1 },
+            { type: 'rsi', series: rsiSeriesRef.current, pane: rsiPane },
+            { type: 'macd', series: macdSeriesRef.current, pane: macdPane },
+            { type: 'macd', series: macdSignalSeriesRef.current, pane: macdPane },
           ];
           let closest = null;
 
           candidates.forEach(({ type, series, pane }) => {
-            if (!series || !indicatorsRef.current[type] || pane !== paneIndex) return;
+            if (indicatorType) return;
+            if (!series || !indicatorsRef.current[type] || indicatorsRef.current[`${type}Visible`] === false || pane !== paneIndex) return;
             const value = Number(param.seriesData.get(series)?.value);
             if (!Number.isFinite(value)) return;
             const seriesY = Number(series.priceToCoordinate(value));
@@ -2163,6 +2258,9 @@ export default function TradingViewReplayChart({
     smaSeriesRef.current = smaSeries;
     emaSeriesRef.current = emaSeries;
     rsiSeriesRef.current = rsiSeries;
+    macdSeriesRef.current = macdSeries;
+    macdSignalSeriesRef.current = macdSignalSeries;
+    macdHistogramSeriesRef.current = macdHistogramSeries;
 
     resizeObserverRef.current = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
@@ -2308,6 +2406,9 @@ export default function TradingViewReplayChart({
       smaSeriesRef.current = null;
       emaSeriesRef.current = null;
       rsiSeriesRef.current = null;
+      macdSeriesRef.current = null;
+      macdSignalSeriesRef.current = null;
+      macdHistogramSeriesRef.current = null;
     };
   }, [scheduleOverlayRender, selectedPriceAutoscaleInfoProvider, setReplayPointFromCoordinates]);
 
@@ -2348,19 +2449,57 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     try { localStorage.setItem(indicatorStorageKey, JSON.stringify(indicators)); } catch {}
     const volume = volumeSeriesRef.current; const sma = smaSeriesRef.current; const ema = emaSeriesRef.current; const rsi = rsiSeriesRef.current;
-    volume?.applyOptions({ visible: indicators.volume });
-    volume?.priceScale().applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    sma?.applyOptions({ visible: indicators.sma, color: indicators.smaColor ?? '#2962ff', lineWidth: Number(indicators.smaLineWidth) || 2 });
-    ema?.applyOptions({ visible: indicators.ema, color: indicators.emaColor ?? '#f59e0b', lineWidth: Number(indicators.emaLineWidth) || 2 });
-    rsi?.applyOptions({ visible: indicators.rsi, color: indicators.rsiColor ?? '#a855f7', lineWidth: Number(indicators.rsiLineWidth) || 2 });
-    rsi?.moveToPane(indicators.rsi ? 1 : 0);
-    if (indicators.rsi) {
-      const pane = chartRef.current?.panes?.()[1];
+    const macd = macdSeriesRef.current; const macdSignal = macdSignalSeriesRef.current; const macdHistogram = macdHistogramSeriesRef.current;
+    volume?.applyOptions({ visible: indicators.volume && indicators.volumeVisible !== false });
+    const volumeSize = Math.min(45, Math.max(10, Number(indicators.volumeSize) || 20));
+    volume?.priceScale().applyOptions({ scaleMargins: { top: 1 - (volumeSize / 100), bottom: 0 } });
+    sma?.applyOptions({ visible: indicators.sma && indicators.smaVisible !== false, color: indicators.smaColor ?? '#2962ff', lineWidth: Number(indicators.smaLineWidth) || 2 });
+    ema?.applyOptions({ visible: indicators.ema && indicators.emaVisible !== false, color: indicators.emaColor ?? '#f59e0b', lineWidth: Number(indicators.emaLineWidth) || 2 });
+    const isRsiVisible = indicators.rsi && indicators.rsiVisible !== false;
+    const isMacdVisible = indicators.macd && indicators.macdVisible !== false;
+    rsi?.applyOptions({ visible: isRsiVisible, color: indicators.rsiColor ?? '#a855f7', lineWidth: Number(indicators.rsiLineWidth) || 2 });
+    macd?.applyOptions({ visible: isMacdVisible, color: indicators.macdColor ?? '#2962ff', lineWidth: Number(indicators.macdLineWidth) || 2 });
+    macdSignal?.applyOptions({ visible: isMacdVisible, color: indicators.macdSignalColor ?? '#f59e0b', lineWidth: Number(indicators.macdLineWidth) || 2 });
+    macdHistogram?.applyOptions({ visible: isMacdVisible });
+
+    rsi?.moveToPane(0);
+    macd?.moveToPane(0);
+    macdSignal?.moveToPane(0);
+    macdHistogram?.moveToPane(0);
+
+    let nextLowerPane = 1;
+    if (isRsiVisible) {
+      rsi?.moveToPane(nextLowerPane);
+      const pane = chartRef.current?.panes?.()[nextLowerPane];
       pane?.setHeight(Math.max(80, Math.round((containerRef.current?.clientHeight || CHART_HEIGHT) * ((Number(indicators.rsiSize) || 25) / 100))));
+      nextLowerPane += 1;
+    }
+    if (isMacdVisible) {
+      macd?.moveToPane(nextLowerPane);
+      macdSignal?.moveToPane(nextLowerPane);
+      macdHistogram?.moveToPane(nextLowerPane);
+      const pane = chartRef.current?.panes?.()[nextLowerPane];
+      pane?.setHeight(Math.max(80, Math.round((containerRef.current?.clientHeight || CHART_HEIGHT) * ((Number(indicators.macdSize) || 25) / 100))));
     }
     sma?.setData(indicators.sma ? movingAverage(visibleCandles, Number(indicators.smaPeriod) || 20) : []);
     ema?.setData(indicators.ema ? exponentialMovingAverage(visibleCandles, Number(indicators.emaPeriod) || 20) : []);
     rsi?.setData(indicators.rsi ? relativeStrengthIndex(visibleCandles, Number(indicators.rsiPeriod) || 14) : []);
+    const macdFastPeriod = Math.max(2, Number(indicators.macdFastPeriod) || 12);
+    const macdSlowPeriod = Math.max(macdFastPeriod + 1, Number(indicators.macdSlowPeriod) || 26);
+    const macdData = indicators.macd
+      ? movingAverageConvergenceDivergence(
+        visibleCandles,
+        macdFastPeriod,
+        macdSlowPeriod,
+        Math.max(2, Number(indicators.macdSignalPeriod) || 9)
+      )
+      : { macd: [], signal: [], histogram: [] };
+    macd?.setData(macdData.macd);
+    macdSignal?.setData(macdData.signal);
+    macdHistogram?.setData(macdData.histogram.map((point) => ({
+      ...point,
+      color: point.value >= 0 ? (indicators.macdUpColor ?? '#26a69a') : (indicators.macdDownColor ?? '#ef5350'),
+    })));
     scheduleOverlayRender();
   }, [indicatorStorageKey, indicators, scheduleOverlayRender, visibleCandles]);
 
@@ -2806,6 +2945,11 @@ export default function TradingViewReplayChart({
       };
     };
 
+    const isInMainPricePane = (y) => {
+      const paneHeight = Number(chartRef.current?.panes?.()[0]?.getHeight?.());
+      return !Number.isFinite(paneHeight) || (y >= 0 && y <= paneHeight);
+    };
+
     const setChartMouseInteractions = (enabled) => {
       const chart = chartRef.current;
       if (!chart) return;
@@ -2835,6 +2979,7 @@ export default function TradingViewReplayChart({
       }
 
       const { x, y } = getRelativePoint(event);
+      if (!isInMainPricePane(y)) return;
 
       const backtestOrderHit = hitTestBacktestOrder(x, y);
       if (backtestOrderHit?.action === 'cancel') {
@@ -3053,6 +3198,7 @@ export default function TradingViewReplayChart({
       if (isSpacePressedRef.current) return;
 
       const { x, y } = getRelativePoint(event);
+      if (!isInMainPricePane(y)) return;
 
       if (TWO_POINT_TOOL_TYPES.includes(toolRef.current) && tempDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
@@ -3252,6 +3398,7 @@ export default function TradingViewReplayChart({
 
     const handleDoubleClick = (event) => {
       if (toolRef.current !== PATH_TOOL_TYPE) return;
+      if (!isInMainPricePane(getRelativePoint(event).y)) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -4570,6 +4717,12 @@ export default function TradingViewReplayChart({
     onCandleColorChange: setCandleColors,
     onCandleSizeChange: setCandleSize,
     onIndicatorsChange: setIndicators,
+    onOpenIndicatorSettings: (indicator) => {
+      setSelectedIndicator(indicator);
+      setIndicatorSettingsPosition({ x: 80, y: 64 });
+      setSelectedDrawingId(null);
+      setTool(null);
+    },
     onCreatePriceAlert: handleCreatePriceAlert,
     chartTheme,
   };
@@ -4608,6 +4761,7 @@ export default function TradingViewReplayChart({
             tool={tool}
             chartTheme={chartTheme}
             overlaySize={overlaySize}
+            mainPaneHeight={mainPaneHeight}
             renderedDrawings={renderedDrawings}
             renderedBacktestOrders={renderedBacktestOrders}
             renderedTradeMarkers={renderedTradeMarkers}
@@ -4635,7 +4789,7 @@ export default function TradingViewReplayChart({
 
           <IndicatorClickTargets
             indicators={indicators}
-            rsiPaneTop={rsiPaneTop}
+            paneTops={indicatorPaneTops}
             chartTheme={chartTheme}
             onSelect={(indicator, event) => {
               const wrapperBounds = wrapperRef.current?.getBoundingClientRect();
@@ -4644,7 +4798,7 @@ export default function TradingViewReplayChart({
               setIndicatorSettingsPosition(wrapperBounds ? {
                 x: targetBounds.left - wrapperBounds.left,
                 y: targetBounds.bottom - wrapperBounds.top,
-              } : { x: 64, y: indicator === 'rsi' ? Number(rsiPaneTop) + 32 : 80 });
+              } : { x: 64, y: Number(indicatorPaneTops[indicator]) + 32 || 80 });
               setSelectedDrawingId(null);
               setTool(null);
             }}

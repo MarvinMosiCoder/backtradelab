@@ -74,7 +74,7 @@ Route::get('/appname', [SettingsController::class, 'getAppname'])->name('app-nam
 Route::get('/applogo', [SettingsController::class, 'getApplogo'])->name('app-logo');
 Route::get('/login-details', [SettingsController::class, 'getLoginDetails'])->name('app-login-details');
 
-Route::group(['middleware' => ['auth', 'web']], function () {
+Route::group(['middleware' => ['auth', 'account.active', 'web']], function () {
     Route::post('/check-password', [ForceChangePasswordController::class, 'checkPassword'])->name('check-current-password');
     Route::get('change-password', [ForceChangePasswordController::class, 'showChangeForcePasswordForm'])->name('show-change-force-password');
     Route::post('/save-change-password', [ForceChangePasswordController::class, 'postUpdatePassword'])->name('update_password');
@@ -91,7 +91,7 @@ Route::group(['middleware' => ['auth', 'web']], function () {
     Route::post('announcement/saveEditAnnouncement', [AnnouncementsController::class, 'saveEditAnnouncement'])->name('saveEditAnnouncement');
 });
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
     Route::get('market', function () {
         return Inertia::render('Market/Market');
@@ -165,6 +165,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/profiles', [ProfilePageController::class, 'getProfiles'])->name('get-profiles');
     Route::post('/update-profile', [ProfilePageController::class, 'updateProfile'])->name('update-profile');
     Route::put('/profile/details', [ProfilePageController::class, 'updateDetails'])->name('profile.details.update');
+    Route::post('/profile/deactivate', [ProfilePageController::class, 'deactivate'])->middleware('throttle:market-write')->name('profile.deactivate');
     Route::post('/update-theme', [ProfilePageController::class, 'updateTheme'])->name('update-theme');
     //CHANGE PASSWORD
     Route::get('/change_password', [ChangePasswordController::class, 'getIndex'])->name('change_password');
@@ -249,11 +250,11 @@ Route::group([
             }
         }
     }
-})->middleware('auth');
+})->middleware(['auth', 'account.active']);
 
 //ADMIN ROUTE
 Route::group([
-    'middleware' => ['auth', 'check.user'],
+    'middleware' => ['auth', 'account.active', 'check.user'],
     'prefix' => config('ad_url.ADMIN_PATH'),
     'namespace' => 'App\Http\Controllers\Admin',
 ], function () {
@@ -285,4 +286,4 @@ Route::group([
             }
         }
     }
-})->middleware('auth');
+})->middleware(['auth', 'account.active']);

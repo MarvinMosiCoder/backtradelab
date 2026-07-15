@@ -129,6 +129,16 @@ Google OAuth supports both sign-in and self-registration. The callback first mat
 
 OAuth-linked users store their latest provider identity on `adm_users`. Newly created Google accounts and accounts that still have the admin-created temporary password keep password login disabled. From an authenticated social session, the user can create a strong local password without entering the unknown generated or temporary password; this enables email/password login afterward. Accounts that already have a real local password keep password login enabled.
 
+### Account deactivation
+
+Authenticated users can voluntarily deactivate their account from the Profile danger zone through `POST /profile/deactivate`. Local-password accounts must provide their current password, every account must type `DEACTIVATE`, and an optional reason is limited to 500 characters. Social-only accounts rely on their authenticated session plus CSRF protection and do not require the unavailable generated password.
+
+Deactivation is non-destructive. `AccountDeactivationService` changes the user status to `INACTIVE`, records `deactivated_at`, `deactivation_reason`, and `deactivated_by`, revokes all Sanctum tokens, and changes active price alerts to inactive. It preserves symbols, drawings, tool settings, replay progress, paper accounts, sessions, positions, trades, journals, feedback, subscription requests, messages, proofs, trial dates, and paid-access dates. Paper-trading state is frozen because the account cannot make authenticated requests; it is not reset or deleted. Trial and paid-access clocks continue while deactivated.
+
+The current browser session is logged out, invalidated, and assigned a new CSRF token immediately. Because file-backed sessions cannot be reliably enumerated by user, every authenticated route also uses `account.active` middleware. Another browser with an existing session receives `403 ACCOUNT_INACTIVE` on its next AJAX request or is logged out and redirected to Login on its next page request. Password and social login continue to reject inactive accounts.
+
+Administrators use the existing user-status action for reactivation. Reactivation sets `ACTIVE` and clears the deactivation metadata, but does not automatically restore disabled price alerts or alter preserved trading data. The shared `AccountDeactivationService` also applies token revocation and alert shutdown to administrator-initiated deactivation, and the administrator cannot deactivate their own account through the bulk action. Permanent deletion remains a separate future privacy workflow.
+
 The login form keeps the social actions visually recognizable in both dark and white public themes. The Google action uses a white button with the four-color Google SVG mark and dark label text. The Facebook action uses the standard Facebook blue button with white label text.
 
 OAuth credentials are configured in `.env`:
@@ -432,9 +442,9 @@ Paper futures trading treats the entered size as margin/collateral. Leverage can
 | `PUT /market-backtest/trades/{position}/journal` | Update setup tag, tags, entry/exit reasons, mistake, emotion, and journal notes on a closed position |
 | `POST /market-backtest/reset` | Reset the demo account back to the starting balance |
 
-`ReplayPanel.jsx` exposes execution through the Enter Position flyout. It contains active-session New/End actions, display-currency controls, market/limit/trigger modes, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, risk/reward estimates, pending-entry cancellation, and open-position close actions. It no longer presents the demo-account overview.
+`ReplayPanel.jsx` exposes execution through the Enter Position flyout. It contains active-session New/End actions, a compact wallet card showing the demo account's currently available cash balance, display-currency controls, market/limit/trigger modes, long/short entry controls, margin/leverage/value planning, optional entry/SL/TP fields, risk/reward estimates, pending-entry cancellation, and open-position close actions. It does not duplicate the full demo-account overview.
 
-The Enter Position flyout keeps its header visible and scrolls its execution controls internally. Demo-account details are available from the trader navbar's Assets wallet instead of being mixed into the order ticket.
+The Enter Position flyout keeps its header visible and scrolls its execution controls internally. Its available-balance value follows the ticket's USDT/PHP display selection and updates from the shared backtest account after entries, closes, triggers, and resets. Full demo-account details remain available from the trader navbar's Assets wallet instead of being mixed into the order ticket.
 
 The paper account remains internally quote-currency based, normally `USDT`. The Enter Position flyout and Trade Report can display account-sized values in `USDT` or `PHP`. When `PHP` is selected, the user can edit the `PHP / USDT` rate; order margin, leveraged value, risk, reward, estimated profit/loss, fees, and report values are converted for display, and PHP margin inputs are converted back to USDT before orders are submitted. Market prices such as entry, stop loss, take profit, trigger, and chart price remain in the symbol's quote price scale.
 
@@ -532,9 +542,9 @@ Outside fullscreen, `ChartHeader.jsx` uses a TradingView-style command bar. At d
 
 Below the `lg` breakpoint, both embedded and fullscreen headers collapse into a hamburger labeled with the active symbol. Activating it opens a scrollable, theme-aware controls dropdown; at `lg` and above the normal command bar is restored. The fullscreen compact header uses the available viewport width below `lg`, capped at `36rem`, so its mobile/tablet dropdown does not inherit a narrow button width.
 
-The embedded Indicators menu is explicitly themed rather than inheriting page text colors. Volume, SMA, EMA, and RSI appear as simple dark/light name-toggle rows. Indicator configuration is intentionally absent from this add/remove menu.
+The embedded Add Indicators menu is explicitly themed rather than inheriting page text colors. Volume, SMA, EMA, RSI, and MACD appear as simple dark/light add/settings rows. Visibility and configuration controls are intentionally absent from this menu and live in each indicator's contextual panel.
 
-Fullscreen mode uses the compact wrapping header variant with the same active symbol and indicator state. Its symbol picker uses green symbol labels, explicit `Open` buttons, and theme-aware search/results. Its Indicators menu uses the same name-only Volume/SMA/EMA/RSI toggles as the embedded header. The compact header remains above the chart, while `ReplayPanel` uses a higher stacking layer so drawing Tool Settings, replay controls, and flyouts remain visible above the header when they overlap.
+Fullscreen mode uses the compact wrapping header variant with the same active symbol and indicator state. Its symbol picker uses green symbol labels, explicit `Open` buttons, and theme-aware search/results. Its Add Indicators menu uses the same Volume/SMA/EMA/RSI/MACD add/settings rows as the embedded header. The compact header remains above the chart, while `ReplayPanel` uses a higher stacking layer so drawing Tool Settings, replay controls, and flyouts remain visible above the header when they overlap.
 
 Volume bars are derived from visible candles:
 
@@ -741,7 +751,7 @@ Timeframe changes restore the previous center time with a logical span reduced t
 
 ## Drawing Overlay
 
-The chart itself is rendered by Lightweight Charts. Drawings are rendered above it with a React/SVG overlay in `ChartStage.jsx`.
+The chart itself is rendered by Lightweight Charts. Drawings are rendered above it with a React/SVG overlay in `ChartStage.jsx`. When RSI or MACD creates lower indicator panes, the drawing, draft/order-line, trade-marker, replay-pick, countdown, and text-input overlay height is clipped to the current main price-pane height. Drawing hit testing and pointer updates also reject coordinates below that boundary, so chart tools cannot render into or capture interaction from indicator panes.
 
 | Drawing Type | Rendered As |
 |--------------|-------------|
@@ -982,7 +992,7 @@ Alerts trigger while Workspace is open because the browser refreshes the latest 
 
 ### Indicators and volume
 
-The Indicators menu is an add/remove list containing only the Volume, SMA, EMA, and RSI names with toggles; configuration controls are not shown in that menu. Displayed SMA and EMA indicators have small clickable name targets in the main pane, while RSI has one inside the RSI pane. These targets make selection reliable even when the canvas library reports the underlying candlestick as the hovered series. Clicking a target or a successfully hit rendered SMA/EMA/RSI series opens only that indicator's contextual settings panel; settings remain hidden until selection, and clicking elsewhere closes them. SMA, EMA, and RSI expose period, line color, line width, and removal, while RSI also exposes pane size. Volume has no left-side chart target or contextual settings panel and is controlled only by its name toggle. The panel prefers the space below the clicked indicator and moves above it when required to stay within chart bounds. Indicator visibility and settings are stored per authenticated user in the browser under `market-chart-indicators:{userId}`. Legacy unscoped indicator values are not imported, so a newly signed-in account starts from its own saved settings or the defaults.
+The Add Indicators menu contains Volume, SMA, EMA, RSI, and MACD as add-only name rows rather than visibility checkboxes. An indicator that is not on the chart shows `+ Add`; an added indicator shows `Settings`, which opens the same contextual panel used by direct chart selection. Displayed SMA and EMA indicators have small clickable name targets in the main pane, while RSI and MACD each have one inside their lower pane. Volume intentionally has no left-side name target, but its rendered histogram bars are directly clickable. Clicking a target or a successfully hit rendered Volume/SMA/EMA/RSI/MACD series opens only that indicator's contextual settings panel; settings remain hidden until selection, and clicking elsewhere closes them. Each settings panel owns Show/Hide and Remove, keeping visibility controls out of Add Indicators. Volume exposes pane size. SMA, EMA, and RSI expose period, line color, and line width, while RSI also exposes pane size. MACD exposes fast, slow, and signal periods, MACD/signal line colors, positive/negative histogram colors, line width, and pane size. RSI and MACD use separate dynamically assigned lower panes, so either can open alone in the first lower pane or both can remain open simultaneously in stacked panes. Hiding preserves the indicator and its settings; removing returns it to the add state. The panel prefers the space below the clicked indicator and moves above it when required to stay within chart bounds. Indicator addition, visibility, and settings are stored per authenticated user in the browser under `market-chart-indicators:{userId}`. Legacy unscoped indicator values are not imported, so a newly signed-in account starts from its own saved settings or the defaults.
 
 Backtest display currency and the editable PHP/USDT conversion rate are also browser-persisted per authenticated user under `market-backtest-display-currency:{userId}` and `market-backtest-php-rate:{userId}`. The Enter Position ticket, Trade Calendar, and PnL Report use the same user-scoped key names. These are display preferences only; paper-account balances and order records remain database-backed and user-owned.
 

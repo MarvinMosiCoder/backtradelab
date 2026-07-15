@@ -12,6 +12,9 @@ use App\Models\AdmModels\AdmUserProfiles;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use App\Services\AccountDeactivationService;
 class ProfilePageController extends Controller
 {
 
@@ -140,6 +143,35 @@ class ProfilePageController extends Controller
         $user->update($validated);
 
         return response()->json(['status' => 'success', 'message' => 'Profile details updated.']);
+    }
+
+    public function deactivate(Request $request, AccountDeactivationService $deactivationService)
+    {
+        $user = $request->user();
+        $validated = $request->validate([
+            'confirmation' => ['required', 'in:DEACTIVATE'],
+            'password' => [$user->password_login_enabled ? 'required' : 'nullable', 'string'],
+            'reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if ($user->password_login_enabled && !Hash::check($validated['password'], $user->password)) {
+            return response()->json([
+                'message' => 'The password is incorrect.',
+                'errors' => ['password' => ['The password is incorrect.']],
+            ], 422);
+        }
+
+        $deactivationService->deactivate($user, $user->id, $validated['reason'] ?? 'Voluntary account deactivation');
+
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Your account has been deactivated.',
+            'redirect' => route('login'),
+        ]);
     }
     
 }

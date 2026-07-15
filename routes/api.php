@@ -20,6 +20,6 @@ Route::apiResource('getSidebar', AdminUsersController::class);
 Route::apiResource('postAddSave', AdminUsersController::class);
 Route::get('/market-symbol-options', [MarketDataController::class, 'availableSymbols']);
 Route::get('/klines', [MarketDataController::class, 'klines']);
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
+Route::middleware(['auth:sanctum', 'account.active'])->get('/user', function (Request $request) {
     return $request->user();
 });

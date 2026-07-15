@@ -67,5 +67,6 @@ class Kernel extends HttpKernel
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         'check.user' => \App\Http\Middleware\CheckUserForceChangePassword::class,
         'replay.access' => \App\Http\Middleware\EnsureReplayAccess::class,
+        'account.active' => \App\Http\Middleware\EnsureAccountIsActive::class,
     ];
 }

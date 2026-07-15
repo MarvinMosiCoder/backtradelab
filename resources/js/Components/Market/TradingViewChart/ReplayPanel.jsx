@@ -1397,6 +1397,23 @@ export default function ReplayPanel({
               </div>
             </div>
 
+            <div className={`flex items-center justify-between gap-3 rounded-md border p-2.5 ${cardSurfaceClass}`}>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#2962ff]/15 text-[#5b8cff]">
+                  <Wallet size={16} />
+                </span>
+                <div className="min-w-0">
+                  <div className={`text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Available balance</div>
+                  <div className={`truncate text-[11px] ${mutedTextClass}`}>
+                    {backtestAccount?.name ?? 'Demo Account'}
+                  </div>
+                </div>
+              </div>
+              <div className={`shrink-0 text-right text-sm font-semibold ${valueTextClass}`}>
+                {backtestAccount ? formatAccountMoney(backtestMetrics.cashBalance) : '---'}
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>

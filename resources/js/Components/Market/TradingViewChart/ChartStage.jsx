@@ -476,7 +476,7 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
       className="pointer-events-none absolute inset-0 z-[11]"
       width={overlaySize.width}
       height={overlaySize.height}
-      style={{ width: '100%', height: '100%' }}
+      style={{ width: '100%', height: `${overlaySize.height}px` }}
     >
       {renderedBacktestOrders.map((item) => {
         const estimatedTextWidth = item.label.length * 6.4;
@@ -606,12 +606,12 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
   }
 
   return (
-    <>
+    <div className="pointer-events-none absolute left-0 top-0 z-10 overflow-hidden" style={{ width: '100%', height: overlaySize.height }}>
       <svg
-        className="pointer-events-none absolute inset-0 z-10"
+        className="pointer-events-none absolute inset-0"
         width={Math.max(overlaySize.width - 88, 0)}
-        height={Math.max(overlaySize.height - 28, 0)}
-        style={{ width: 'calc(100% - 88px)', height: 'calc(100% - 28px)' }}
+        height={overlaySize.height}
+        style={{ width: 'calc(100% - 88px)', height: '100%' }}
       >
         {renderedDrawings.map((d) => {
           const drawingColor = d.color ?? DRAWING_COLOR;
@@ -1069,7 +1069,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
             </div>
           );
         })}
-    </>
+    </div>
   );
 }
 
@@ -1171,6 +1171,7 @@ export default function ChartStage({
   tool,
   chartTheme,
   overlaySize,
+  mainPaneHeight,
   renderedDrawings,
   renderedBacktestOrders,
   renderedTradeMarkers,
@@ -1184,6 +1185,10 @@ export default function ChartStage({
 }) {
   const [replayPickPreviewX, setReplayPickPreviewX] = useState(null);
   const [isChartDragging, setIsChartDragging] = useState(false);
+  const mainOverlaySize = {
+    ...overlaySize,
+    height: Math.max(0, Math.min(Number(mainPaneHeight) || overlaySize.height, overlaySize.height)),
+  };
 
   useEffect(() => {
     if (!isReplayPricePickActive) {
@@ -1235,7 +1240,7 @@ export default function ChartStage({
       <div ref={containerRef} className="absolute inset-0 z-0" />
 
       {isReplayPricePickActive && replayPickPreviewX != null && (
-        <div className="pointer-events-none absolute inset-0 z-[9] overflow-hidden">
+        <div className="pointer-events-none absolute left-0 top-0 z-[9] overflow-hidden" style={{ width: '100%', height: mainOverlaySize.height }}>
           <div
             className="absolute bottom-0 top-0 border-l-2 border-dashed border-blue-400"
             style={{ left: replayPickPreviewX }}
@@ -1272,7 +1277,7 @@ export default function ChartStage({
         <ChartCandleCountdown
           timeframe={timeframe}
           priceCoordinate={currentPriceCoordinate}
-          overlayHeight={overlaySize.height}
+          overlayHeight={mainOverlaySize.height}
           chartTheme={chartTheme}
         />
       )}
@@ -1280,17 +1285,17 @@ export default function ChartStage({
       <DrawingOverlay
         renderedDrawings={renderedDrawings}
         selectedDrawingId={selectedDrawingId}
-        overlaySize={overlaySize}
+        overlaySize={mainOverlaySize}
         chartTheme={chartTheme}
       />
 
       <BacktestOrderOverlay
         renderedBacktestOrders={renderedBacktestOrders}
-        overlaySize={overlaySize}
+        overlaySize={mainOverlaySize}
         chartTheme={chartTheme}
       />
 
-      <svg className="pointer-events-none absolute inset-0 z-[12]" width={overlaySize.width} height={overlaySize.height} aria-hidden="true">
+      <svg className="pointer-events-none absolute inset-0 z-[12]" width={overlaySize.width} height={mainOverlaySize.height} aria-hidden="true">
         {(renderedTradeMarkers ?? []).map((marker) => (
           <g key={marker.id} transform={`translate(${marker.x - 9} ${marker.y - 9})`}>
             <rect width="18" height="18" rx="3" fill={marker.color} />
@@ -1302,7 +1307,7 @@ export default function ChartStage({
       <TextInputPopover
         textInput={textInput}
         textDraft={textDraft}
-        overlaySize={overlaySize}
+        overlaySize={mainOverlaySize}
         onTextDraftChange={onTextDraftChange}
         onSaveText={onSaveText}
         onCancel={onCancelText}

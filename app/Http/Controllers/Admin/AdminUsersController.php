@@ -12,6 +12,7 @@ use DB;
 use App\Models\AdmUser;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\AccountDeactivationService;
 
     class AdminUsersController extends Controller{
 
@@ -143,15 +144,25 @@ use Inertia\Response;
             return view('admin/users/profile', $data);
         }
 
-        public function setStatus(Request $request){
+        public function setStatus(Request $request, AccountDeactivationService $deactivationService){
    
             if($request->bulk_action_type == 1){
                 foreach($request->Ids as $set_ids){
-                    AdmUser::where('id',$set_ids)->update(['status'=> 'ACTIVE']);
+                    $user = AdmUser::find($set_ids);
+                    if ($user) {
+                        $deactivationService->reactivate($user);
+                    }
                 }
             }else{
                 foreach($request->Ids as $set_ids){
-                    AdmUser::where('id',$set_ids)->update(['status'=> 'INACTIVE']);
+                    if ((int) $set_ids === (int) $request->user()->id) {
+                        continue;
+                    }
+
+                    $user = AdmUser::find($set_ids);
+                    if ($user) {
+                        $deactivationService->deactivate($user, $request->user()->id, 'Deactivated by administrator');
+                    }
                 }
             }
           
