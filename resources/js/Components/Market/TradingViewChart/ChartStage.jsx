@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Maximize2, Minimize2, Save, X } from 'lucide-react';
+import { Save, X } from 'lucide-react';
 import getAppLogo from '../../SystemSettings/ApplicationLogo';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL, TIMEFRAME_SECONDS } from './constants';
 import {
@@ -1259,19 +1259,6 @@ export default function ChartStage({
       )}
 
       <ChartBrandLogo chartTheme={chartTheme} />
-
-      <button
-        type="button"
-        onClick={onToggleFullscreen}
-        className="group absolute right-2 top-2 z-40 flex h-10 w-10 items-center justify-center rounded-md border border-gray-600 bg-[#131722]/95 text-white shadow-xl transition hover:border-blue-400 hover:bg-[#2962ff] focus:outline-none focus:ring-2 focus:ring-blue-400 sm:h-8 sm:w-8"
-        title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-        aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-      >
-        {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-        <span className="pointer-events-none absolute right-0 top-full mt-2 hidden whitespace-nowrap rounded bg-black px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover:block group-focus:block">
-          {isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-        </span>
-      </button>
 
       {!replayMode && (
         <ChartCandleCountdown

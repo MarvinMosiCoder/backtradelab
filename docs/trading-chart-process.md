@@ -76,10 +76,12 @@ External API
 | `resources/js/Components/Market/TradeCalendar.jsx` | Standalone trade calendar module showing daily PnL and win/loss counts by close date |
 | `resources/js/Components/Market/TradeReport.jsx` | PnL report module with summary cards, CSV/JSON export, closed-trades table, snapshots, and journal editing |
 | `resources/js/Components/Market/TradingViewChart/ChartHeader.jsx` | Responsive chart command bar with symbol management, market/timeframe controls, replay, alerts, themed indicators, and appearance controls; fullscreen uses a compact variant |
+| `resources/js/Components/Market/TradingViewChart/FullscreenChartHeader.jsx` | Fullscreen-only top navbar with application branding, chart controls, searchable market selection, and the exit action |
 | `resources/js/Components/Market/TradingViewChart/ReplayPanel.jsx` | TradingView-style left rail with grouped flyouts for replay controls, drawing tools, and position entry/management, plus a compact top tool editor for drawing styles and presets |
 | `resources/js/Components/Market/TradingViewChart/ChartStage.jsx` | Chart DOM container, app logo brand mark, fullscreen button, SVG drawing overlay, resize handles, text input popover with icon actions |
 | `resources/js/Components/Market/TradingViewChart/constants.js` | Timeframes, playback speeds, chart size, drawing colors, drawing widths |
 | `resources/js/Components/Market/TradingViewChart/utils.js` | Candle normalization, coordinate helpers, drawing storage keys, drawing movement/color helpers |
+| `resources/js/Components/Market/TradingViewChart/liveCandleStream.js` | Exchange-specific public WebSocket subscriptions, candle normalization, heartbeat handling, and reconnect scheduling |
 | `resources/js/Context/ThemeContext.jsx` | Provides the authenticated admin theme class used by the chart to choose dark or white chart colors |
 | `app/Http/Controllers/MarketDrawingController.php` | Loads and saves chart drawings per authenticated user and symbol |
 | `app/Http/Controllers/MarketToolSettingController.php` | Loads and saves reusable per-user tool defaults |
@@ -277,7 +279,26 @@ When replay mode is active, timeframe changes anchor the candle request around t
 
 Fetched candles are cached in memory by exchange, market category, symbol, timeframe, and replay anchor. If the user switches back to a previously loaded timeframe, `TradingViewChart.jsx` renders the cached candles immediately and refreshes them in the background. Timeframe changes do not show the blocking chart loader while existing candle data is already visible; the current chart stays on screen until cached or freshly fetched candles are applied. The full loading overlay is reserved for the initial empty chart load. Before changing timeframe, the frontend captures the current visible center time and logical bar span, then restores that bar span around the matching candle after the new timeframe renders. This avoids `fitContent()` and keeps the user's zoom density from shrinking on every timeframe switch. Replay drawing framing can still override this when it needs to keep the replay candle and drawings visible. The current active candle request is aborted when a newer timeframe request starts, so rapid timeframe clicks do not let older responses replace the newest chart. In live mode, the chart also prefetches nearby common timeframes after the active timeframe loads.
 
-Live candle polling preserves the user's current horizontal viewport. The chart instance is not recreated when `allCandles` changes, and `fitContent()` runs only once for a newly selected exchange/category/symbol/timeframe scope. Replacing or chronologically inserting the active candle therefore does not override manual pan or zoom. Intentional navigation commands remain programmatic: changing timeframe restores the captured viewport, replay Follow tracks the replay edge, and Back to Live explicitly calls `scrollToRealTime()`.
+### 3.1 Live Active Candle
+
+After the initial `/api/klines` history request, `liveCandleStream.js` opens a public exchange WebSocket for only the active exchange, market category, native exchange symbol, and timeframe. Binance, Bybit, OKX, BingX, and MEXC protocol differences are contained inside the stream adapter. Incoming messages are converted to the same `time`, `open`, `high`, `low`, `close`, and `volume` shape used by the REST response.
+
+The chart displays the connection state as:
+
+| Status | Meaning |
+|--------|---------|
+| `Connecting` | The transport is open or opening, but no valid candle has been received yet; REST fallback remains active |
+| `Live` | The exchange WebSocket is connected and active-candle updates are being received |
+| `Reconnecting` | The socket disconnected and is retrying with an increasing delay |
+| `Polling` | REST polling is temporarily supplying the active candle |
+
+An open socket is not considered live until it delivers a valid normalized candle. If the first candle does not arrive within ten seconds, or a previously live stream produces no valid candle for forty-five seconds, the chart keeps REST fallback active, closes the ineffective socket, and reconnects. Subscription rejection responses are detected and reported to the development console instead of being silently treated as healthy streams.
+
+Reconnect delays increase from one second to a maximum of thirty seconds and reset only after a valid candle is received. The previous socket, heartbeat, first-candle timer, stale-candle timer, and reconnect timer are cleared when the exchange, category, symbol, timeframe, replay mode, or chart component changes. WebSocket streaming and fallback polling are suspended during replay and restarted when the trader returns live.
+
+When the socket is not live, the chart requests the latest two candles every five seconds with `fresh=1`. This flag bypasses the normal `/api/klines` cache read/write for that request, preventing a five-second fallback poll from receiving a response cached for ten to three hundred seconds. Initial history and anchored historical requests retain their existing caching.
+
+Live candle updates preserve the user's current horizontal viewport. The chart instance is not recreated when `allCandles` changes, and `fitContent()` runs only once for a newly selected exchange/category/symbol/timeframe scope. Replacing or chronologically inserting the active candle therefore does not override manual pan or zoom. Intentional navigation commands remain programmatic: changing timeframe restores the captured viewport, replay Follow tracks the replay edge, and Back to Live explicitly calls `scrollToRealTime()`.
 
 The UI timeframe is mapped to the selected exchange interval in `MarketDataController.php`.
 
@@ -326,7 +347,7 @@ The UI timeframe is mapped to the selected exchange interval in `MarketDataContr
 
 ### 5. Frontend Normalization
 
-The frontend also normalizes the response with `normalizeApiCandles()` so it can tolerate either object-style or array-style candle payloads. The normalizer rejects non-finite OHLCV values, collapses duplicate timestamps with the newest payload winning, and sorts the result oldest to newest. Live polling passes the existing candles and latest exchange candle through the same normalizer instead of blindly appending, so a repeated or older candle cannot give Lightweight Charts duplicate or out-of-order time points.
+The frontend also normalizes the response with `normalizeApiCandles()` so it can tolerate either object-style or array-style candle payloads. The normalizer rejects non-finite OHLCV values, collapses duplicate timestamps with the newest payload winning, and sorts the result oldest to newest. WebSocket updates and fallback polling pass the existing candles and latest exchange candle through the same normalizer instead of blindly appending, so a repeated or older candle cannot give Lightweight Charts duplicate or out-of-order time points.
 
 Normalized candles are stored in:
 
@@ -538,7 +559,7 @@ The Lightweight Charts TradingView attribution logo is disabled in chart layout 
 
 `Market.jsx` lets the chart content determine the page height. It should not reserve a fixed multi-viewport wrapper height around `TradingViewChart`, otherwise the market page shows a large blank area below the chart. The authenticated layout's `AppContent.jsx` content area is also dynamic rather than fixed to `600px`, so the chart panel can size naturally without overflowing a hardcoded container.
 
-Outside fullscreen, `ChartHeader.jsx` uses a TradingView-style command bar. At desktop widths the active symbol, market category, timeframe, replay action, appearance, indicators, and alert action occupy one row. Visible form labels and the duplicate current-price card were removed so the chart retains more vertical space; accessible labels remain available to screen readers, and the chart price scale is the primary live-price display. The active symbol is green, exchange/category metadata is secondary, and the Indicators action shows the number of enabled indicators.
+Embedded and fullscreen charts now share the same structural chrome: a `48px` top navbar and a `48px` flush-left rail, with the chart rendered in the remaining rectangle. Embedded mode shows the configured application logo without the application name and places its fullscreen action at the navbar's far right. Fullscreen additionally shows the application name, Enter Position wallet, and exit action. At desktop widths the active symbol, market category, timeframe, replay action, appearance, indicators, and alert action occupy one row. Accessible labels remain available to screen readers, and the chart price scale remains the primary live-price display.
 
 Below the `lg` breakpoint, both embedded and fullscreen headers collapse into a hamburger labeled with the active symbol. Activating it opens a scrollable, theme-aware controls dropdown; at `lg` and above the normal command bar is restored. The fullscreen compact header uses the available viewport width below `lg`, capped at `36rem`, so its mobile/tablet dropdown does not inherit a narrow button width.
 
@@ -587,7 +608,9 @@ When replay mode is enabled:
 | Set Replay Price | Arms the next chart click to pick replay candle/price |
 | Speed buttons | Changes playback interval inside the replay flyout |
 
-Clicking `Start Replay` does not immediately change the visible candle set. It arms replay-point selection first. While selection is armed, a dashed vertical line follows the pointer and the future chart area to its right is covered by a dark TradingView-style preview mask. Clicking the chart selects that candle and price, removes the preview, and starts replay from the chosen point.
+Clicking `Start Replay` does not immediately change the visible candle set. The first click immediately changes the control to `Checking replay access…`, disables related replay controls, and reuses one in-flight `/replay-access` request so rapid clicks cannot create duplicate checks. If access is allowed, the control changes to `Click a candle to start` and arms replay-point selection. While selection is armed, a dashed vertical line follows the pointer and the future chart area to its right is covered by a dark TradingView-style preview mask. Clicking the chart selects that candle and price, removes the preview, and starts replay from the chosen point.
+
+An access denial opens the subscription modal. A network or server failure keeps the chart live and shows a retryable error instead of silently behaving like a missed click. Header, fullscreen, Play, Back, Forward, and Set Replay Price entry paths share the same guarded access request and pending state.
 
 Playback speeds are defined in `constants.js`.
 
@@ -615,7 +638,7 @@ The selected-price line effect depends on `timeframe` and `visibleCandles.length
 
 ## Drawing Tools
 
-Drawing tools are available on the live chart and in replay mode. `TradingViewChart.jsx` renders `ChartStage.jsx` as the single chart workspace and overlays `ReplayPanel.jsx` as a compact left rail. Clicking the replay, tools, or backtest rail icons opens a flyout for that group, similar to TradingView's drawing toolbar behavior, so the chart keeps the full available width.
+Drawing tools are available on the live chart and in replay mode. `TradingViewChart.jsx` renders `ChartStage.jsx` as the single chart workspace beside the compact left rail. Embedded mode exposes Replay, each drawing category, Enter Position, Tool Settings, and Clear Drawings on the rail. Fullscreen keeps the rail drawing-focused because Replay and Enter Position are available from its navbar. Flyouts open immediately to the rail's right.
 
 The rail currently has four main flyout groups:
 
@@ -922,6 +945,8 @@ drawingsRef.current = [];
 
 Backend errors are returned as JSON responses from `MarketDataController.php`.
 
+Replay-access network errors are distinct from subscription denial. Denial opens the subscription interface; unexpected request failures display a retry action. Live WebSocket failures do not clear chart history: the UI changes to `Reconnecting`, then REST fallback changes it to `Polling` until the socket recovers.
+
 ---
 
 ## Performance Notes
@@ -932,6 +957,9 @@ Backend errors are returned as JSON responses from `MarketDataController.php`.
 | `useRef` | Keep chart instances and latest drawing/tool state available to event handlers |
 | `requestAnimationFrame` | Throttle overlay re-render requests during chart viewport movement |
 | `ResizeObserver` | Keep chart and overlay dimensions synchronized |
+| Public WebSockets | Update the active candle in near real time without rebuilding the chart |
+| Exponential reconnect | Recover exchange streams without aggressive reconnect loops |
+| Fresh REST fallback | Poll the latest candle without using the longer history cache |
 | Theme palette updates | Apply the admin dark/white chart palette without recreating the chart instance |
 | `localStorage` | Mirror drawing edits/tool settings without auto-importing drawings; store public `backtradelab-theme` and user-scoped trader active-symbol preference |
 | Database | Persist the user's available market symbols, drawings, reusable tool defaults, and paper backtest records |
@@ -1104,4 +1132,4 @@ The chart now includes:
 15. Sidebar-accessible Trade Report with closed-trade win/loss table and calendar view.
 16. Admin-theme-aligned chart background, grid, axis text, borders, chart workspace loading skeleton, fullscreen shell, chart control surfaces, and snapshot background.
 17. Time/price/logical anchored drawings that stay aligned during pan/zoom and across timeframe changes.
-18. Fullscreen chart mode.
+18. Fullscreen chart mode with a flush top branded navbar, a navbar `Enter Position` wallet that opens the complete trading panel, and a flush-left drawing-category sidebar; the chart is resized into the remaining viewport instead of being covered by floating controls.

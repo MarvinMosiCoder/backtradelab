@@ -166,6 +166,7 @@ class MarketDataController extends Controller
 
         $start = $request->query('start'); // ms timestamp
         $end = $request->query('end');     // ms timestamp
+        $fresh = $request->boolean('fresh');
 
         $allowedCategories = ['spot', 'linear', 'inverse'];
         $allowedIntervals = ['1', '3', '5', '15', '30', '60', '120', '240', '360', '720', 'D', 'W', 'M'];
@@ -201,9 +202,10 @@ class MarketDataController extends Controller
             $maxCandles,
             $start ?: 'none',
             $end ?: 'latest',
+            $fresh ? 'fresh' : 'cached',
         ]);
 
-        if ($cached = Cache::get($cacheKey)) {
+        if (!$fresh && ($cached = Cache::get($cacheKey))) {
             return response()->json($cached);
         }
 
@@ -346,7 +348,9 @@ class MarketDataController extends Controller
                 'candles' => $candles,
             ];
 
-            Cache::put($cacheKey, $payload, now()->addSeconds($this->klineCacheSeconds($interval, $end !== null)));
+            if (!$fresh) {
+                Cache::put($cacheKey, $payload, now()->addSeconds($this->klineCacheSeconds($interval, $end !== null)));
+            }
 
             return response()->json($payload);
         } catch (\Throwable $e) {

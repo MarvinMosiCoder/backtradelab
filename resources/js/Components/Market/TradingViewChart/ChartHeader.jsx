@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { marketCategoryLabel } from '../../../utils/marketLabels';
-import { Bell, ChevronDown, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Bell, ChevronDown, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
-export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, replayMode, currentPrice, selectedReplayPrice, candleColors, candleSize, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onCandleColorChange, onCandleSizeChange, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
+export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, candleColors, candleSize, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onCandleColorChange, onCandleSizeChange, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
@@ -136,10 +136,11 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             ))}
           </select>
 
-          <button type="button" onClick={onToggleReplayMode} className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`} title={replayMode ? 'Back to live' : 'Start replay'}>
-            {replayMode ? <X size={14} /> : <Play size={14} />}
-            <span className="hidden sm:inline">{replayMode ? 'Live' : 'Replay'}</span>
+          <button type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`} title={replayMode ? 'Back to live' : 'Start replay'}>
+            {replayAccessStatus === 'checking-access' ? <LoaderCircle size={14} className="animate-spin" /> : replayMode ? <X size={14} /> : <Play size={14} />}
+            <span className="hidden sm:inline">{replayAccessStatus === 'checking-access' ? 'Checking…' : replayAccessStatus === 'pick-candle' ? 'Click candle' : replayMode ? 'Live' : 'Replay'}</span>
           </button>
+          {!replayMode && <span className="flex items-center gap-1 text-[10px] text-gray-400"><span className={`h-1.5 w-1.5 rounded-full ${liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`} />{liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}</span>}
 
           <button type="button" onClick={onCreatePriceAlert} className="flex h-8 items-center gap-1.5 rounded-md bg-[#2962ff] px-2.5 text-xs font-semibold text-white">
             <Bell size={13} />
@@ -323,9 +324,9 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
 
         <div className="col-span-2 min-w-0 sm:col-span-3 lg:col-span-2">
           <label className="sr-only">Replay</label>
-          <button type="button" onClick={onToggleReplayMode} className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`}>
-            {replayMode ? <X size={15} /> : <Play size={15} />}
-            {replayMode ? 'Back to Live' : 'Start Replay'}
+          <button type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`}>
+            {replayAccessStatus === 'checking-access' ? <LoaderCircle size={15} className="animate-spin" /> : replayMode ? <X size={15} /> : <Play size={15} />}
+            {replayAccessStatus === 'checking-access' ? 'Checking replay access…' : replayAccessStatus === 'pick-candle' ? 'Click a candle to start' : replayMode ? 'Back to Live' : 'Start Replay'}
           </button>
         </div>
 

@@ -10,6 +10,7 @@ import {
   Gauge,
   Italic,
   LocateFixed,
+  LoaderCircle,
   MousePointer2,
   MoveRight,
   Palette,
@@ -69,7 +70,7 @@ function ControlButton({
       className={`${controlBaseClass} ${controlVariantClass(variant, active, chartTheme)} ${className}`}
       {...props}
     >
-      {Icon && <Icon size={14} className="shrink-0" />}
+      {Icon && <Icon size={14} className={`shrink-0 ${Icon === LoaderCircle ? 'animate-spin' : ''}`} />}
       <span className="truncate">{children}</span>
     </button>
   );
@@ -825,6 +826,9 @@ function getMaxMarginForCash(cashBalance, leverage, feeRate) {
 
 export default function ReplayPanel({
   replayMode,
+  replayAccessStatus = 'idle',
+  replayAccessError = '',
+  liveConnectionStatus = 'polling',
   isPlaying,
   followReplay,
   isReplayPricePickActive,
@@ -844,6 +848,7 @@ export default function ReplayPanel({
   onResetReplay,
   onFollowReplay,
   onToggleReplayPricePick,
+  onRetryReplayAccess,
   onPlaybackSpeedChange,
   onToolChange,
   onDrawingColorChange,
@@ -872,6 +877,10 @@ export default function ReplayPanel({
   onBacktestOrderDraftChange,
   chartTheme,
   overlayWidth,
+  fullscreenDrawingOnly = false,
+  groupedWorkspaceRail = false,
+  fullscreenEntryPanelOpen = false,
+  onFullscreenEntryPanelOpenChange,
   className = '',
 }) {
   const { auth } = usePage().props;
@@ -893,9 +902,38 @@ export default function ReplayPanel({
     getStoredValue(displayCurrencyStorageKey, 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
   const [phpRate, setPhpRate] = useState(() => getStoredValue(phpRateStorageKey, '58'));
+  const wasFullscreenDrawingOnlyRef = React.useRef(fullscreenDrawingOnly);
+
+  useEffect(() => {
+    if (!fullscreenDrawingOnly) {
+      if (wasFullscreenDrawingOnlyRef.current) {
+        setActiveGroup((current) => current === 'backtest' ? null : current);
+        setShowOrderDraft(false);
+        setOrderEntryPrice('');
+        setOrderStopLoss('');
+        setOrderTakeProfit('');
+        onBacktestOrderDraftChange?.(null);
+      }
+      wasFullscreenDrawingOnlyRef.current = false;
+      return;
+    }
+    wasFullscreenDrawingOnlyRef.current = true;
+    setActiveGroup((current) => {
+      if (fullscreenEntryPanelOpen) return 'backtest';
+      return current === 'backtest' ? null : current;
+    });
+    if (!fullscreenEntryPanelOpen) {
+      setShowOrderDraft(false);
+      setOrderEntryPrice('');
+      setOrderStopLoss('');
+      setOrderTakeProfit('');
+      onBacktestOrderDraftChange?.(null);
+    }
+  }, [fullscreenDrawingOnly, fullscreenEntryPanelOpen, onBacktestOrderDraftChange]);
 
   const handleToolChange = (nextTool) => {
     onToolChange((currentTool) => (currentTool === nextTool ? null : nextTool));
+    if (fullscreenDrawingOnly) setActiveGroup(null);
   };
 
   const editorType = selectedDrawing?.type ?? tool;
@@ -980,7 +1018,8 @@ export default function ReplayPanel({
     setOrderEntryPrice(String(Number(requestedPrice.toFixed(8))));
     setShowOrderDraft(true);
     setActiveGroup('backtest');
-  }, [orderEntryRequest]);
+    if (fullscreenDrawingOnly) onFullscreenEntryPanelOpenChange?.(true);
+  }, [fullscreenDrawingOnly, onFullscreenEntryPanelOpenChange, orderEntryRequest]);
 
   useEffect(() => {
     if (!orderDraftClearRequest?.id) return;
@@ -1000,6 +1039,9 @@ export default function ReplayPanel({
       onBacktestOrderDraftChange?.(null);
     }
     setActiveGroup((currentGroup) => (currentGroup === group ? null : group));
+    if (fullscreenDrawingOnly && group !== 'backtest') {
+      onFullscreenEntryPanelOpenChange?.(false);
+    }
   };
 
   const handleSavePreset = () => {
@@ -1161,30 +1203,71 @@ export default function ReplayPanel({
       style={{ '--replay-panel-content-width': `${Math.max((Number(overlayWidth) || 0) - 164, 140)}px` }}
     >
       <div
-        className="pointer-events-auto flex flex-col gap-2 rounded-lg border p-1.5 shadow-2xl backdrop-blur"
+        className={`pointer-events-auto flex flex-col gap-2 border p-1.5 shadow-2xl backdrop-blur ${
+          fullscreenDrawingOnly || groupedWorkspaceRail
+            ? 'h-full rounded-none border-b-0 border-l-0 border-t-0'
+            : 'rounded-lg'
+        }`}
         style={getPanelStyle(chartTheme)}
       >
-        <RailButton
-          icon={Play}
-          active={activeGroup === 'replay' || replayMode || isPlaying}
-          title={replayMode ? 'Replay Controls' : 'Start Replay'}
-          onClick={() => toggleGroup('replay')}
-          chartTheme={chartTheme}
-        />
-        <RailButton
-          icon={ActiveToolIcon}
-          active={activeGroup === 'tools' || Boolean(tool)}
-          title="Drawing Tools"
-          onClick={() => toggleGroup('tools')}
-          chartTheme={chartTheme}
-        />
-        <RailButton
-          icon={Wallet}
-          active={activeGroup === 'backtest'}
-          title="Enter Position"
-          onClick={() => toggleGroup('backtest')}
-          chartTheme={chartTheme}
-        />
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) && !fullscreenDrawingOnly && (
+          <RailButton
+            icon={Play}
+            active={activeGroup === 'replay' || replayMode || isPlaying}
+            disabled={replayAccessStatus === 'checking-access'}
+            title={replayMode ? 'Replay Controls' : 'Start Replay'}
+            onClick={() => toggleGroup('replay')}
+            chartTheme={chartTheme}
+          />
+        )}
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) ? TOOL_GROUPS.map((group) => {
+          const firstTool = TOOL_BUTTONS.find((item) => item.type === group.tools[0]);
+          const isGroupActive = group.tools.includes(tool);
+          return (
+            <RailButton
+              key={group.name}
+              icon={firstTool?.icon ?? MousePointer2}
+              active={activeGroup === `tools:${group.name}` || isGroupActive}
+              title={group.name}
+              onClick={() => toggleGroup(`tools:${group.name}`)}
+              chartTheme={chartTheme}
+            />
+          );
+        }) : (
+          <>
+            <RailButton
+              icon={Play}
+              active={activeGroup === 'replay' || replayMode || isPlaying}
+              disabled={replayAccessStatus === 'checking-access'}
+              title={replayMode ? 'Replay Controls' : 'Start Replay'}
+              onClick={() => toggleGroup('replay')}
+              chartTheme={chartTheme}
+            />
+            <RailButton
+              icon={ActiveToolIcon}
+              active={activeGroup === 'tools' || Boolean(tool)}
+              title="Drawing Tools"
+              onClick={() => toggleGroup('tools')}
+              chartTheme={chartTheme}
+            />
+            <RailButton
+              icon={Wallet}
+              active={activeGroup === 'backtest'}
+              title="Enter Position"
+              onClick={() => toggleGroup('backtest')}
+              chartTheme={chartTheme}
+            />
+          </>
+        )}
+        {groupedWorkspaceRail && (
+          <RailButton
+            icon={Wallet}
+            active={activeGroup === 'backtest'}
+            title="Enter Position"
+            onClick={() => toggleGroup('backtest')}
+            chartTheme={chartTheme}
+          />
+        )}
         <RailButton
           icon={Palette}
           active={activeGroup === 'tool-editor'}
@@ -1193,6 +1276,15 @@ export default function ReplayPanel({
           onClick={() => toggleGroup('tool-editor')}
           chartTheme={chartTheme}
         />
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
+          <RailButton
+            icon={Trash2}
+            disabled={!drawings.length}
+            title="Clear Drawings"
+            onClick={onClearDrawings}
+            chartTheme={chartTheme}
+          />
+        )}
         <div
           className={`h-1.5 w-full rounded-full ${
             drawingSaveStatus === 'saving'
@@ -1218,28 +1310,76 @@ export default function ReplayPanel({
         />
       </div>
 
-      {activeGroup === 'replay' && (
+      {(fullscreenDrawingOnly || groupedWorkspaceRail) && TOOL_GROUPS.map((group) => (
+        activeGroup === `tools:${group.name}` ? (
+          <div key={group.name} className="pointer-events-auto">
+            <Flyout title={group.name} icon={TOOL_BUTTONS.find((item) => item.type === group.tools[0])?.icon} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
+              <div className="grid grid-cols-1 gap-2">
+                {group.tools.map((toolType) => {
+                  const item = TOOL_BUTTONS.find((candidate) => candidate.type === toolType);
+                  if (!item) return null;
+                  return (
+                    <ControlButton
+                      key={item.type}
+                      icon={item.icon}
+                      onClick={() => handleToolChange(item.type)}
+                      active={tool === item.type}
+                      className="w-full justify-start"
+                      chartTheme={chartTheme}
+                    >
+                      {item.label}
+                    </ControlButton>
+                  );
+                })}
+              </div>
+            </Flyout>
+          </div>
+        ) : null
+      ))}
+
+      {!fullscreenDrawingOnly && activeGroup === 'replay' && (
         <div className="pointer-events-auto">
           <Flyout title="Replay" icon={Play} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
             {!replayMode && (
-              <ControlButton icon={Crosshair} onClick={onToggleReplayPricePick} variant={isReplayPricePickActive ? 'warning' : 'primary'} className="w-full" chartTheme={chartTheme}>
-                {isReplayPricePickActive ? 'Click Chart to Start' : 'Start Replay'}
+              <ControlButton
+                icon={replayAccessStatus === 'checking-access' ? LoaderCircle : Crosshair}
+                onClick={onToggleReplayPricePick}
+                disabled={replayAccessStatus === 'checking-access'}
+                variant={isReplayPricePickActive ? 'warning' : 'primary'}
+                className="w-full"
+                chartTheme={chartTheme}
+              >
+                {replayAccessStatus === 'checking-access'
+                  ? 'Checking replay access…'
+                  : isReplayPricePickActive
+                    ? 'Click a candle to start'
+                    : 'Start Replay'}
               </ControlButton>
             )}
 
+            {replayAccessError && (
+              <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-[11px] text-red-400">
+                <div>{replayAccessError}</div>
+                <button type="button" onClick={onRetryReplayAccess} className="mt-1 font-semibold underline">
+                  Try again
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-2">
-              <ControlButton icon={SkipBack} onClick={onStepBackward} className="px-0" title="Back" chartTheme={chartTheme}>
+              <ControlButton icon={SkipBack} onClick={onStepBackward} disabled={replayAccessStatus === 'checking-access'} className="px-0" title="Back" chartTheme={chartTheme}>
                 <span className="sr-only">Back</span>
               </ControlButton>
               <ControlButton
                 icon={isPlaying ? Pause : Play}
                 onClick={onTogglePlay}
+                disabled={replayAccessStatus === 'checking-access'}
                 variant="primary"
                 chartTheme={chartTheme}
               >
                 {isPlaying ? 'Pause' : 'Play'}
               </ControlButton>
-              <ControlButton icon={SkipForward} onClick={onStepForward} className="px-0" title="Forward" chartTheme={chartTheme}>
+              <ControlButton icon={SkipForward} onClick={onStepForward} disabled={replayAccessStatus === 'checking-access'} className="px-0" title="Forward" chartTheme={chartTheme}>
                 <span className="sr-only">Forward</span>
               </ControlButton>
             </div>
@@ -1262,6 +1402,7 @@ export default function ReplayPanel({
             <ControlButton
               icon={Crosshair}
               onClick={onToggleReplayPricePick}
+              disabled={replayAccessStatus === 'checking-access'}
               active={isReplayPricePickActive}
               variant={isReplayPricePickActive ? 'warning' : 'neutral'}
               className="w-full"
@@ -1275,6 +1416,13 @@ export default function ReplayPanel({
                 ? `Candle ${Math.min(replayIndex + 1, candleCount)} / ${candleCount}`
                 : `Live candles ${candleCount}`}
             </div>
+
+            {!replayMode && (
+              <div className={`flex h-7 items-center justify-center gap-2 rounded-md border px-2 text-[11px] ${isDarkTheme ? 'border-gray-700 bg-black-table-color text-gray-300' : 'border-slate-300 text-slate-600'}`}>
+                <span className={`h-2 w-2 rounded-full ${liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`} />
+                {liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}
+              </div>
+            )}
 
             <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
               <div className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>
@@ -1299,7 +1447,7 @@ export default function ReplayPanel({
         </div>
       )}
 
-      {activeGroup === 'tools' && (
+      {!fullscreenDrawingOnly && !groupedWorkspaceRail && activeGroup === 'tools' && (
         <div className="pointer-events-auto">
           <Flyout
             title="Tools"
@@ -1354,11 +1502,26 @@ export default function ReplayPanel({
       )}
 
       {activeGroup === 'backtest' && (
-        <div className="pointer-events-auto">
+        <>
+        {fullscreenDrawingOnly && (
+          <button
+            type="button"
+            className="pointer-events-auto fixed inset-0 z-[81] cursor-default bg-black/20"
+            onClick={() => {
+              setActiveGroup(null);
+              onFullscreenEntryPanelOpenChange?.(false);
+            }}
+            aria-label="Close Enter Position"
+          />
+        )}
+        <div className={`pointer-events-auto ${fullscreenDrawingOnly ? 'fixed right-2 top-14 z-[82]' : ''}`}>
           <Flyout
             title="Enter Position"
             icon={Wallet}
-            onClose={() => setActiveGroup(null)}
+            onClose={() => {
+              setActiveGroup(null);
+              onFullscreenEntryPanelOpenChange?.(false);
+            }}
             bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
             chartTheme={chartTheme}
           >
@@ -1689,6 +1852,7 @@ export default function ReplayPanel({
 
           </Flyout>
         </div>
+        </>
       )}
 
       {activeGroup === 'tool-editor' && hasToolEditor && (
