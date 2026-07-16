@@ -6,8 +6,10 @@ BacktradeLab is an educational simulation tool. It does not execute real trades,
 
 ## Documentation
 
-- [`docs/trading-chart-process.md`](docs/trading-chart-process.md) - architecture, chart and replay behavior, drawing tools, demo assets, authentication, subscriptions, and application workflows.
-- [`docs/production-readiness.md`](docs/production-readiness.md) - environment configuration, secrets, rate limits, storage, PayMongo rollout controls, verification, deployment, and launch checks.
+- [`docs/developer/README.md`](docs/developer/README.md) - complete developer handbook and feature index.
+- [`docs/developer/01-getting-started.md`](docs/developer/01-getting-started.md) - install and run the project from a fresh checkout.
+- [`docs/developer/02-project-architecture.md`](docs/developer/02-project-architecture.md) - Laravel, Inertia, React, database, and request-flow architecture.
+- [`docs/developer/deployment-and-production.md`](docs/developer/deployment-and-production.md) - production configuration, deployment, PayMongo rollout, and operational checks.
 
 ## Technology
 
@@ -60,4 +62,4 @@ php artisan serve
 - PayMongo secret and webhook keys must remain in deployment secrets and must never be exposed to frontend responses or committed to source control.
 - Production checkout is intentionally gated by live credentials and `PAYMONGO_LIVE_ENABLED=true`; enable it only after business, tax, invoicing, refund, consumer-protection, and provider requirements are satisfied.
 
-Review the production-readiness checklist before exposing the application to real users.
+Review the [deployment and production guide](docs/developer/deployment-and-production.md) before exposing the application to real users.
