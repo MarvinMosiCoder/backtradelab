@@ -270,8 +270,8 @@ function TopToolEditorBar({
 
   const isDark = chartTheme?.mode !== 'light';
   const menuPanelClass = isDark
-    ? 'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-gray-700 bg-skin-black/95 p-3 text-white shadow-2xl backdrop-blur'
-    : 'absolute left-0 top-10 z-50 w-[min(300px,calc(100vw-2rem))] rounded-lg border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl backdrop-blur';
+    ? 'absolute left-1/2 top-10 z-50 w-[min(300px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-gray-700 bg-skin-black/95 p-3 text-white shadow-2xl backdrop-blur'
+    : 'absolute left-1/2 top-10 z-50 w-[min(300px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl backdrop-blur';
   const editorBadgeClass = isDark
     ? 'bg-black-table-color text-gray-200'
     : 'border border-slate-200 bg-slate-50 text-slate-700';
@@ -308,9 +308,10 @@ function TopToolEditorBar({
 
   return (
     <div
-      className="pointer-events-auto ml-2 rounded-lg border p-1.5 shadow-2xl backdrop-blur"
+      className="pointer-events-auto absolute top-2 z-[60] w-max -translate-x-1/2 rounded-lg border p-1.5 shadow-2xl backdrop-blur"
       style={{
         ...getPanelStyle(chartTheme),
+        left: 'calc(50% + 24px)',
         maxWidth: `${Math.max(Number(availableWidth) || 140, 140)}px`,
       }}
     >
@@ -1210,7 +1211,7 @@ export default function ReplayPanel({
         }`}
         style={getPanelStyle(chartTheme)}
       >
-        {(fullscreenDrawingOnly || groupedWorkspaceRail) && !fullscreenDrawingOnly && (
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
           <RailButton
             icon={Play}
             active={activeGroup === 'replay' || replayMode || isPlaying}
@@ -1337,7 +1338,7 @@ export default function ReplayPanel({
         ) : null
       ))}
 
-      {!fullscreenDrawingOnly && activeGroup === 'replay' && (
+      {activeGroup === 'replay' && (
         <div className="pointer-events-auto">
           <Flyout title="Replay" icon={Play} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
             {!replayMode && (

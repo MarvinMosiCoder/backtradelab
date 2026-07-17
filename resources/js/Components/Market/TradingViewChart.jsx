@@ -4984,7 +4984,7 @@ export default function TradingViewReplayChart({
           )}
 
           <ReplayPanel
-            className={isFullscreen ? 'fixed bottom-0 left-0 top-12 z-[70]' : 'absolute -left-12 bottom-0 top-0 z-50'}
+            className={isFullscreen ? 'fixed bottom-0 left-0 right-0 top-12 z-[70]' : 'absolute -left-12 bottom-0 right-0 top-0 z-50'}
             fullscreenDrawingOnly={isFullscreen}
             groupedWorkspaceRail={!isFullscreen}
             fullscreenEntryPanelOpen={isFullscreenEntryPanelOpen}
