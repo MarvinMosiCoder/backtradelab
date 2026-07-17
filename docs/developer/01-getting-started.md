@@ -45,6 +45,37 @@ php artisan serve
 
 Laragon users may use the generated local virtual host instead of `artisan serve`. `APP_URL` must match the URL used by OAuth callbacks and PayMongo return URLs.
 
+## Local HTTPS tunnel testing
+
+An HTTPS tunnel such as ngrok is useful for testing OAuth callbacks and PayMongo webhooks against a local server. Start Laravel on port 8000, then forward the same port:
+
+```bash
+php artisan serve --host=127.0.0.1 --port=8000
+ngrok http 8000
+```
+
+Use the assigned HTTPS origin consistently in the local environment:
+
+```env
+APP_URL=https://example.ngrok-free.app
+ASSET_URL=https://example.ngrok-free.app
+GOOGLE_REDIRECT_URI="${APP_URL}/auth/google/callback"
+SESSION_SECURE_COOKIE=true
+```
+
+Register `${APP_URL}/auth/google/callback` as an authorized Google redirect URI and `${APP_URL}/webhooks/paymongo` as the PayMongo webhook endpoint. Free tunnel hostnames may change after restart, so update both provider consoles and the local environment when they do.
+
+Laravel must trust the tunnel's forwarded HTTPS headers or successful logins can redirect to an insecure `http://` URL. For local tunnel testing, set `protected $proxies = '*';` in `app/Http/Middleware/TrustProxies.php`. This wildcard is a local-development convenience; production should trust only its known proxy/load-balancer path and prevent untrusted clients from spoofing forwarded headers.
+
+Use compiled frontend assets with a single Laravel tunnel:
+
+```bash
+npm run build
+php artisan optimize:clear
+```
+
+Stop the Vite development server and remove a stale `public/hot` marker if Laravel still emits `localhost:5173` asset URLs. Otherwise, expose and configure Vite separately for HTTPS/HMR.
+
 ## Optional integrations
 
 Configure only the integration being tested:

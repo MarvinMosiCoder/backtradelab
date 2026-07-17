@@ -27,6 +27,8 @@ Replay/backtesting access comes from a one-time seven-day trial or paid duration
 
 Checkout creation is guarded by `PAYMONGO_ENABLED`, mode/key compatibility, eligible methods, and the explicit live-production gate.
 
+For local development only, `PAYMONGO_TEST_BYPASS_CAPABILITIES=true` skips the merchant-capability lookup when `PAYMONGO_MODE=test` and the application environment is not production. Checkout still uses PayMongo's real test API, which may reject methods that the account cannot use. The bypass never applies to live mode or production and must be disabled after PayMongo enables the account capabilities.
+
 ## Data and security
 
 - `subscription_plans`: server-controlled selectable products.
@@ -44,6 +46,7 @@ Never expose secret/webhook keys to React. Never trust amount, duration, paid st
 - Duplicate submission token returns the same transaction.
 - Success, failure, abandonment, delayed/duplicate/missed webhook.
 - Signature age/body validation and provider amount/currency/mode match.
+- Test capability bypass is opt-in, avoids the capability request, and cannot activate in live mode or production.
 - Admin reconciliation and scheduler command.
 
 Related: [Replay](replay-and-progress.md), [Deployment](deployment-and-production.md).

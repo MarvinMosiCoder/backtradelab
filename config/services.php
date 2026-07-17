@@ -53,6 +53,7 @@ return [
         'secret_key' => env('PAYMONGO_SECRET_KEY'),
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
         'payment_methods' => array_values(array_filter(array_map('trim', explode(',', env('PAYMONGO_PAYMENT_METHODS', 'card,gcash'))))),
+        'test_bypass_capabilities' => env('PAYMONGO_TEST_BYPASS_CAPABILITIES', false),
         'live_enabled' => env('PAYMONGO_LIVE_ENABLED', false),
         'base_url' => env('PAYMONGO_BASE_URL', 'https://api.paymongo.com/v1'),
         'signature_tolerance' => (int) env('PAYMONGO_SIGNATURE_TOLERANCE', 300),

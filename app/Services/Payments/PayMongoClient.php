@@ -69,6 +69,11 @@ class PayMongoClient
     public function eligibleMethods(): array
     {
         $this->assertAvailable();
+
+        if ($this->shouldBypassCapabilities()) {
+            return $this->configuredMethods();
+        }
+
         $response = $this->request()->get('merchants/capabilities/payment_methods');
         $this->throwForFailure($response->successful(), $response->json());
 
@@ -150,6 +155,13 @@ class PayMongoClient
             (array) config('services.paymongo.payment_methods', ['card', 'gcash']),
             fn ($method) => in_array($method, ['card', 'gcash'], true)
         )));
+    }
+
+    private function shouldBypassCapabilities(): bool
+    {
+        return (bool) config('services.paymongo.test_bypass_capabilities')
+            && $this->mode() === 'test'
+            && !app()->environment('production');
     }
 
     private function request(): PendingRequest
