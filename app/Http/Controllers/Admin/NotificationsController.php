@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use App\Models\AdmModels\AdmNotifications;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
+use App\Models\Announcement;
+use App\Models\MarketPriceAlert;
 class NotificationsController extends Controller{
 
     private $sortBy;
@@ -42,6 +44,11 @@ class NotificationsController extends Controller{
 
     public function markAsRead(Request $request)
     {
+        if ($request->input('source_type') === 'announcement') {
+            $announcement = Announcement::where('status', 'ACTIVE')->findOrFail($request->integer('notification_id'));
+            $request->user()->announcements()->syncWithoutDetaching([$announcement->id]);
+            return response()->json(['message' => 'Read successfully!', 'status' => 'success']);
+        }
         $notification = AdmNotifications::where('id', $request['notification_id'])
             ->where('adm_user_id', CommonHelpers::myId())
             ->firstOrFail();
@@ -52,24 +59,56 @@ class NotificationsController extends Controller{
 
     public function getLatestNotif()
     {
-        $notifications = Auth::user()->notifications()->orderBy('created_at','DESC')->get();
+        $user = Auth::user();
+        $notifications = $user->notifications()->orderBy('created_at','DESC')->limit(20)->get();
         $unread_notifications = Auth::user()->notifications()->where('is_read', 0)->orderBy('created_at','DESC')->count();
+        $unreadAnnouncements = Announcement::where('status', 'ACTIVE')->whereDoesntHave('admUsers', fn ($query) => $query->where('adm_user_id', $user->id))->count();
         return response()->json(['notifications'=> $notifications,
-                            'unread_notifications' => $unread_notifications]);
+                            'unread_notifications' => $unread_notifications + $unreadAnnouncements,
+                            'alert_sound_enabled' => (bool) $user->alert_sound_enabled]);
     }
 
     public function viewNotification($id){
         $data = [];
         $data['page_title'] = 'View Notification';
-        $data['notification'] = AdmNotifications::where('id', $id)->firstOrFail();
+        $data['notification'] = AdmNotifications::where('id', $id)->where('adm_user_id', Auth::id())->firstOrFail();
         return Inertia::render('AdmVram/NotificationView', $data);
     }
 
     public function viewAllNotification(Request $request){
         $data = [];
         $data['page_title'] = 'View All Notification';
-        $data['notifications'] = AdmNotifications::where('adm_user_id', CommonHelpers::myId())->get();
+        $user = $request->user();
+        $readAnnouncementIds = $user->announcements()->pluck('announcements.id');
+        $notifications = AdmNotifications::where('adm_user_id', $user->id)->latest()->get()->map(fn ($item) => [
+            'key' => 'notification:'.$item->id, 'id' => $item->id, 'source_type' => 'notification',
+            'type' => $item->type, 'content' => $item->content, 'is_read' => (bool) $item->is_read,
+            'created_at' => $item->created_at, 'metadata' => $item->metadata,
+        ]);
+        $announcements = Announcement::where('status', 'ACTIVE')->latest()->get()->map(fn ($item) => [
+            'key' => 'announcement:'.$item->id, 'id' => $item->id, 'source_type' => 'announcement',
+            'type' => 'announcement', 'content' => $item->title.' — '.$item->message,
+            'is_read' => $readAnnouncementIds->contains($item->id), 'created_at' => $item->created_at, 'metadata' => null,
+        ]);
+        $data['notifications'] = $notifications->concat($announcements)->sortByDesc('created_at')->values();
+        $data['activeAlerts'] = MarketPriceAlert::where('adm_user_id', $user->id)->where('status', 'active')->latest()->get();
+        $data['alertSoundEnabled'] = (bool) $user->alert_sound_enabled;
         return Inertia::render('AdmVram/NotificationsViewAll', $data);
+    }
+
+    public function markAllAsRead(Request $request)
+    {
+        $request->user()->notifications()->where('is_read', false)->update(['is_read' => true]);
+        $ids = Announcement::where('status', 'ACTIVE')->pluck('id');
+        $request->user()->announcements()->syncWithoutDetaching($ids);
+        return response()->json(['success' => true]);
+    }
+
+    public function updatePreferences(Request $request)
+    {
+        $data = $request->validate(['alert_sound_enabled' => ['required', 'boolean']]);
+        $request->user()->forceFill($data)->save();
+        return response()->json(['success' => true, ...$data]);
     }
 
 }

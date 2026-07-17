@@ -37,3 +37,8 @@ Only a valid normalized candle should change the UI to `Live`. Repeated timestam
 - Duplicate/older timestamps and volume values are safe.
 
 Related: [Market data](market-data-and-symbols.md), [Trading chart](trading-chart.md).
+# Initial history readiness
+
+Live candles are buffered until the matching REST history request completes. The loading skeleton remains visible until at least two valid historical candles are available, preventing a one-candle chart flash during exchange connection or market/timeframe changes. RSI and MACD pane sizes are calculated from the fixed chart viewport, so candle updates do not grow the chart.
+
+The current mode (`Replay`, `Live`, `Connecting`, `Reconnecting`, or `Polling`) is displayed at the chart's bottom-right.

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
-import { AlertTriangle, BarChart3, BookOpen, LogOut, Menu, Moon, RefreshCw, Search, Sun, Wallet, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bell, LogOut, Menu, Moon, RefreshCw, Search, Sun, Wallet, X } from 'lucide-react';
 import axios from 'axios';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 import { useSidebar } from '../../Context/SidebarContext';
@@ -20,6 +20,8 @@ export default function TraderNavbar() {
     const [assetsAccount, setAssetsAccount] = useState(null);
     const [assetsLoading, setAssetsLoading] = useState(false);
     const [assetsError, setAssetsError] = useState('');
+    const [startingBalance, setStartingBalance] = useState('10000');
+    const [unreadNotifications, setUnreadNotifications] = useState(0);
     const [activeSymbol, setActiveSymbol] = useState(() => {
         try {
             return JSON.parse(localStorage.getItem(`backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`) || 'null');
@@ -35,6 +37,27 @@ export default function TraderNavbar() {
             .then((payload) => setSymbols(Array.isArray(payload.symbols) ? payload.symbols : []))
             .catch(() => setSymbols([]));
     }, []);
+
+    useEffect(() => {
+        let stopped = false, initialized = false;
+        const poll = async () => {
+            try {
+                const { data } = await axios.get('/notifications');
+                if (stopped) return;
+                setUnreadNotifications(Number(data.unread_notifications) || 0);
+                const ids = (data.notifications ?? []).filter(item => item.type === 'price alert').map(item => Number(item.id)).filter(Number.isFinite);
+                const newest = Math.max(0, ...ids), key = `backtradelab-last-alert-notification:${auth?.user?.id}`;
+                const previous = Number(localStorage.getItem(key) || 0);
+                if (initialized && data.alert_sound_enabled && newest > previous) {
+                    try { const ctx = new AudioContext(); const oscillator = ctx.createOscillator(); oscillator.connect(ctx.destination); oscillator.frequency.value = 880; oscillator.start(); oscillator.stop(ctx.currentTime + .18); } catch {}
+                }
+                if (newest) localStorage.setItem(key, String(Math.max(previous, newest)));
+                initialized = true;
+            } catch {}
+        };
+        poll(); const timer = window.setInterval(poll, 5000);
+        return () => { stopped = true; window.clearInterval(timer); };
+    }, [auth?.user?.id]);
 
     useEffect(() => {
         const syncSymbols = (event) => setSymbols(Array.isArray(event.detail) ? event.detail : []);
@@ -98,6 +121,7 @@ export default function TraderNavbar() {
                 headers: { Accept: 'application/json' },
             });
             setAssetsAccount(response.data?.account ?? null);
+            setStartingBalance(String(response.data?.account?.startingBalance ?? 10000));
         } catch (error) {
             setAssetsError(error.response?.data?.message ?? 'Unable to load demo assets.');
         } finally {
@@ -114,12 +138,14 @@ export default function TraderNavbar() {
     };
 
     const resetDemoAccount = async () => {
-        if (!window.confirm('Reset Demo Account to 10,000 USDT? This deletes its positions and trade history.')) return;
+        const amount = Number(startingBalance);
+        if (!Number.isFinite(amount) || amount < 1 || amount > 1000000000) { setAssetsError('Starting balance must be between 1 and 1,000,000,000.'); return; }
+        if (!window.confirm(`Reset Demo Account to ${amount.toLocaleString()} USDT? This deletes cash history, PnL, positions, and demo trades.`)) return;
 
         setAssetsLoading(true);
         setAssetsError('');
         try {
-            const response = await axios.post('/market-backtest/reset', { starting_balance: 10000 });
+            const response = await axios.post('/market-backtest/reset', { starting_balance: amount });
             const nextAccount = response.data?.account ?? null;
             setAssetsAccount(nextAccount);
             window.dispatchEvent(new CustomEvent('backtradelab-backtest-account-external-change', { detail: nextAccount }));
@@ -168,16 +194,13 @@ export default function TraderNavbar() {
                 </select>
             </div>
 
-            <nav className="ml-auto hidden items-center gap-1 md:flex">
-                <Link href="/dashboard" className="flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold hover:bg-white/10">
-                    <BarChart3 size={14} /> Chart
-                </Link>
-                <Link href="/trade-report" className="flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold hover:bg-white/10">
-                    <BookOpen size={14} /> Journal
-                </Link>
-            </nav>
+            <div className="ml-auto" />
 
             <div className={`ml-2 flex items-center gap-1 border-l pl-2 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                <Link href="/notifications/view-all-notifications" className="relative rounded-md p-2 hover:bg-white/10" title="Notifications" aria-label="Notifications">
+                    <Bell size={17} />
+                    {unreadNotifications > 0 && <span className="absolute right-0 top-0 flex min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span>}
+                </Link>
                 <div className="relative">
                     <button
                         type="button"
@@ -244,6 +267,7 @@ export default function TraderNavbar() {
                                             </div>
                                         </div>
 
+                                        <label className="block"><span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-[#787b86]">Override starting balance</span><input type="number" min="1" max="1000000000" step="0.01" value={startingBalance} onChange={event => setStartingBalance(event.target.value)} className={`h-9 w-full rounded-md border bg-transparent px-3 text-sm ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`} /></label>
                                         <button type="button" onClick={resetDemoAccount} disabled={assetsLoading} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-red-500/30 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-50"><RefreshCw size={14} /> Reset Demo Account</button>
                                     </>
                                 )}

@@ -13,8 +13,14 @@ class AdmNotifications extends Model
         'adm_user_id',
         'type',
         'content',
+        'url',
         'is_read',
+        'source_type',
+        'source_id',
+        'metadata',
     ];
+
+    protected $casts = ['is_read' => 'boolean', 'metadata' => 'array'];
 
     public function scopeGetAllNotifications($query){
         return $query->leftJoin('adm_users','adm_notifications.adm_user_id','adm_users.id')

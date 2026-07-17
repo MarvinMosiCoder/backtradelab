@@ -71,6 +71,10 @@ Route::get('/auth/{provider}/callback', [LoginController::class, 'handleProvider
     ->whereIn('provider', ['google', 'facebook'])
     ->middleware('throttle:social-callback')
     ->name('social.callback');
+Route::get('/social-registration/confirm', [LoginController::class, 'showSocialRegistration'])->name('social.registration.confirm');
+Route::post('/social-registration/confirm', [LoginController::class, 'completeSocialRegistration'])
+    ->middleware('throttle:social-login')->name('social.registration.complete');
+Route::delete('/social-registration/confirm', [LoginController::class, 'cancelSocialRegistration'])->name('social.registration.cancel');
 Route::get('/appname', [SettingsController::class, 'getAppname'])->name('app-name');
 Route::get('/applogo', [SettingsController::class, 'getApplogo'])->name('app-logo');
 Route::get('/login-details', [SettingsController::class, 'getLoginDetails'])->name('app-login-details');
@@ -111,9 +115,8 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/market-tool-settings', [MarketToolSettingController::class, 'show'])->name('market-tool-settings.show');
     Route::put('/market-tool-settings', [MarketToolSettingController::class, 'update'])->name('market-tool-settings.update');
     Route::get('/market-price-alerts', [MarketPriceAlertController::class, 'index']);
-    Route::post('/market-price-alerts', [MarketPriceAlertController::class, 'store'])->middleware('throttle:market-write');
-    Route::post('/market-price-alerts/check', [MarketPriceAlertController::class, 'check'])->middleware('throttle:market-write');
-    Route::delete('/market-price-alerts/{marketPriceAlert}', [MarketPriceAlertController::class, 'destroy'])->middleware('throttle:market-write');
+    Route::post('/market-price-alerts', [MarketPriceAlertController::class, 'store'])->middleware('throttle:price-alert-write');
+    Route::delete('/market-price-alerts/{marketPriceAlert}', [MarketPriceAlertController::class, 'destroy'])->middleware('throttle:price-alert-write');
     Route::get('/replay-access', [ReplayAccessController::class, 'status']);
     Route::post('/replay-trial/activate', [ReplayAccessController::class, 'activateTrial'])->middleware('throttle:market-write');
     Route::get('/subscription-plans', [ReplayAccessController::class, 'plans']);
@@ -216,6 +219,8 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     //NOTIFICATION
     Route::get('/notifications', [NotificationsController::class, 'getLatestNotif'])->name('latest-notif');
     Route::post('/notifications/read', [NotificationsController::class, 'markAsRead'])->name('notification-read');
+    Route::post('/notifications/read-all', [NotificationsController::class, 'markAllAsRead'])->name('notification-read-all');
+    Route::patch('/notification-preferences', [NotificationsController::class, 'updatePreferences'])->name('notification-preferences');
     Route::get('/notifications/view-notification/{id}', [NotificationsController::class, 'viewNotification'])->name('view-notification');
     Route::get('/notifications/view-all-notifications', [NotificationsController::class, 'viewAllNotification'])->name('view-all-notifications');
     //FILTER

@@ -44,3 +44,11 @@ After documentation changes:
 - Migrations roll forward cleanly.
 - Build/tests pass.
 - Relevant feature guide and [file reference](file-reference.md) are updated.
+# Trading and alert regression checks
+
+- Confirm ready-tool selections persist across login/device reload and every new drawing can be selected, resized, moved, duplicated, saved, and restored.
+- Confirm preset name collisions require overwrite approval and range labels calculate correctly.
+- Switch markets while a live update arrives and confirm the skeleton remains until the full history response.
+- Leave RSI/MACD open through live updates and fullscreen transitions and confirm pane heights remain stable.
+- Run `php artisan market-alerts:monitor --once --force` with test alerts and mocked exchange responses; verify trigger idempotency, cancellation, notification ownership, and failed-market backoff.
+- Test known/unknown Google and Facebook identities, consent/cancel/expiry, two-step email errors, active subscription read-only behavior, and custom demo reset amounts.

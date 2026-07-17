@@ -50,3 +50,6 @@ Never expose secret/webhook keys to React. Never trust amount, duration, paid st
 - Admin reconciliation and scheduler command.
 
 Related: [Replay](replay-and-progress.md), [Deployment](deployment-and-production.md).
+# Active-access plan display
+
+`/replay-access` returns `activeAccess` with `kind`, paid `plan` when applicable, and `endsAt`. An active trial or paid entitlement makes the plans modal read-only and the active trial/plan is highlighted. Checkout creation enforces the same rule with HTTP 409 until access expires. PayMongo verification, reconciliation, and webhook entitlement rules are unchanged.

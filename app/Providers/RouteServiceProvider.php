@@ -33,6 +33,10 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(15)->by(optional($request->user())->id ?: $request->ip());
         });
 
+        RateLimiter::for('price-alert-write', function (Request $request) {
+            return Limit::perMinute(30)->by(optional($request->user())->id ?: $request->ip());
+        });
+
         RateLimiter::for('backtest-read', function (Request $request) {
             return Limit::perMinute(180)->by($request->user()?->id ?: $request->ip());
         });

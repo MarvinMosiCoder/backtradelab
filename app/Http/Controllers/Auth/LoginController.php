@@ -116,39 +116,14 @@ class LoginController extends Controller
         })->first();
 
         if (!$users) {
-            $defaultPrivilegeId = DB::table('adm_privileges')
-                ->where(function ($query) {
-                    $query->where('is_superadmin', 0)->orWhereNull('is_superadmin');
-                })
-                ->orderBy('id')
-                ->value('id');
-
-            if (!$defaultPrivilegeId) {
-                Log::error('Social account creation failed: no non-superadmin privilege exists', [
-                    'provider' => $provider,
-                    'email' => $email,
-                ]);
-
-                return redirect('login')->withErrors([
-                    'message' => 'Unable to create your account because no trader role is configured. Please contact Administrator!',
-                ]);
-            }
-
-            $userId = DB::table('adm_users')->insertGetId([
+            $request->session()->put('pending_social_registration', [
+                'provider' => $provider,
+                'provider_id' => $providerId,
                 'name' => $socialUser->getName() ?: Str::before($email, '@'),
-                'email' => $email,
-                'email_verified_at' => now(),
-                'password' => Hash::make(Str::random(64)),
-                'id_adm_privileges' => $defaultPrivilegeId,
-                'status' => 'ACTIVE',
-                'social_provider' => $provider,
-                'social_provider_id' => $providerId,
-                'password_login_enabled' => false,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'email' => Str::lower($email),
+                'created_at' => now()->timestamp,
             ]);
-
-            $users = AdmUser::findOrFail($userId);
+            return redirect()->route('social.registration.confirm');
         }
 
         [$error, $session_details] = $this->validateLoginUser($users);
@@ -169,6 +144,70 @@ class LoginController extends Controller
         $this->completeLogin($request, $users, $session_details, true);
 
         return redirect()->intended($this->loginDestination($session_details));
+    }
+
+    public function showSocialRegistration(Request $request): Response|RedirectResponse
+    {
+        $pending = $this->pendingSocialRegistration($request);
+        if (!$pending) return redirect('login')->withErrors(['message' => 'Your social registration session expired. Please try again.']);
+
+        return Inertia::render('Auth/SocialRegistrationConfirm', [
+            'pending' => ['provider' => $pending['provider'], 'name' => $pending['name'], 'email' => $pending['email']],
+            'legal' => config('legal'),
+        ]);
+    }
+
+    public function completeSocialRegistration(Request $request): RedirectResponse
+    {
+        $request->validate(['accepted' => ['accepted']]);
+        $pending = $this->pendingSocialRegistration($request);
+        if (!$pending) return redirect('login')->withErrors(['message' => 'Your social registration session expired. Please try again.']);
+
+        $existing = AdmUser::where('email', $pending['email'])->first();
+        if ($existing) {
+            $request->session()->forget('pending_social_registration');
+            return redirect('login')->withErrors(['message' => 'An account now exists for this email. Please sign in again.']);
+        }
+        $defaultPrivilegeId = DB::table('adm_privileges')->where(fn ($query) => $query
+            ->where('is_superadmin', 0)->orWhereNull('is_superadmin'))->orderBy('id')->value('id');
+        if (!$defaultPrivilegeId) return back()->withErrors(['accepted' => 'No trader role is configured. Please contact Administrator.']);
+
+        $now = now();
+        $userId = DB::table('adm_users')->insertGetId([
+            'name' => $pending['name'], 'email' => $pending['email'], 'email_verified_at' => $now,
+            'password' => Hash::make(Str::random(64)), 'id_adm_privileges' => $defaultPrivilegeId,
+            'status' => 'ACTIVE', 'social_provider' => $pending['provider'],
+            'social_provider_id' => $pending['provider_id'], 'password_login_enabled' => false,
+            'terms_accepted_at' => $now, 'privacy_accepted_at' => $now,
+            'legal_effective_date' => config('legal.effective_date'), 'created_at' => $now, 'updated_at' => $now,
+        ]);
+        $user = AdmUser::findOrFail($userId);
+        [$error, $sessionDetails] = $this->validateLoginUser($user);
+        if ($error) return redirect('login')->withErrors(['message' => $error]);
+
+        $request->session()->forget('pending_social_registration');
+        Auth::login($user);
+        $request->session()->regenerate();
+        $this->completeLogin($request, $user, $sessionDetails, true);
+        return redirect()->intended($this->loginDestination($sessionDetails));
+    }
+
+    public function cancelSocialRegistration(Request $request): RedirectResponse
+    {
+        $request->session()->forget('pending_social_registration');
+        return redirect()->route('login');
+    }
+
+    private function pendingSocialRegistration(Request $request): ?array
+    {
+        $pending = $request->session()->get('pending_social_registration');
+        if (!is_array($pending) || !isset($pending['provider'], $pending['provider_id'], $pending['email'], $pending['created_at'])
+            || !in_array($pending['provider'], ['google', 'facebook'], true)
+            || now()->timestamp - (int) $pending['created_at'] > 900) {
+            $request->session()->forget('pending_social_registration');
+            return null;
+        }
+        return $pending;
     }
 
     private function loginDestination(?array $sessionDetails = null): string

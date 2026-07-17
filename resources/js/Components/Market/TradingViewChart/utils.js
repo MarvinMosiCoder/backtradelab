@@ -252,6 +252,7 @@ export function isTwoPointDrawing(drawing) {
   return [
     'line',
     'horizontal-ray',
+    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
     'fib-retracement',
     'fib-extension',
     'rect',
@@ -259,6 +260,7 @@ export function isTwoPointDrawing(drawing) {
     'forecast',
     'long-position',
     'short-position',
+    'price-range', 'date-range', 'price-date-range',
   ].includes(drawing?.type);
 }
 
@@ -266,6 +268,7 @@ export function isLineLikeDrawing(drawing) {
   return [
     'line',
     'horizontal-ray',
+    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
     'fib-retracement',
     'fib-extension',
     'measure',
@@ -274,7 +277,7 @@ export function isLineLikeDrawing(drawing) {
 }
 
 export function isHorizontalRayDrawing(drawing) {
-  return drawing?.type === 'horizontal-ray';
+  return ['horizontal-ray', 'horizontal-line'].includes(drawing?.type);
 }
 
 export function isPositionDrawing(drawing) {

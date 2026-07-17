@@ -69,6 +69,7 @@ class ReplayAccessController extends Controller
                 'requests' => SubscriptionRequest::where('adm_user_id', $user->id)
                     ->withCount('messages')->latest()->get()->map(fn ($payment) => $this->paymentPayload($payment)),
                 'checkout' => $this->checkouts->availability(),
+                'activeAccess' => $this->activeAccessPayload($user),
             ],
         ]);
     }
@@ -88,6 +89,7 @@ class ReplayAccessController extends Controller
             'accessEndsAt' => optional($user->replay_access_ends_at)->toIso8601String(),
             'latestRequest' => optional(SubscriptionRequest::where('adm_user_id', $user->id)->latest()->first(), fn ($payment) => $this->paymentPayload($payment)),
             'checkout' => $this->checkouts->availability(),
+            'activeAccess' => $this->activeAccessPayload($user),
         ]);
     }
 
@@ -132,6 +134,9 @@ class ReplayAccessController extends Controller
 
     public function createCheckout(Request $request)
     {
+        if ($this->activeAccessPayload($request->user())) {
+            return response()->json(['message' => 'Your replay access is already active. You can choose another plan after it expires.'], 409);
+        }
         $data = $request->validate(['plan' => 'required|string|max:50', 'submission_token' => 'required|uuid']);
         $plan = SubscriptionPlan::where('code', $data['plan'])->where('is_active', true)->firstOrFail();
 
@@ -277,6 +282,19 @@ class ReplayAccessController extends Controller
         ];
         if ($includeUser) $payload['user'] = $payment->user;
         return $payload;
+    }
+
+    private function activeAccessPayload(AdmUser $user): ?array
+    {
+        $paidActive = $user->replay_access_ends_at && now()->lte($user->replay_access_ends_at);
+        $trialActive = $user->replay_trial_ends_at && now()->lte($user->replay_trial_ends_at);
+        if (!$paidActive && !$trialActive) return null;
+        $payment = $paidActive ? SubscriptionRequest::where('adm_user_id', $user->id)
+            ->where('status', 'paid')->latest('paid_at')->first() : null;
+        return [
+            'kind' => $paidActive ? 'paid' : 'trial', 'plan' => $payment?->plan,
+            'endsAt' => optional($paidActive ? $user->replay_access_ends_at : $user->replay_trial_ends_at)->toIso8601String(),
+        ];
     }
 
     private function messagePayload(SubscriptionMessage $message, Request $request): array

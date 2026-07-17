@@ -39,6 +39,10 @@ class AdmUser extends Authenticatable
         'replay_trial_ends_at',
         'replay_access_ends_at',
         'chart_tour_completed_at',
+        'alert_sound_enabled',
+        'terms_accepted_at',
+        'privacy_accepted_at',
+        'legal_effective_date',
         'created_at',
         'updated_at'
     ];
@@ -75,6 +79,9 @@ class AdmUser extends Authenticatable
         'replay_access_ends_at' => 'datetime',
         'chart_tour_completed_at' => 'datetime',
         'deactivated_at' => 'datetime',
+        'alert_sound_enabled' => 'boolean',
+        'terms_accepted_at' => 'datetime',
+        'privacy_accepted_at' => 'datetime',
     ];
 
     public function scopeGetData($query){

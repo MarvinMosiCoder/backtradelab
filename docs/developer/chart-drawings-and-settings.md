@@ -40,3 +40,8 @@ Browser mirrors use scoped keys such as `replay-drawings:{userId}:{exchange}:{ca
 - Indicator panes do not receive drawing overlays.
 
 Related: [Trading chart](trading-chart.md), [Replay](replay-and-progress.md).
+# Ready tools and expanded drawing set
+
+Each left-rail drawing category has a ready-tool button and a separate list trigger. Choosing a tool updates that category's ready icon and saves `readyTools` through `/market-tool-settings`, with the existing per-user local fallback. The ready button activates the saved tool immediately.
+
+The chart supports lines, rays, arrows, horizontal/vertical lines, paths, Fibonacci tools, parallel channels, position/forecast tools, rectangles, annotations, and Price Range, Date Range, and Price & Date Range. Range labels show price/percentage movement, duration, and candle count as applicable. Saving a preset over an existing case-insensitive name requires confirmation.

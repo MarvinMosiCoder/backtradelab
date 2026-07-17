@@ -215,6 +215,16 @@ function getToolLabel(drawing) {
   return `${prefix}${formatSignedNumber(priceDelta)} (${formatSignedNumber(percentDelta)}%) | ${duration}`;
 }
 
+function getRangeLabel(drawing) {
+  const priceDelta = drawing.end.price - drawing.start.price;
+  const percent = drawing.start.price ? (priceDelta / drawing.start.price) * 100 : 0;
+  const duration = formatDuration(drawing.end.time - drawing.start.time);
+  const bars = Math.max(1, Math.round(Math.abs(drawing.end.time - drawing.start.time) / (TIMEFRAME_SECONDS[drawing.timeframe] ?? 60)));
+  if (drawing.type === 'price-range') return `${formatSignedNumber(priceDelta)} (${formatSignedNumber(percent)}%)`;
+  if (drawing.type === 'date-range') return `${duration} · ${bars} bars`;
+  return `${formatSignedNumber(priceDelta)} (${formatSignedNumber(percent)}%) · ${duration} · ${bars} bars`;
+}
+
 function getPositionGeometry(drawing) {
   const { p1, p2, pStop, pCurrent } = drawing.screen;
   const isLong = drawing.type === 'long-position';
@@ -636,6 +646,10 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                 ? '8,5'
                 : undefined;
 
+            if (d.type === 'parallel-channel' && d.screen.p3) {
+              const offsetX = d.screen.p3.x - d.screen.p2.x, offsetY = d.screen.p3.y - d.screen.p2.y;
+              return <g key={d.id}><polygon points={`${d.screen.p1.x},${d.screen.p1.y} ${d.screen.p2.x},${d.screen.p2.y} ${d.screen.p2.x + offsetX},${d.screen.p2.y + offsetY} ${d.screen.p1.x + offsetX},${d.screen.p1.y + offsetY}`} fill={colorToRgba(stroke, .12)} stroke="none"/><line x1={d.screen.p1.x} y1={d.screen.p1.y} x2={d.screen.p2.x} y2={d.screen.p2.y} stroke={stroke} strokeWidth={strokeWidth}/><line x1={d.screen.p1.x + offsetX} y1={d.screen.p1.y + offsetY} x2={d.screen.p2.x + offsetX} y2={d.screen.p2.y + offsetY} stroke={stroke} strokeWidth={strokeWidth}/></g>;
+            }
             return (
               <g key={d.id}>
                 {pathData && (
@@ -805,7 +819,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                     strokeDasharray={lineDashArray}
                   />
                 )}
-                {d.type === 'forecast' && (
+                {(d.type === 'forecast' || d.type === 'arrow') && (
                   <polygon
                     points={getArrowHeadPoints(d.screen.p1, d.screen.p2)}
                     fill={stroke}
@@ -977,7 +991,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
             );
           }
 
-          if (d.type === 'rect') {
+          if (['rect', 'price-range', 'date-range', 'price-date-range'].includes(d.type)) {
             const rect = normalizeVisibleRect(d.screen.p1, d.screen.p2);
             const labelText = d.labelText?.trim();
             const labelPosition = labelText ? getBoxLabelPosition(rect, d) : null;
@@ -996,13 +1010,14 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   height={rect.height}
                   fill={
                     d.id.startsWith('temp-')
-                      ? colorToRgba(drawingColor, 0.08)
-                      : colorToRgba(drawingColor, 0.16) || DRAWING_FILL
+                      ? colorToRgba(stroke, 0.08)
+                      : colorToRgba(stroke, 0.16) || DRAWING_FILL
                   }
                   stroke={stroke}
                   strokeWidth={strokeWidth}
                   strokeDasharray={rectDashArray}
                 />
+                {d.type !== 'rect' && !d.id.startsWith('temp-') && <text x={rect.left + 8} y={rect.top + 18} fill="#ffffff" fontSize="12" fontWeight="700" paintOrder="stroke" stroke="rgba(15,23,42,.95)" strokeWidth="4">{getRangeLabel(d)}</text>}
                 {labelText && !d.id.startsWith('temp-') && (
                   <text
                     x={labelPosition.x}

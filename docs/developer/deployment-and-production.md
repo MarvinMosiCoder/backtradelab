@@ -50,3 +50,27 @@ Validate available merchant payment methods; configuring `card,gcash` does not g
 - Confirm offline price alerts have a worker if advertised.
 
 Related: [Subscriptions](subscriptions-trials-and-paymongo.md), [Streaming](live-market-streaming.md).
+# Market alert worker
+
+Enable and supervise one long-running alert monitor:
+
+```ini
+[program:backtradelab-market-alerts]
+command=php /var/www/backtradelab/artisan market-alerts:monitor
+directory=/var/www/backtradelab
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stdout_logfile=/var/log/backtradelab-market-alerts.log
+redirect_stderr=true
+```
+
+Production environment:
+
+```env
+MARKET_ALERTS_ENABLED=true
+MARKET_ALERT_POLL_SECONDS=5
+```
+
+After deployment, run migrations before starting the worker. Only one worker should run unless alert-market partitioning is introduced.

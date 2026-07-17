@@ -21,6 +21,7 @@ const LoginPage = () => {
     const [errors, setErrors] = useState(initialErrors || {});
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [step, setStep] = useState('email');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [applogo, setApplogo] = useState('');
@@ -48,6 +49,14 @@ const LoginPage = () => {
 
     const handleSubmit = (event) => {
         event.preventDefault();
+        if (step === 'email') {
+            if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+                setErrors({ email: 'Enter a valid email address.' });
+                return;
+            }
+            setErrors({}); setStep('password');
+            return;
+        }
         setLoading(true);
 
         router.post(
@@ -58,8 +67,6 @@ const LoginPage = () => {
                     updateAuth(page.props.auth);
                 },
                 onError: (newErrors) => {
-                    if (newErrors.email) setEmail('');
-                    if (newErrors.password) setPassword('');
                     setErrors(newErrors);
                 },
                 onFinish: () => setLoading(false),
@@ -112,7 +119,7 @@ const LoginPage = () => {
                         </div>
 
                         <form onSubmit={handleSubmit}>
-                            <label className="mb-4 block">
+                            {step === 'email' && <label className="mb-4 block">
                                 <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</span>
                                 <div className={`flex h-11 items-center rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
                                     <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
@@ -129,9 +136,9 @@ const LoginPage = () => {
                                 {errors.email && (
                                     <span className="mt-1 block text-sm text-red-400">{errors.email}</span>
                                 )}
-                            </label>
+                            </label>}
 
-                            <label className="mb-2 block">
+                            {step === 'password' && <><div className={`mb-4 flex items-center justify-between rounded-md border px-3 py-2 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}><div><div className="text-[10px] uppercase tracking-wider text-slate-500">Email</div><div className="text-sm font-semibold">{email}</div></div><button type="button" onClick={() => { setStep('email'); setPassword(''); setErrors({}); }} className="text-xs font-bold text-[#5b8cff]">Edit</button></div><label className="mb-2 block">
                                 <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</span>
                                 <div className={`flex h-11 items-center rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
                                     <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
@@ -160,18 +167,18 @@ const LoginPage = () => {
                                 {errors.message && (
                                     <span className="mt-1 block text-sm text-red-400">{errors.message}</span>
                                 )}
-                            </label>
+                            </label></>}
 
                             <button
                                 type="submit"
                                 disabled={loading}
                                 className={`mt-5 h-11 w-full rounded-md px-4 font-poppins text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${isDark ? 'bg-white text-skin-black hover:bg-gray-200' : 'bg-skin-black text-white hover:bg-skin-black-light'}`}
                             >
-                                {loading ? 'Logging in, please wait...' : 'Sign in'}
+                                {loading ? 'Logging in, please wait...' : step === 'email' ? 'Continue' : 'Sign in'}
                             </button>
                         </form>
 
-                        <div className="my-5 flex items-center gap-3">
+                        {step === 'email' && <><div className="my-5 flex items-center gap-3">
                             <div className={`h-px flex-1 ${isDark ? 'bg-gray-700' : 'bg-slate-200'}`} />
                             <span className={`text-xs font-semibold uppercase tracking-wide ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>
                                 Or
@@ -199,18 +206,18 @@ const LoginPage = () => {
                                 <span className="font-poppins text-base font-bold">f</span>
                                 Facebook
                             </a>
-                        </div>
+                        </div></>}
 
                         <p className={`mt-4 text-center text-xs leading-5 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
                             By signing in, you agree to our <Link href="/terms-of-service" className="font-semibold text-[#5b8cff] hover:underline">Terms of Service</Link> and acknowledge our <Link href="/privacy-policy" className="font-semibold text-[#5b8cff] hover:underline">Privacy Policy</Link>.
                         </p>
 
-                        <div className={`mt-6 flex justify-center gap-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                        {step === 'password' && <div className={`mt-6 flex justify-center gap-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                             <span>Forgot Password?</span>
                             <Link href="reset_password" className={`font-bold ${isDark ? 'text-gray-200 hover:text-white' : 'text-skin-black hover:text-skin-black-light'}`}>
                                 Click here
                             </Link>
-                        </div>
+                        </div>}
                     </section>
                 </main>
             </div>

@@ -4,6 +4,7 @@ import {
   Bold,
   BoxSelect,
   ChevronDown,
+  ChevronRight,
   ChartNoAxesCombined,
   Copy,
   Crosshair,
@@ -174,6 +175,11 @@ function TopMenuButton({ icon: Icon, children, active, disabled, onClick, classN
 
 const TOOL_BUTTONS = [
   { type: 'line', label: 'Line', icon: Slash },
+  { type: 'ray', label: 'Ray', icon: MoveRight },
+  { type: 'arrow', label: 'Arrow', icon: TrendingUp },
+  { type: 'horizontal-line', label: 'Horizontal Line', icon: MoveRight },
+  { type: 'vertical-line', label: 'Vertical Line', icon: Slash },
+  { type: 'parallel-channel', label: 'Parallel Channel', icon: ChartNoAxesCombined },
   { type: 'horizontal-ray', label: 'H Ray', icon: MoveRight },
   { type: 'path', label: 'Path', icon: Slash },
   { type: 'fib-retracement', label: 'Fib Retrace', icon: Crosshair },
@@ -182,15 +188,18 @@ const TOOL_BUTTONS = [
   { type: 'short-position', label: 'Short', icon: TrendingDown },
   { type: 'forecast', label: 'Forecast', icon: ChartNoAxesCombined },
   { type: 'measure', label: 'Measure', icon: LocateFixed },
+  { type: 'price-range', label: 'Price Range', icon: LocateFixed },
+  { type: 'date-range', label: 'Date Range', icon: LocateFixed },
+  { type: 'price-date-range', label: 'Price & Date Range', icon: LocateFixed },
   { type: 'rect', label: 'Box', icon: BoxSelect },
   { type: 'text', label: 'Text', icon: Type },
 ];
 
 const TOOL_GROUPS = [
-  { name: 'Trend Lines', tools: ['line', 'horizontal-ray', 'path'] },
+  { name: 'Trend Lines', tools: ['line', 'ray', 'arrow', 'horizontal-line', 'vertical-line', 'horizontal-ray', 'path', 'parallel-channel'] },
   { name: 'Fibonacci', tools: ['fib-retracement', 'fib-extension'] },
   { name: 'Forecasting', tools: ['long-position', 'short-position', 'forecast'] },
-  { name: 'Geometric Shape', tools: ['measure', 'rect'] },
+  { name: 'Geometric Shape', tools: ['measure', 'price-range', 'date-range', 'price-date-range', 'rect'] },
   { name: 'Annotation', tools: ['text'] },
 ];
 
@@ -199,10 +208,10 @@ const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
   [toolButton.type]: toolButton.label,
 }), {});
 
-const WIDTH_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'rect', 'long-position', 'short-position', 'forecast', 'measure'];
-const LINE_STYLE_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'rect'];
-const LABEL_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect'];
-const PRESET_TOOL_TYPES = ['line', 'horizontal-ray', 'path', 'fib-retracement', 'fib-extension', 'forecast', 'measure', 'rect', 'text', 'long-position', 'short-position'];
+const WIDTH_TOOL_TYPES = TOOL_BUTTONS.map(item => item.type).filter(type => type !== 'text');
+const LINE_STYLE_TOOL_TYPES = WIDTH_TOOL_TYPES;
+const LABEL_TOOL_TYPES = WIDTH_TOOL_TYPES;
+const PRESET_TOOL_TYPES = TOOL_BUTTONS.map(item => item.type);
 
 function normalizeHexColor(value) {
   if (typeof value !== 'string') return null;
@@ -852,6 +861,7 @@ export default function ReplayPanel({
   onRetryReplayAccess,
   onPlaybackSpeedChange,
   onToolChange,
+  onReadyToolChange,
   onDrawingColorChange,
   onDrawingWidthChange,
   onDrawingLineStyleChange,
@@ -1046,6 +1056,8 @@ export default function ReplayPanel({
   };
 
   const handleSavePreset = () => {
+    const existing = presetItems.find(item => String(item.name).toLowerCase() === presetNameDraft.trim().toLowerCase());
+    if (existing && !window.confirm(`Overwrite the “${existing.name}” preset with the current tool settings?`)) return;
     onSaveSelectedToolPreset(presetNameDraft);
     setPresetNameDraft('');
   };
@@ -1222,17 +1234,14 @@ export default function ReplayPanel({
           />
         )}
         {(fullscreenDrawingOnly || groupedWorkspaceRail) ? TOOL_GROUPS.map((group) => {
-          const firstTool = TOOL_BUTTONS.find((item) => item.type === group.tools[0]);
+          const readyType = group.tools.includes(toolSettings?.readyTools?.[group.name]) ? toolSettings.readyTools[group.name] : group.tools[0];
+          const firstTool = TOOL_BUTTONS.find((item) => item.type === readyType);
           const isGroupActive = group.tools.includes(tool);
           return (
-            <RailButton
-              key={group.name}
-              icon={firstTool?.icon ?? MousePointer2}
-              active={activeGroup === `tools:${group.name}` || isGroupActive}
-              title={group.name}
-              onClick={() => toggleGroup(`tools:${group.name}`)}
-              chartTheme={chartTheme}
-            />
+            <div key={group.name} className="flex w-11 items-center">
+              <RailButton icon={firstTool?.icon ?? MousePointer2} active={isGroupActive} title={`${group.name}: ${firstTool?.label}`} onClick={() => handleToolChange(readyType)} chartTheme={chartTheme}/>
+              <button type="button" onClick={() => toggleGroup(`tools:${group.name}`)} className="pointer-events-auto -ml-1 flex h-8 w-3 items-center justify-center rounded-r text-[#787b86] hover:text-current" title={`Choose ${group.name} tool`}><ChevronRight size={11}/></button>
+            </div>
           );
         }) : (
           <>
@@ -1323,7 +1332,7 @@ export default function ReplayPanel({
                     <ControlButton
                       key={item.type}
                       icon={item.icon}
-                      onClick={() => handleToolChange(item.type)}
+                      onClick={() => { onReadyToolChange?.(group.name, item.type); handleToolChange(item.type); }}
                       active={tool === item.type}
                       className="w-full justify-start"
                       chartTheme={chartTheme}
@@ -1417,13 +1426,6 @@ export default function ReplayPanel({
                 ? `Candle ${Math.min(replayIndex + 1, candleCount)} / ${candleCount}`
                 : `Live candles ${candleCount}`}
             </div>
-
-            {!replayMode && (
-              <div className={`flex h-7 items-center justify-center gap-2 rounded-md border px-2 text-[11px] ${isDarkTheme ? 'border-gray-700 bg-black-table-color text-gray-300' : 'border-slate-300 text-slate-600'}`}>
-                <span className={`h-2 w-2 rounded-full ${liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`} />
-                {liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}
-              </div>
-            )}
 
             <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
               <div className={`flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>

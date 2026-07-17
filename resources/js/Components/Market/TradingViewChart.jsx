@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
-import { Bell, X } from 'lucide-react';
+import { Bell, Trash2, X } from 'lucide-react';
 import {
   createChart,
   CandlestickSeries,
@@ -200,6 +200,7 @@ function cloneDrawingsForHistory(drawings) {
 const TWO_POINT_TOOL_TYPES = [
   'line',
   'horizontal-ray',
+  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
   'fib-retracement',
   'fib-extension',
   'rect',
@@ -207,18 +208,22 @@ const TWO_POINT_TOOL_TYPES = [
   'short-position',
   'forecast',
   'measure',
+  'price-range', 'date-range', 'price-date-range',
 ];
 
 const PATH_TOOL_TYPE = 'path';
+const BOX_TOOL_TYPES = ['rect', 'price-range', 'date-range', 'price-date-range'];
 
 const PRESET_ENABLED_TOOL_TYPES = [
   'line',
   'horizontal-ray',
+  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
   'path',
   'fib-retracement',
   'fib-extension',
   'forecast',
   'measure',
+  'price-range', 'date-range', 'price-date-range',
   'rect',
   'text',
   'long-position',
@@ -552,6 +557,8 @@ export default function TradingViewReplayChart({
   const restoredReplayProgressKeyRef = useRef(null);
   const latestReplayProgressRef = useRef(null);
   const replayAccessRequestRef = useRef(null);
+  const historyReadyKeyRef = useRef(null);
+  const pendingLiveCandlesRef = useRef([]);
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [exchange, setExchange] = useState(initialExchange);
@@ -618,6 +625,7 @@ export default function TradingViewReplayChart({
   const [isFullscreenEntryPanelOpen, setIsFullscreenEntryPanelOpen] = useState(false);
   const [priceAlerts, setPriceAlerts] = useState([]);
   const [alertModalOpen, setAlertModalOpen] = useState(false);
+  const [alertSoundEnabled, setAlertSoundEnabled] = useState(true);
   const [alertDraft, setAlertDraft] = useState({ price: '', type: 'rise' });
   const [alertError, setAlertError] = useState('');
   const [alertNotice, setAlertNotice] = useState('');
@@ -1692,11 +1700,18 @@ export default function TradingViewReplayChart({
         if (!p1 || !p2) return null;
         const p3 = drawing.anchor ? toScreen(drawing.anchor) : null;
 
+        if (drawing.type === 'vertical-line') {
+          return { ...drawing, screen: { p1: { x: p1.x, y: 0 }, p2: { x: p1.x, y: overlaySize.height } } };
+        }
+        if (drawing.type === 'ray') {
+          const dx = p2.x - p1.x || 1, endX = dx >= 0 ? overlaySize.width : 0;
+          return { ...drawing, screen: { p1, p2, rayEnd: { x: endX, y: p1.y + ((p2.y - p1.y) * ((endX - p1.x) / dx)) } } };
+        }
         if (isHorizontalRayDrawing(drawing)) {
           return {
             ...drawing,
             screen: {
-              p1,
+              p1: drawing.type === 'horizontal-line' ? { x: 0, y: p1.y } : p1,
               p2,
               rayEnd: {
                 x: Math.max(overlaySize.width, p1.x),
@@ -1709,7 +1724,7 @@ export default function TradingViewReplayChart({
         return { ...drawing, screen: { p1, p2, ...(p3 ? { p3 } : {}) } };
       }
 
-      if (drawing.type === 'rect') {
+      if (BOX_TOOL_TYPES.includes(drawing.type)) {
         const p1 = toScreen(drawing.start);
         const p2 = toScreen(drawing.end);
         if (!p1 || !p2) return null;
@@ -1930,6 +1945,10 @@ export default function TradingViewReplayChart({
         if (d.type === 'fib-extension' && d.screen.p3 && distanceToSegment(point, p2, d.screen.p3) <= 8) {
           return d.id;
         }
+        if (d.type === 'parallel-channel' && d.screen.p3) {
+          const dx = d.screen.p3.x - p2.x, dy = d.screen.p3.y - p2.y;
+          if (distanceToSegment(point, { x: p1.x + dx, y: p1.y + dy }, { x: p2.x + dx, y: p2.y + dy }) <= 8) return d.id;
+        }
 
         if (['fib-retracement', 'fib-extension'].includes(d.type)) {
           const hitFibLevel = getRenderedFibonacciLevels(d, overlaySize.width).some((level) => {
@@ -1942,7 +1961,7 @@ export default function TradingViewReplayChart({
         }
       }
 
-      if (d.type === 'rect') {
+      if (BOX_TOOL_TYPES.includes(d.type)) {
         const { p1, p2 } = d.screen;
         const rect = normalizeVisibleRect(p1, p2);
         const inside =
@@ -2030,7 +2049,7 @@ export default function TradingViewReplayChart({
         handles.push({ handle: 'end', point: selected.screen.p2 });
       }
 
-      if (selected.type === 'fib-extension' && selected.screen.p3) {
+      if (['fib-extension', 'parallel-channel'].includes(selected.type) && selected.screen.p3) {
         handles.push({ handle: 'anchor', point: selected.screen.p3 });
       }
     }
@@ -2049,7 +2068,7 @@ export default function TradingViewReplayChart({
       });
     }
 
-    if (selected.type === 'rect') {
+    if (BOX_TOOL_TYPES.includes(selected.type)) {
       const { p1, p2 } = selected.screen;
       const midX = (p1.x + p2.x) / 2;
       const midY = (p1.y + p2.y) / 2;
@@ -2519,7 +2538,7 @@ export default function TradingViewReplayChart({
     if (isRsiVisible) {
       rsi?.moveToPane(nextLowerPane);
       const pane = chartRef.current?.panes?.()[nextLowerPane];
-      pane?.setHeight(Math.max(80, Math.round((containerRef.current?.clientHeight || CHART_HEIGHT) * ((Number(indicators.rsiSize) || 25) / 100))));
+      pane?.setHeight(Math.max(80, Math.round((overlaySize.height || CHART_HEIGHT) * ((Number(indicators.rsiSize) || 25) / 100))));
       nextLowerPane += 1;
     }
     if (isMacdVisible) {
@@ -2527,11 +2546,15 @@ export default function TradingViewReplayChart({
       macdSignal?.moveToPane(nextLowerPane);
       macdHistogram?.moveToPane(nextLowerPane);
       const pane = chartRef.current?.panes?.()[nextLowerPane];
-      pane?.setHeight(Math.max(80, Math.round((containerRef.current?.clientHeight || CHART_HEIGHT) * ((Number(indicators.macdSize) || 25) / 100))));
+      pane?.setHeight(Math.max(80, Math.round((overlaySize.height || CHART_HEIGHT) * ((Number(indicators.macdSize) || 25) / 100))));
     }
-    sma?.setData(indicators.sma ? movingAverage(visibleCandles, Number(indicators.smaPeriod) || 20) : []);
-    ema?.setData(indicators.ema ? exponentialMovingAverage(visibleCandles, Number(indicators.emaPeriod) || 20) : []);
-    rsi?.setData(indicators.rsi ? relativeStrengthIndex(visibleCandles, Number(indicators.rsiPeriod) || 14) : []);
+    scheduleOverlayRender();
+  }, [indicatorStorageKey, indicators, overlaySize.height, scheduleOverlayRender]);
+
+  useEffect(() => {
+    smaSeriesRef.current?.setData(indicators.sma ? movingAverage(visibleCandles, Number(indicators.smaPeriod) || 20) : []);
+    emaSeriesRef.current?.setData(indicators.ema ? exponentialMovingAverage(visibleCandles, Number(indicators.emaPeriod) || 20) : []);
+    rsiSeriesRef.current?.setData(indicators.rsi ? relativeStrengthIndex(visibleCandles, Number(indicators.rsiPeriod) || 14) : []);
     const macdFastPeriod = Math.max(2, Number(indicators.macdFastPeriod) || 12);
     const macdSlowPeriod = Math.max(macdFastPeriod + 1, Number(indicators.macdSlowPeriod) || 26);
     const macdData = indicators.macd
@@ -2542,14 +2565,14 @@ export default function TradingViewReplayChart({
         Math.max(2, Number(indicators.macdSignalPeriod) || 9)
       )
       : { macd: [], signal: [], histogram: [] };
-    macd?.setData(macdData.macd);
-    macdSignal?.setData(macdData.signal);
-    macdHistogram?.setData(macdData.histogram.map((point) => ({
+    macdSeriesRef.current?.setData(macdData.macd);
+    macdSignalSeriesRef.current?.setData(macdData.signal);
+    macdHistogramSeriesRef.current?.setData(macdData.histogram.map((point) => ({
       ...point,
       color: point.value >= 0 ? (indicators.macdUpColor ?? '#26a69a') : (indicators.macdDownColor ?? '#ef5350'),
     })));
     scheduleOverlayRender();
-  }, [indicatorStorageKey, indicators, scheduleOverlayRender, visibleCandles]);
+  }, [indicators, scheduleOverlayRender, visibleCandles]);
 
   useEffect(() => {
     if (selectedIndicator && !indicators[selectedIndicator]) {
@@ -3146,11 +3169,13 @@ export default function TradingViewReplayChart({
             textItalic: Boolean(savedToolSettings.textItalic),
           });
         } else {
-          const endPoint = currentTemp.type === 'horizontal-ray'
+          const endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(currentTemp.type)
             ? { ...coords, price: currentTemp.start.price }
-            : coords;
+            : currentTemp.type === 'price-range'
+              ? { ...coords, time: currentTemp.start.time, logical: currentTemp.start.logical }
+              : coords;
 
-          if (currentTemp.type === 'fib-extension' && !currentTemp.anchor) {
+          if (['fib-extension', 'parallel-channel'].includes(currentTemp.type) && !currentTemp.anchor) {
             setTempDrawing({
               ...currentTemp,
               end: endPoint,
@@ -3172,9 +3197,10 @@ export default function TradingViewReplayChart({
             labelHorizontal: currentTemp.labelHorizontal ?? 'center',
             textBold: Boolean(currentTemp.textBold),
             textItalic: Boolean(currentTemp.textItalic),
+            timeframe,
           };
 
-          if (currentTemp.type === 'fib-extension') {
+          if (['fib-extension', 'parallel-channel'].includes(currentTemp.type)) {
             completed.end = currentTemp.end;
             completed.anchor = coords;
           }
@@ -3258,11 +3284,13 @@ export default function TradingViewReplayChart({
 
         setTempDrawing((prev) => {
           if (!prev) return prev;
-          const endPoint = prev.type === 'horizontal-ray'
+          const endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(prev.type)
             ? { ...coords, price: prev.start.price }
-            : coords;
+            : prev.type === 'price-range'
+              ? { ...coords, time: prev.start.time, logical: prev.start.logical }
+              : coords;
 
-          if (prev.type === 'fib-extension' && prev.anchor) {
+          if (['fib-extension', 'parallel-channel'].includes(prev.type) && prev.anchor) {
             return { ...prev, anchor: coords };
           }
 
@@ -3319,7 +3347,7 @@ export default function TradingViewReplayChart({
           resized[handle] = coords;
         }
 
-        if (resized.type === 'rect') {
+        if (BOX_TOOL_TYPES.includes(resized.type)) {
           if (handle === 'start') {
             resized.start = coords;
           } else if (handle === 'end') {
@@ -3471,6 +3499,12 @@ export default function TradingViewReplayChart({
     async function fetchKlines() {
       if (replayProgressLoadedKey !== replayProgressKey) return;
 
+      const historyKey = `${exchange}:${marketCategory}:${symbol}:${timeframe}`;
+      if (historyReadyKeyRef.current !== historyKey) {
+        pendingLiveCandlesRef.current = [];
+        setLoading(true);
+      }
+
       const requestId = fetchRequestIdRef.current + 1;
       fetchRequestIdRef.current = requestId;
       candleFetchAbortRef.current?.abort();
@@ -3506,8 +3540,6 @@ export default function TradingViewReplayChart({
           ? replayIndex / (allCandles.length - 1)
           : 0.3;
       let hasUsableCache = false;
-      const hasVisibleChartData = allCandles.length > 0 || visibleCandlesRef.current.length > 0;
-
       setError('');
       setIsPlaying(false);
       setFollowReplay(!shouldFrameDrawings);
@@ -3560,26 +3592,29 @@ export default function TradingViewReplayChart({
 
           const normalizedCandles = normalizeApiCandles(result.candles);
 
-          if (!normalizedCandles.length) {
-            throw new Error('No valid candle data returned');
+          if (normalizedCandles.length < 2) {
+            throw new Error('Not enough candle history is available for this market yet.');
           }
 
           return normalizedCandles;
         };
 
         const applyCandles = (normalized, { updateReplayState = true } = {}) => {
-          setAllCandles(normalized);
+          const complete = normalizeApiCandles([...normalized, ...pendingLiveCandlesRef.current]);
+          pendingLiveCandlesRef.current = [];
+          historyReadyKeyRef.current = historyKey;
+          setAllCandles(complete);
           setLoadedTimeframe(timeframe);
 
           if (!updateReplayState) return;
 
           let nextReplayIndex = Math.min(
-            normalized.length - 1,
-            Math.max(0, Math.round((normalized.length - 1) * replayProgress))
+            complete.length - 1,
+            Math.max(0, Math.round((complete.length - 1) * replayProgress))
           );
 
           if (wasInReplay && previousReplayTime != null) {
-            const nearestReplayIndex = findNearestCandleIndex(normalized, previousReplayTime);
+            const nearestReplayIndex = findNearestCandleIndex(complete, previousReplayTime);
             if (nearestReplayIndex >= 0) {
               nextReplayIndex = nearestReplayIndex;
             }
@@ -3591,7 +3626,7 @@ export default function TradingViewReplayChart({
               previousReplayTime,
               ...drawingTimes,
             ]
-              .map((time) => estimateDrawingLogicalFromTime(normalized, time, intervalSeconds))
+              .map((time) => estimateDrawingLogicalFromTime(complete, time, intervalSeconds))
               .filter((logical) => Number.isFinite(logical));
 
             if (frameLogicals.length) {
@@ -3614,7 +3649,7 @@ export default function TradingViewReplayChart({
           }
           setSelectedReplayPrice(
             wasInReplay
-              ? previousSelectedReplayPrice ?? normalized[nextReplayIndex]?.close ?? null
+              ? previousSelectedReplayPrice ?? complete[nextReplayIndex]?.close ?? null
               : null
           );
         };
@@ -3656,7 +3691,7 @@ export default function TradingViewReplayChart({
           end: params.get('end') ?? 'latest',
         });
         const cachedCandles = candleCacheRef.current.get(cacheKey)?.candles;
-        const shouldBlockForCandles = !cachedCandles?.length && !hasVisibleChartData;
+        const shouldBlockForCandles = !cachedCandles?.length && historyReadyKeyRef.current !== historyKey;
 
         setLoading(shouldBlockForCandles);
 
@@ -3803,11 +3838,31 @@ export default function TradingViewReplayChart({
   };
 
   const handleCreatePriceAlert = useCallback((presetPrice = null) => {
+    if (replayMode) {
+      setAlertNotice('Price alerts are available for live markets only, not Replay/backtest.');
+      window.setTimeout(() => setAlertNotice(''), 6000);
+      return;
+    }
     const initialPrice = Number.isFinite(Number(presetPrice)) ? Number(presetPrice) : currentPrice;
     setAlertDraft({ price: initialPrice ? String(initialPrice) : '', type: Number(initialPrice) < Number(currentPrice) ? 'drop' : 'rise' });
     setAlertError('');
     setAlertModalOpen(true);
-  }, [currentPrice]);
+  }, [currentPrice, replayMode]);
+
+  const cancelPriceAlert = useCallback(async (alertId) => {
+    try {
+      await axios.delete(`/market-price-alerts/${alertId}`);
+      setPriceAlerts(items => items.filter(item => item.id !== alertId));
+    } catch (error) { setAlertError(error.response?.data?.message ?? 'Could not cancel this alert.'); }
+  }, []);
+
+  const toggleAlertSound = useCallback(async () => {
+    const next = !alertSoundEnabled; setAlertSoundEnabled(next);
+    try {
+      await axios.patch('/notification-preferences', { alert_sound_enabled: next });
+      if (next) { const ctx = new AudioContext(); const oscillator = ctx.createOscillator(); oscillator.connect(ctx.destination); oscillator.frequency.value = 880; oscillator.start(); oscillator.stop(ctx.currentTime + .18); }
+    } catch {}
+  }, [alertSoundEnabled]);
 
   const savePriceAlert = useCallback(async () => {
     const targetPrice = Number(alertDraft.price);
@@ -3822,7 +3877,10 @@ export default function TradingViewReplayChart({
   }, [alertDraft, currentPrice, exchange, marketCategory, symbol]);
 
   useEffect(() => {
-    axios.get('/market-price-alerts').then(({ data }) => setPriceAlerts((data.alerts ?? []).filter((item) => item.exchange === exchange && item.category === marketCategory && item.symbol === symbol && item.status === 'active'))).catch(() => {});
+    Promise.all([axios.get('/market-price-alerts'), axios.get('/notifications')]).then(([alerts, notifications]) => {
+      setPriceAlerts((alerts.data.alerts ?? []).filter((item) => item.exchange === exchange && item.category === marketCategory && item.symbol === symbol && item.status === 'active'));
+      setAlertSoundEnabled(notifications.data?.alert_sound_enabled !== false);
+    }).catch(() => {});
   }, [exchange, marketCategory, symbol]);
 
   useEffect(() => {
@@ -3835,24 +3893,6 @@ export default function TradingViewReplayChart({
       alertPriceLinesRef.current.set(alert.id, line);
     });
   }, [priceAlerts]);
-
-  useEffect(() => {
-    if (!currentPrice || replayMode) return;
-    const timer = window.setTimeout(async () => {
-      try {
-        const response = await axios.post('/market-price-alerts/check', { exchange, category: marketCategory, symbol, price: currentPrice });
-        if (response.data?.triggered?.length) {
-          setPriceAlerts((items) => items.filter((item) => !response.data.triggered.includes(item.id)));
-          setAlertNotice(`${symbol} reached an alert price at ${formatOverlayPrice(currentPrice)}.`);
-          window.setTimeout(() => setAlertNotice(''), 6000);
-          if (!('Notification' in window)) return;
-          if (Notification.permission === 'default') await Notification.requestPermission();
-          if (Notification.permission === 'granted') new Notification('BacktradeLab price alert', { body: `${symbol} is now ${formatOverlayPrice(currentPrice)}` });
-        }
-      } catch {}
-    }, 800);
-    return () => window.clearTimeout(timer);
-  }, [currentPrice, exchange, marketCategory, replayMode, symbol]);
 
   const activeExchangeSymbol = useMemo(() => {
     const selected = symbols.find((item) => (
@@ -3882,6 +3922,11 @@ export default function TradingViewReplayChart({
         if (import.meta.env.DEV) console.warn('[live-candle-stream]', streamError?.message, streamError?.cause ?? '');
       },
       onCandle: (nextCandle) => {
+        const historyKey = `${exchange}:${marketCategory}:${symbol}:${timeframe}`;
+        if (historyReadyKeyRef.current !== historyKey) {
+          pendingLiveCandlesRef.current = normalizeApiCandles([...pendingLiveCandlesRef.current, nextCandle]);
+          return;
+        }
         setAllCandles((items) => normalizeApiCandles([...items, nextCandle]));
       },
     });
@@ -4035,6 +4080,14 @@ export default function TradingViewReplayChart({
     setIsReplayPricePickActive(false);
   };
 
+  const handleReadyToolChange = (groupName, nextTool) => {
+    setToolSettings((current) => {
+      const next = { ...current, readyTools: { ...(current.readyTools ?? {}), [groupName]: nextTool } };
+      persistToolSettings(next);
+      return next;
+    });
+  };
+
   const handleClearDrawings = () => {
     if (drawingsRef.current.length && !window.confirm('Clear all drawings for this market? You can undo this action with Ctrl/Cmd + Z.')) {
       return;
@@ -4071,7 +4124,7 @@ export default function TradingViewReplayChart({
 
     const next = drawingsRef.current.map((drawing) => {
       if (drawing.id !== selectedId) return drawing;
-      if (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && drawing.type !== 'rect') return drawing;
+      if (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && !BOX_TOOL_TYPES.includes(drawing.type)) return drawing;
 
       return {
         ...drawing,
@@ -4100,7 +4153,7 @@ export default function TradingViewReplayChart({
 
     const next = drawingsRef.current.map((drawing) => {
       if (drawing.id !== selectedId) return drawing;
-      if (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && drawing.type !== 'rect') return drawing;
+      if (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !BOX_TOOL_TYPES.includes(drawing.type)) return drawing;
 
       return {
         ...drawing,
@@ -4169,7 +4222,7 @@ export default function TradingViewReplayChart({
     const next = drawingsRef.current.map((drawing) => {
       if (
         drawing.id !== selectedId ||
-        (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && drawing.type !== 'rect' && drawing.type !== 'text')
+        (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && !BOX_TOOL_TYPES.includes(drawing.type) && drawing.type !== 'text')
       ) {
         return drawing;
       }
@@ -4839,6 +4892,7 @@ export default function TradingViewReplayChart({
     {alertNotice && <div className="fixed right-4 top-4 z-[10003] flex max-w-sm items-start gap-3 rounded-lg border border-amber-400/40 bg-[#131722] p-4 text-sm text-white shadow-2xl"><Bell size={18} className="mt-0.5 shrink-0 text-amber-400"/><span>{alertNotice}</span><button onClick={()=>setAlertNotice('')} aria-label="Dismiss alert"><X size={16}/></button></div>}
     {alertModalOpen && <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 p-4 sm:items-center" onMouseDown={(e)=>e.target===e.currentTarget&&setAlertModalOpen(false)}><div className={`w-full max-w-sm rounded-xl border p-5 shadow-2xl ${chartTheme.mode==='dark'?'border-[#2a2e39] bg-[#131722] text-white':'border-slate-200 bg-white text-slate-900'}`} role="dialog" aria-modal="true"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-bold"><Bell size={17}/>Set {symbol} alert</h2><button onClick={()=>setAlertModalOpen(false)} aria-label="Close"><X size={18}/></button></div><label className="mt-4 block text-xs font-semibold">Price<input autoFocus type="number" min="0" step="any" value={alertDraft.price} onChange={(e)=>setAlertDraft((d)=>({...d,price:e.target.value}))} className="mt-1 h-10 w-full rounded-md border border-gray-600 bg-transparent px-3 outline-none focus:border-[#2962ff]"/></label><div className="mt-3 grid grid-cols-2 gap-2">{[['rise','Rise to price'],['drop','Drop to price']].map(([value,label])=><button key={value} onClick={()=>setAlertDraft((d)=>({...d,type:value}))} className={`h-10 rounded-md border text-xs font-semibold ${alertDraft.type===value?'border-[#2962ff] bg-[#2962ff] text-white':'border-gray-600'}`}>{label}</button>)}</div>{alertError&&<p className="mt-2 text-xs text-red-400">{alertError}</p>}<button onClick={savePriceAlert} className="mt-4 h-10 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white">Create alert</button></div></div>}
     {tourStep >= 0 && <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/55 p-4 sm:items-center"><div className="w-full max-w-md rounded-xl border border-[#2a2e39] bg-[#131722] p-5 text-white shadow-2xl"><div className="text-xs font-semibold uppercase tracking-wider text-[#5b8cff]">Getting started · {tourStep + 1}/{tourSteps.length}</div><h2 className="mt-2 text-lg font-bold">{tourSteps[tourStep][0]}</h2><p className="mt-2 text-sm leading-6 text-[#b2b5be]">{tourSteps[tourStep][1]}</p><div className="mt-5 flex justify-between"><button onClick={finishTour} className="text-sm text-[#787b86] hover:text-white">Skip</button><button onClick={() => tourStep === tourSteps.length - 1 ? finishTour() : setTourStep(tourStep + 1)} className="rounded bg-[#2962ff] px-4 py-2 text-sm font-semibold">{tourStep === tourSteps.length - 1 ? 'Open chart' : 'Next'}</button></div></div></div>}
+    {alertModalOpen && <aside className={`fixed bottom-4 right-4 z-[10003] w-[min(92vw,320px)] rounded-xl border p-4 shadow-2xl sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Alert settings</h3><button onClick={toggleAlertSound} className="rounded-md border px-2 py-1 text-xs font-semibold">Sound {alertSoundEnabled ? 'on' : 'off'}</button></div><p className="mt-2 text-[11px] text-[#787b86]">Alerts monitor live markets in the background. Replay alerts are disabled.</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto">{priceAlerts.map(alert => <div key={alert.id} className="flex items-center justify-between rounded-md border p-2 text-xs"><span>{alert.direction} {formatOverlayPrice(Number(alert.target_price))}</span><button onClick={() => cancelPriceAlert(alert.id)} className="text-red-400" aria-label="Cancel alert"><Trash2 size={14}/></button></div>)}{!priceAlerts.length && <div className="text-xs text-[#787b86]">No active alerts for this market.</div>}</div></aside>}
     <div
       ref={fullscreenRef}
       className={
@@ -4921,6 +4975,15 @@ export default function TradingViewReplayChart({
               setTool(null);
             }}
           />
+
+          {priceAlerts.map(alert => {
+            const y = candleSeriesRef.current?.priceToCoordinate?.(Number(alert.target_price));
+            if (!Number.isFinite(Number(y))) return null;
+            return <button key={`cancel-alert-${alert.id}`} type="button" data-chart-ui="alert-line-cancel" onClick={() => cancelPriceAlert(alert.id)} className="absolute left-9 z-20 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow hover:bg-red-400" style={{ top: Math.max(2, Number(y) - 10) }} title={`Cancel alert at ${formatOverlayPrice(Number(alert.target_price))}`} aria-label={`Cancel alert at ${formatOverlayPrice(Number(alert.target_price))}`}><X size={12}/></button>;
+          })}
+
+          {chartOrderAction && !loading && !error && <div className="pointer-events-none absolute left-0 right-0 z-10 border-t border-dashed border-[#787b86]" style={{ top: chartOrderAction.y }} />}
+          <div className={`pointer-events-none absolute bottom-8 right-16 z-20 flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-semibold shadow ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722]/90 text-[#d1d4dc]' : 'border-slate-200 bg-white/90 text-slate-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${replayMode ? 'bg-violet-500' : liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`}/>{replayMode ? 'Replay' : liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}</div>
 
           {chartOrderAction && !loading && !error && (
             <button
@@ -5023,6 +5086,7 @@ export default function TradingViewReplayChart({
             onRetryReplayAccess={() => requireReplayAccess({ showProgress: true })}
             onPlaybackSpeedChange={setPlaybackSpeed}
             onToolChange={handleToolChange}
+            onReadyToolChange={handleReadyToolChange}
             onDrawingColorChange={handleDrawingColorChange}
             onDrawingWidthChange={handleDrawingWidthChange}
             onDrawingLineStyleChange={handleDrawingLineStyleChange}

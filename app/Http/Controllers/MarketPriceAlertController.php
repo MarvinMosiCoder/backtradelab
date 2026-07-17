@@ -26,26 +26,7 @@ class MarketPriceAlertController extends Controller
     public function destroy(Request $request, MarketPriceAlert $marketPriceAlert)
     {
         abort_unless($marketPriceAlert->adm_user_id === $request->user()->id, 403);
-        $marketPriceAlert->delete();
+        if ($marketPriceAlert->status === 'active') $marketPriceAlert->update(['status' => 'cancelled']);
         return response()->json(['success' => true]);
-    }
-
-    public function check(Request $request)
-    {
-        $data = $request->validate(['exchange' => 'required|string', 'category' => 'required|string', 'symbol' => 'required|string', 'price' => 'required|numeric|gt:0']);
-        $price = (float) $data['price'];
-        $alerts = MarketPriceAlert::where('adm_user_id', $request->user()->id)->where('status', 'active')
-            ->where('exchange', $data['exchange'])->where('category', $data['category'])->where('symbol', strtoupper($data['symbol']))->get();
-        $triggered = [];
-        foreach ($alerts as $alert) {
-            $target = (float) $alert->target_price; $last = $alert->last_price === null ? null : (float) $alert->last_price;
-            $hit = $alert->direction === 'above' ? $price >= $target : ($alert->direction === 'below' ? $price <= $target : ($last !== null && (($last < $target && $price >= $target) || ($last > $target && $price <= $target))));
-            if ($hit) {
-                $alert->update(['status' => 'triggered', 'triggered_at' => now(), 'last_price' => $price]);
-                AdmNotifications::create(['adm_user_id' => $request->user()->id, 'type' => 'price alert', 'content' => "{$alert->symbol} reached {$target} (current {$price}).", 'is_read' => 0]);
-                $triggered[] = $alert->id;
-            } else $alert->update(['last_price' => $price]);
-        }
-        return response()->json(['triggered' => $triggered]);
     }
 }

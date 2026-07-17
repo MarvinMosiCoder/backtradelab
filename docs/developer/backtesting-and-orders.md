@@ -42,3 +42,6 @@ All state-changing routes require `replay.access` and named throttles. Every rou
 - Cross-user record access returns not found/forbidden.
 
 Related: [Reports](trade-reports-and-journals.md), [Replay](replay-and-progress.md).
+# Custom demo balance
+
+The trader Assets panel accepts a starting balance from `1` through `1,000,000,000`. Applying it uses the existing demo reset operation and requires confirmation because it deletes positions and demo trades and resets cash, realized PnL, and fees.

@@ -52,3 +52,8 @@ Route::post('login-save', [LoginController::class, 'authenticate'])
 - Reset token, password rules, and password-history rejection.
 
 Related: [Users, profiles, and deactivation](users-profiles-and-deactivation.md), [Roles](roles-privileges-menus.md).
+# Two-step login and social consent
+
+Email login first collects a syntactically valid email and always advances without checking account existence. Password submission remains protected by the existing identity/IP rate limits and generic credential errors.
+
+Known Google/Facebook users sign in directly. Unknown identities are kept in the server session for up to 15 minutes and sent to `/social-registration/confirm`. No user is created until the visitor accepts the Terms and Privacy Policy and selects **Create account**. Acceptance timestamps and the configured legal effective date are stored. Cancel or expiry clears the pending identity.
