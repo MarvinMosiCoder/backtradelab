@@ -1216,7 +1216,7 @@ export default function ReplayPanel({
       style={{ '--replay-panel-content-width': `${Math.max((Number(overlayWidth) || 0) - 164, 140)}px` }}
     >
       <div
-        className={`pointer-events-auto flex flex-col gap-2 border p-1.5 shadow-2xl backdrop-blur ${
+        className={`pointer-events-auto flex flex-col gap-2 border px-0.5 py-1.5 shadow-2xl backdrop-blur ${
           fullscreenDrawingOnly || groupedWorkspaceRail
             ? 'h-full rounded-none border-b-0 border-l-0 border-t-0'
             : 'rounded-lg'
@@ -1238,9 +1238,9 @@ export default function ReplayPanel({
           const firstTool = TOOL_BUTTONS.find((item) => item.type === readyType);
           const isGroupActive = group.tools.includes(tool);
           return (
-            <div key={group.name} className="flex w-11 items-center">
+            <div key={group.name} className="relative flex w-12 items-center">
               <RailButton icon={firstTool?.icon ?? MousePointer2} active={isGroupActive} title={`${group.name}: ${firstTool?.label}`} onClick={() => handleToolChange(readyType)} chartTheme={chartTheme}/>
-              <button type="button" onClick={() => toggleGroup(`tools:${group.name}`)} className="pointer-events-auto -ml-1 flex h-8 w-3 items-center justify-center rounded-r text-[#787b86] hover:text-current" title={`Choose ${group.name} tool`}><ChevronRight size={11}/></button>
+              <button type="button" onClick={() => toggleGroup(`tools:${group.name}`)} className={`pointer-events-auto absolute left-10 top-0 z-10 flex h-10 w-2 items-center justify-center text-[#787b86] hover:text-current ${isDarkTheme ? 'hover:bg-white/10' : 'hover:bg-slate-200'}`} title={`Choose ${group.name} tool`}><ChevronRight size={10}/></button>
             </div>
           );
         }) : (

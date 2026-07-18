@@ -11,7 +11,7 @@ Use this index to find the feature owner of a source file. Detailed behavior bel
 | `AdminUsersController.php`, `PrivilegesController.php`, `MenusController.php`, `ModulsController.php` | [Roles and menus](roles-privileges-menus.md) |
 | `DashboardController.php`, `Pages/Dashboard/*`, `Layouts/*` | [Dashboard and layouts](dashboard-and-layouts.md) |
 | `Pages/Public/*`, `CookieNotice.jsx`, `config/legal.php` | [Public and legal](public-and-legal-pages.md) |
-| `MarketDataController.php`, `MarketSymbol.php` | [Market data](market-data-and-symbols.md) |
+| `MarketDataController.php`, `MarketMetadataService.php`, `MarketOverviewController.php`, `MarketOverviewService.php`, `MarketSymbol.php` | [Market data](market-data-and-symbols.md) |
 | `Components/Market/TradingViewChart*` | [Trading chart](trading-chart.md) |
 | `MarketDrawingController.php`, `MarketToolSettingController.php` | [Drawings and settings](chart-drawings-and-settings.md) |
 | `liveCandleStream.js` | [Live streaming](live-market-streaming.md) |

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\MarketSymbol;
+use App\Services\MarketMetadataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -11,6 +12,38 @@ use Illuminate\Validation\Rule;
 class MarketDataController extends Controller
 {
     private const EXCHANGES = ['binance', 'bybit', 'okx', 'bingx', 'mexc'];
+
+    public function metadata(Request $request, MarketMetadataService $metadata)
+    {
+        $validated = $request->validate([
+            'exchange' => ['required', Rule::in(self::EXCHANGES)],
+            'category' => ['required', Rule::in(['spot', 'linear', 'inverse'])],
+            'symbol' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9]+$/'],
+        ]);
+
+        return response()->json($metadata->get(
+            $validated['exchange'],
+            $validated['category'],
+            $validated['symbol']
+        ));
+    }
+
+    public function metadataBatch(Request $request, MarketMetadataService $metadata)
+    {
+        $validated = $request->validate([
+            'markets' => ['required', 'array', 'min:1', 'max:50'],
+            'markets.*.exchange' => ['required', Rule::in(self::EXCHANGES)],
+            'markets.*.category' => ['required', Rule::in(['spot', 'linear', 'inverse'])],
+            'markets.*.symbol' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9]+$/'],
+        ]);
+
+        $items = collect($validated['markets'])
+            ->unique(fn ($market) => strtolower($market['exchange']).':'.strtolower($market['category']).':'.strtoupper($market['symbol']))
+            ->map(fn ($market) => $metadata->get($market['exchange'], $market['category'], $market['symbol']))
+            ->values();
+
+        return response()->json(['items' => $items]);
+    }
 
     public function symbols(Request $request)
     {

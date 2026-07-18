@@ -37,6 +37,10 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(30)->by(optional($request->user())->id ?: $request->ip());
         });
 
+        RateLimiter::for('price-alert-check', function (Request $request) {
+            return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
+        });
+
         RateLimiter::for('backtest-read', function (Request $request) {
             return Limit::perMinute(180)->by($request->user()?->id ?: $request->ip());
         });
@@ -66,6 +70,23 @@ class RouteServiceProvider extends ServiceProvider
                     ->response($response),
                 Limit::perMinute(30)
                     ->by('login-ip:'.$ip)
+                    ->response($response),
+            ];
+        });
+
+        RateLimiter::for('login-email-check', function (Request $request) {
+            $ip = $request->ip();
+            $identity = Str::lower(trim((string) $request->input('email')));
+            $response = fn (Request $request, array $headers) => response()->json([
+                'message' => 'Too many email checks. Please wait a minute and try again.',
+            ], 429)->withHeaders($headers);
+
+            return [
+                Limit::perMinute(10)
+                    ->by('login-email-check-identity:'.sha1($identity.'|'.$ip))
+                    ->response($response),
+                Limit::perMinute(60)
+                    ->by('login-email-check-ip:'.$ip)
                     ->response($response),
             ];
         });

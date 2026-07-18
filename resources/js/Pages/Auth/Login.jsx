@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import { ArrowLeft, BarChart3, BookOpen, Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react';
+import axios from 'axios';
 import { useAuth } from '../../Context/AuthContext';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 
@@ -24,6 +25,7 @@ const LoginPage = () => {
     const [step, setStep] = useState('email');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [checkingEmail, setCheckingEmail] = useState(false);
     const [applogo, setApplogo] = useState('');
     const [theme, setTheme] = useState('dark');
     const isDark = theme === 'dark';
@@ -47,14 +49,33 @@ const LoginPage = () => {
         }
     }, [errors]);
 
-    const handleSubmit = (event) => {
+    const handleSubmit = async (event) => {
         event.preventDefault();
         if (step === 'email') {
-            if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+            const normalizedEmail = email.trim().toLowerCase();
+            if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
                 setErrors({ email: 'Enter a valid email address.' });
                 return;
             }
-            setErrors({}); setStep('password');
+            setCheckingEmail(true);
+            setErrors({});
+            try {
+                const { data } = await axios.post('/login/check-email', { email: normalizedEmail });
+                if (!data?.exists) {
+                    setErrors({ email: 'No BacktradeLab account was found for this email address.' });
+                    return;
+                }
+                setEmail(normalizedEmail);
+                setStep('password');
+            } catch (requestError) {
+                setErrors({
+                    email: requestError.response?.data?.errors?.email?.[0]
+                        || requestError.response?.data?.message
+                        || 'Unable to check this email right now. Please try again.',
+                });
+            } finally {
+                setCheckingEmail(false);
+            }
             return;
         }
         setLoading(true);
@@ -138,7 +159,7 @@ const LoginPage = () => {
                                 )}
                             </label>}
 
-                            {step === 'password' && <><div className={`mb-4 flex items-center justify-between rounded-md border px-3 py-2 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}><div><div className="text-[10px] uppercase tracking-wider text-slate-500">Email</div><div className="text-sm font-semibold">{email}</div></div><button type="button" onClick={() => { setStep('email'); setPassword(''); setErrors({}); }} className="text-xs font-bold text-[#5b8cff]">Edit</button></div><label className="mb-2 block">
+                            {step === 'password' && <label className="mb-2 block">
                                 <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</span>
                                 <div className={`flex h-11 items-center rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
                                     <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
@@ -167,14 +188,14 @@ const LoginPage = () => {
                                 {errors.message && (
                                     <span className="mt-1 block text-sm text-red-400">{errors.message}</span>
                                 )}
-                            </label></>}
+                            </label>}
 
                             <button
                                 type="submit"
-                                disabled={loading}
+                                disabled={loading || checkingEmail}
                                 className={`mt-5 h-11 w-full rounded-md px-4 font-poppins text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${isDark ? 'bg-white text-skin-black hover:bg-gray-200' : 'bg-skin-black text-white hover:bg-skin-black-light'}`}
                             >
-                                {loading ? 'Logging in, please wait...' : step === 'email' ? 'Continue' : 'Sign in'}
+                                {loading ? 'Logging in, please wait...' : checkingEmail ? 'Checking email...' : step === 'email' ? 'Continue' : 'Sign in'}
                             </button>
                         </form>
 

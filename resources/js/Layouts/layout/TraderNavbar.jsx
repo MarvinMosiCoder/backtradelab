@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
 import { AlertTriangle, BarChart3, Bell, LogOut, Menu, Moon, RefreshCw, Search, Sun, Wallet, X } from 'lucide-react';
 import axios from 'axios';
@@ -22,6 +22,8 @@ export default function TraderNavbar() {
     const [assetsError, setAssetsError] = useState('');
     const [startingBalance, setStartingBalance] = useState('10000');
     const [unreadNotifications, setUnreadNotifications] = useState(0);
+    const [alertToast, setAlertToast] = useState(null);
+    const alertSoundEnabledRef = useRef(true);
     const [activeSymbol, setActiveSymbol] = useState(() => {
         try {
             return JSON.parse(localStorage.getItem(`backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`) || 'null');
@@ -39,24 +41,45 @@ export default function TraderNavbar() {
     }, []);
 
     useEffect(() => {
-        let stopped = false, initialized = false;
+        let stopped = false, initialized = false, toastTimer = null;
+        const storageKey = `backtradelab-last-alert-notification:${auth?.user?.id}`;
+        const playAlertSound = () => {
+            try { const ctx = new AudioContext(); const oscillator = ctx.createOscillator(); oscillator.connect(ctx.destination); oscillator.frequency.value = 880; oscillator.start(); oscillator.stop(ctx.currentTime + .18); } catch {}
+        };
+        const showAlertToast = (item, playSound = false) => {
+            const id = Number(item?.id);
+            if (!Number.isFinite(id) || id <= 0) return;
+            const previous = Number(localStorage.getItem(storageKey) || 0);
+            if (id <= previous) return;
+            localStorage.setItem(storageKey, String(id));
+            setAlertToast({ id, content: item.content || 'A price alert was triggered.' });
+            window.clearTimeout(toastTimer);
+            toastTimer = window.setTimeout(() => setAlertToast(null), 6000);
+            if (playSound) playAlertSound();
+        };
         const poll = async () => {
             try {
                 const { data } = await axios.get('/notifications');
                 if (stopped) return;
                 setUnreadNotifications(Number(data.unread_notifications) || 0);
-                const ids = (data.notifications ?? []).filter(item => item.type === 'price alert').map(item => Number(item.id)).filter(Number.isFinite);
-                const newest = Math.max(0, ...ids), key = `backtradelab-last-alert-notification:${auth?.user?.id}`;
-                const previous = Number(localStorage.getItem(key) || 0);
-                if (initialized && data.alert_sound_enabled && newest > previous) {
-                    try { const ctx = new AudioContext(); const oscillator = ctx.createOscillator(); oscillator.connect(ctx.destination); oscillator.frequency.value = 880; oscillator.start(); oscillator.stop(ctx.currentTime + .18); } catch {}
+                alertSoundEnabledRef.current = data.alert_sound_enabled !== false;
+                const alerts = (data.notifications ?? []).filter(item => item.type === 'price alert');
+                const newestAlert = alerts.reduce((newest, item) => Number(item.id) > Number(newest?.id ?? 0) ? item : newest, null);
+                if (initialized && newestAlert) showAlertToast(newestAlert, alertSoundEnabledRef.current);
+                if (!initialized && newestAlert) {
+                    const previous = Number(localStorage.getItem(storageKey) || 0);
+                    localStorage.setItem(storageKey, String(Math.max(previous, Number(newestAlert.id))));
                 }
-                if (newest) localStorage.setItem(key, String(Math.max(previous, newest)));
                 initialized = true;
             } catch {}
         };
+        const handleTriggeredAlert = (event) => {
+            setUnreadNotifications((count) => count + 1);
+            showAlertToast(event.detail, alertSoundEnabledRef.current);
+        };
+        window.addEventListener('backtradelab-alert-triggered', handleTriggeredAlert);
         poll(); const timer = window.setInterval(poll, 5000);
-        return () => { stopped = true; window.clearInterval(timer); };
+        return () => { stopped = true; window.clearInterval(timer); window.clearTimeout(toastTimer); window.removeEventListener('backtradelab-alert-triggered', handleTriggeredAlert); };
     }, [auth?.user?.id]);
 
     useEffect(() => {
@@ -286,6 +309,14 @@ export default function TraderNavbar() {
                     <LogOut size={16} />
                 </button>
             </div>
+
+            {alertToast && (
+                <div className={`fixed right-4 top-4 z-[260] flex w-[min(92vw,360px)] items-start gap-3 rounded-xl border p-4 shadow-2xl ${isDark ? 'border-amber-400/30 bg-[#131722] text-[#d1d4dc]' : 'border-amber-300 bg-white text-slate-900'}`} role="status" aria-live="polite">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-500"><Bell size={17} /></span>
+                    <div className="min-w-0 flex-1"><div className="text-xs font-bold uppercase tracking-wider text-amber-500">Price alert</div><div className="mt-1 text-sm leading-5">{alertToast.content}</div></div>
+                    <button type="button" onClick={() => setAlertToast(null)} className={`rounded-md p-1 ${isDark ? 'text-[#787b86] hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`} aria-label="Dismiss price alert"><X size={16} /></button>
+                </div>
+            )}
 
             {showLogoutModal && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setShowLogoutModal(false)}>

@@ -41,9 +41,15 @@ class ReplayAccessController extends Controller
         $data = $request->validate([
             'plans' => 'required|array|min:1', 'plans.*.id' => 'required|exists:subscription_plans,id',
             'plans.*.price' => 'nullable|numeric|min:0.01|max:99999999', 'plans.*.duration_days' => 'required|integer|min:1|max:3650',
-            'plans.*.description' => 'nullable|string|max:160', 'plans.*.is_featured' => 'required|boolean', 'plans.*.is_active' => 'required|boolean',
+            'plans.*.description' => 'nullable|string|max:160',
+            'plans.*.features' => 'nullable|array|max:8',
+            'plans.*.features.*' => 'required|string|max:80',
+            'plans.*.is_featured' => 'required|boolean', 'plans.*.is_active' => 'required|boolean',
         ]);
-        foreach ($data['plans'] as $item) SubscriptionPlan::whereKey($item['id'])->update($item);
+        foreach ($data['plans'] as $item) {
+            $item['features'] = SubscriptionPlan::normalizeFeatures($item['features'] ?? []);
+            SubscriptionPlan::whereKey($item['id'])->update($item);
+        }
 
         return response()->json(['success' => true, 'plans' => SubscriptionPlan::orderBy('sort_order')->get()]);
     }

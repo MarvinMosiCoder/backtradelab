@@ -3,7 +3,6 @@ import axios from 'axios';
 import { Check, Crown, ExternalLink, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { useTheme } from '../../../Context/ThemeContext';
 
-const FEATURES = ['Unlimited market replay', 'Paper trading sessions', 'Drawing tools and indicators', 'Trade journal and reports', 'Snapshots and saved progress'];
 const token = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   const bytes = new Uint8Array(16); globalThis.crypto?.getRandomValues?.(bytes);
@@ -55,32 +54,31 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
   const shell = dark ? 'border-[#2a2e39] bg-[#0b0e14] text-white' : 'border-slate-200 bg-white text-slate-900';
   const surface = dark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-slate-50';
 
-  return <div className="fixed inset-0 z-[10000] flex items-center justify-center overflow-y-auto bg-black/80 p-3 backdrop-blur-sm">
-    <section className={`my-auto w-full max-w-4xl overflow-hidden rounded-2xl border shadow-2xl ${shell}`}>
-      <header className={`flex items-start justify-between border-b px-5 py-4 sm:px-7 ${surface}`}>
-        <div><div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={14}/>Replay access</div><h2 className="mt-1 text-2xl font-bold">Build your trading practice</h2><p className="mt-1 text-sm text-[#787b86]">Activate your free week or purchase one-time access through PayMongo.</p></div>
+  return <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-2 backdrop-blur-sm sm:p-3">
+    <section className={`flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl sm:max-h-[calc(100dvh-1.5rem)] ${shell}`}>
+      <header className={`flex shrink-0 items-start justify-between border-b px-4 py-3 sm:px-5 ${surface}`}>
+        <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={13}/>Replay access</div><h2 className="mt-0.5 text-xl font-bold">Build your trading practice</h2><p className="mt-0.5 text-xs text-[#787b86]">Activate your free week or purchase one-time access through PayMongo.</p></div>
         <button type="button" onClick={onClose} aria-label="Close"><X size={19}/></button>
       </header>
-      {(trialAvailable || activeAccess?.kind === 'trial') && <div className="mx-5 mt-5 flex flex-col justify-between gap-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-5 sm:mx-7 sm:flex-row sm:items-center">
-        <div><div className="text-xs font-bold uppercase text-emerald-500">{activeAccess ? 'Active free trial' : 'Free trial'}</div><h3 className="mt-1 text-xl font-bold">7 days free</h3><p className="mt-1 text-sm text-[#787b86]">{activeAccess ? `Active until ${new Date(activeAccess.endsAt).toLocaleString()}. Plans are read-only while access is active.` : 'Your countdown starts only after activation and can be used once.'}</p></div>
-        {!readOnly && <button disabled={saving} onClick={activateTrial} className="h-11 rounded-lg bg-emerald-500 px-5 text-sm font-bold text-white disabled:opacity-50">Activate free week</button>}
+      {(trialAvailable || activeAccess?.kind === 'trial') && <div className="mx-4 mt-3 flex shrink-0 flex-col justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 sm:mx-5 sm:flex-row sm:items-center">
+        <div><div className="text-[10px] font-bold uppercase text-emerald-500">{activeAccess ? 'Active free trial' : 'Free trial'}</div><div className="flex flex-wrap items-baseline gap-x-2"><h3 className="font-bold">7 days free</h3><p className="text-xs text-[#787b86]">{activeAccess ? `Active until ${new Date(activeAccess.endsAt).toLocaleString()}.` : 'Starts only after activation and can be used once.'}</p></div></div>
+        {!readOnly && <button disabled={saving} onClick={activateTrial} className="h-9 shrink-0 rounded-lg bg-emerald-500 px-4 text-xs font-bold text-white disabled:opacity-50">Activate free week</button>}
       </div>}
-      <div className="p-5 sm:p-7">
-        {loading ? <div className="py-16 text-center text-[#787b86]">Loading plans…</div> : <div className="grid gap-3 md:grid-cols-3">{plans.map(plan => {
+      <div className="min-h-0 overflow-y-auto p-4 sm:p-5">
+        {loading ? <div className="py-12 text-center text-[#787b86]">Loading plans…</div> : <div className="grid gap-2.5 md:grid-cols-3">{plans.map(plan => {
           const configured = plan.price !== null && Number(plan.price) > 0;
           const chosen = activeAccess?.kind === 'paid' ? activeAccess.plan === plan.code : selectedCode === plan.code;
           const Icon = plan.is_featured ? Crown : Sparkles;
-          return <button key={plan.id} type="button" disabled={!configured || readOnly} onClick={() => setSelectedCode(plan.code)} className={`relative rounded-xl border p-5 text-left disabled:opacity-70 ${chosen ? 'border-[#2962ff] bg-[#2962ff]/10 shadow-[0_0_0_1px_#2962ff]' : surface}`}>
-            {chosen && readOnly && <span className="absolute right-3 top-3 rounded-full bg-emerald-500 px-2 py-1 text-[9px] font-bold text-white">ACTIVE</span>}
-            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#2962ff]/10 text-[#5b8cff]"><Icon size={18}/></span><h3 className="mt-4 text-lg font-bold">{plan.name}</h3><p className="mt-1 text-2xl font-bold">{configured ? `${plan.currency} ${Number(plan.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : 'Price pending'}</p><p className="mt-1 text-xs text-[#787b86]">{plan.duration_days} days · one-time payment</p><p className="mt-1 text-xs text-[#787b86]">{plan.description}</p><div className="mt-5 flex items-center gap-2 text-xs font-semibold text-[#5b8cff]"><Check size={14}/>{chosen ? (readOnly ? 'Active plan' : 'Selected') : 'Select plan'}</div>
+          return <button key={plan.id} type="button" disabled={!configured || readOnly} onClick={() => setSelectedCode(plan.code)} className={`relative rounded-xl border p-3 text-left disabled:opacity-70 ${chosen ? 'border-[#2962ff] bg-[#2962ff]/10 shadow-[0_0_0_1px_#2962ff]' : surface}`}>
+            {chosen && readOnly && <span className="absolute right-2 top-2 rounded-full bg-emerald-500 px-1.5 py-0.5 text-[8px] font-bold text-white">ACTIVE</span>}
+            <div className="flex items-start gap-2"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#2962ff]/10 text-[#5b8cff]"><Icon size={15}/></span><div className="min-w-0"><h3 className="font-bold">{plan.name}</h3><p className="text-xl font-bold leading-tight">{configured ? `${plan.currency} ${Number(plan.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : 'Price pending'}</p></div></div><p className="mt-1 text-[11px] text-[#787b86]">{plan.duration_days} days · one-time payment</p><p className="mt-1 line-clamp-2 text-[11px] text-[#787b86]">{plan.description}</p><div className="mt-2 grid gap-1">{(plan.features ?? []).map(feature => <div key={feature} className="flex items-start gap-1.5 text-[11px]"><Check size={11} className="mt-0.5 shrink-0 text-emerald-500"/><span>{feature}</span></div>)}</div><div className="mt-2 flex items-center gap-1.5 text-[11px] font-semibold text-[#5b8cff]"><Check size={12}/>{chosen ? (readOnly ? 'Active plan' : 'Selected') : 'Select plan'}</div>
           </button>;
         })}</div>}
-        <div className={`mt-5 grid gap-2 rounded-xl border p-4 sm:grid-cols-2 ${surface}`}>{FEATURES.map(feature => <div key={feature} className="flex items-center gap-2 text-sm"><Check size={13} className="text-emerald-500"/>{feature}</div>)}</div>
-        {readOnly && <div className="mt-4 rounded-lg bg-emerald-500/10 p-3 text-sm text-emerald-500">Your {activeAccess.kind} access is active until {new Date(activeAccess.endsAt).toLocaleString()}. You can choose another plan after it expires.</div>}
-        {status && <div className="mt-4 rounded-lg bg-red-500/10 p-3 text-sm text-red-500">{status}</div>}
-        {!readOnly && <div className="mt-5 rounded-xl border p-4 text-sm text-[#787b86]">
-          <div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={17}/>Secure PayMongo checkout</div><p className="mt-2">Available methods: <span className="capitalize">{checkout.payment_methods?.join(' · ') || 'None'}</span></p>
-          <button disabled={!selected?.price || !checkout.enabled || saving} onClick={startCheckout} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#2962ff] font-bold text-white disabled:opacity-50">{saving ? 'Opening checkout…' : `Continue with ${selected?.name ?? 'plan'}`}<ExternalLink size={15}/></button>
+        {readOnly && <div className="mt-2.5 rounded-lg bg-emerald-500/10 p-2 text-xs text-emerald-500">Your {activeAccess.kind} access is active until {new Date(activeAccess.endsAt).toLocaleString()}. You can choose another plan after it expires.</div>}
+        {status && <div className="mt-2.5 rounded-lg bg-red-500/10 p-2 text-xs text-red-500">{status}</div>}
+        {!readOnly && <div className="mt-2.5 flex flex-col gap-2 rounded-xl border p-3 text-xs text-[#787b86] sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1"><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Secure PayMongo checkout</div><p className="mt-0.5 truncate">Methods: <span className="capitalize">{checkout.payment_methods?.join(' · ') || 'None'}</span></p></div>
+          <button disabled={!selected?.price || !checkout.enabled || saving} onClick={startCheckout} className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-4 font-bold text-white disabled:opacity-50">{saving ? 'Opening checkout…' : `Continue with ${selected?.name ?? 'plan'}`}<ExternalLink size={14}/></button>
         </div>}
       </div>
     </section>

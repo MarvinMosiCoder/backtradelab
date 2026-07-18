@@ -39,6 +39,8 @@ For local development only, `PAYMONGO_TEST_BYPASS_CAPABILITIES=true` skips the m
 
 Never expose secret/webhook keys to React. Never trust amount, duration, paid status, or livemode from the browser.
 
+Each subscription plan owns a display-only `features` JSON list. Administrators can add, remove, edit, and reorder up to eight feature labels; labels are trimmed, deduplicated case-insensitively, and limited to 80 characters. These labels describe the plan in the compact selection modal and do not alter Replay entitlement or PayMongo verification. The modal keeps plan features inside each plan card and uses a viewport-bounded scrolling fallback only when the available screen is too short.
+
 ## Verification
 
 - Trial activates once under concurrent clicks.

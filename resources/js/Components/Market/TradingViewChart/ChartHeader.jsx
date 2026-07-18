@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { marketCategoryLabel } from '../../../utils/marketLabels';
-import { Bell, ChevronDown, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Bell, ChevronDown, CircleHelp, Info, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
@@ -9,6 +9,10 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMarketInfoOpen, setIsMarketInfoOpen] = useState(false);
+  const [marketMetadata, setMarketMetadata] = useState(null);
+  const [marketMetadataLoading, setMarketMetadataLoading] = useState(false);
+  const [marketMetadataError, setMarketMetadataError] = useState('');
   const [symbolSearch, setSymbolSearch] = useState('');
   const isDark = chartTheme?.mode === 'dark';
   const panelStyle = {
@@ -58,6 +62,25 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
     const nextSize = Math.min(Math.max(Number(value) || 8, 3), 24);
     onCandleSizeChange(nextSize);
   };
+
+  useEffect(() => {
+    if (!isMarketInfoOpen) return undefined;
+    const controller = new AbortController();
+    setMarketMetadataLoading(true);
+    setMarketMetadataError('');
+    const params = new URLSearchParams({ exchange, category: marketCategory, symbol });
+    fetch(`/market-metadata?${params.toString()}`, { headers: { Accept: 'application/json' }, signal: controller.signal })
+      .then(async response => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(payload?.message || 'Unable to load market information.');
+        setMarketMetadata(payload);
+      })
+      .catch(error => { if (error.name !== 'AbortError') setMarketMetadataError(error.message); })
+      .finally(() => { if (!controller.signal.aborted) setMarketMetadataLoading(false); });
+    return () => controller.abort();
+  }, [exchange, isMarketInfoOpen, marketCategory, symbol]);
+
+  const marketInfo = <MarketMetadataPopover metadata={marketMetadata} loading={marketMetadataLoading} error={marketMetadataError} isDark={isDark} panelStyle={panelStyle}/>;
 
   if (compact) {
     const compactFieldClass = `h-8 rounded-md border px-2 text-xs outline-none ${isDark ? 'border-gray-700 bg-black-table-color/95 text-white' : 'border-gray-200 bg-white/95 text-gray-800'}`;
@@ -140,12 +163,14 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             {replayAccessStatus === 'checking-access' ? <LoaderCircle size={14} className="animate-spin" /> : replayMode ? <X size={14} /> : <Play size={14} />}
             <span className="hidden sm:inline">{replayAccessStatus === 'checking-access' ? 'Checking…' : replayAccessStatus === 'pick-candle' ? 'Click candle' : replayMode ? 'Live' : 'Replay'}</span>
           </button>
-          {!replayMode && <span className="flex items-center gap-1 text-[10px] text-gray-400"><span className={`h-1.5 w-1.5 rounded-full ${liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`} />{liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}</span>}
-
           <button type="button" onClick={onCreatePriceAlert} className="flex h-8 items-center gap-1.5 rounded-md bg-[#2962ff] px-2.5 text-xs font-semibold text-white">
             <Bell size={13} />
             <span className="hidden sm:inline">Alert</span>
           </button>
+          <div className="relative">
+            <button type="button" onClick={() => setIsMarketInfoOpen(value => !value)} className={`${compactFieldClass} flex w-8 items-center justify-center`} title="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
+            {isMarketInfoOpen && marketInfo}
+          </div>
 
           <div className="relative">
             <button type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
@@ -234,7 +259,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
         <ChevronDown size={14} className={`shrink-0 transition-transform ${isMobileMenuOpen ? 'rotate-180' : ''}`} />
       </button>
       <div className={`${isMobileMenuOpen ? 'grid' : 'hidden'} absolute left-0 right-0 top-full z-[110] mt-2 max-h-[calc(100dvh-5rem)] grid-cols-2 items-center gap-1.5 overflow-y-auto rounded-lg border p-2 shadow-2xl sm:grid-cols-12 lg:static lg:mt-0 lg:grid lg:max-h-none lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
-        <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-4">
+        <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-3">
           <label className="sr-only">Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
             <button type="button" onClick={() => setIsAddOpen((current) => !current)} className={`${fieldClass} flex min-w-0 flex-1 items-center justify-between gap-2 text-left font-semibold hover:border-[#2962ff]/60`} aria-expanded={isAddOpen}>
@@ -412,6 +437,11 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           <span className="hidden xl:inline">Alert</span>
         </button>
 
+        <div className="relative col-span-1 sm:col-span-3 lg:col-span-1">
+          <button type="button" onClick={() => setIsMarketInfoOpen(value => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-1.5 font-semibold hover:border-[#2962ff]/60`} title="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/><span className="hidden xl:inline">Info</span></button>
+          {isMarketInfoOpen && marketInfo}
+        </div>
+
         <div
           className="hidden"
           style={{
@@ -433,3 +463,26 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
     </div>
   );
 }
+
+const compactNumber = value => Number.isFinite(Number(value)) ? new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 2 }).format(Number(value)) : '—';
+const metadataPrice = value => Number.isFinite(Number(value)) ? Number(value).toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—';
+
+function MarketMetadataPopover({ metadata, loading, error, isDark, panelStyle }) {
+  const stats = metadata?.stats ?? {}, fundamentals = metadata?.fundamentals;
+  const rows = [
+    ['24h change', Number.isFinite(Number(stats.change_24h_percent)) ? `${Number(stats.change_24h_percent) >= 0 ? '+' : ''}${Number(stats.change_24h_percent).toFixed(2)}%` : '—'],
+    ['24h high', metadataPrice(stats.high_24h)], ['24h low', metadataPrice(stats.low_24h)],
+    ['Volume', compactNumber(stats.volume_24h)], ['Turnover', compactNumber(stats.turnover_24h)],
+    ['Bid / Ask', `${metadataPrice(stats.bid_price)} / ${metadataPrice(stats.ask_price)}`],
+    ['Mark / Index', `${metadataPrice(stats.mark_price)} / ${metadataPrice(stats.index_price)}`],
+    ['Funding', Number.isFinite(Number(stats.funding_rate)) ? `${(Number(stats.funding_rate) * 100).toFixed(4)}%` : '—'],
+    ['Open interest', compactNumber(stats.open_interest)],
+  ];
+  return <div className={`absolute right-0 top-full z-[150] mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-xl border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={panelStyle}>
+    {loading && <div className="flex items-center gap-2 py-4 text-xs text-[#787b86]"><LoaderCircle size={14} className="animate-spin"/>Loading market information…</div>}
+    {!loading && error && <div className="flex items-start gap-2 rounded-lg bg-red-500/10 p-2 text-xs text-red-500"><CircleHelp size={14}/>{error}</div>}
+    {!loading && !error && metadata && <><div className="flex items-center gap-2"><img src={fundamentals?.logo_url || ''} alt="" className={`h-8 w-8 rounded-full object-contain ${fundamentals?.logo_url ? '' : 'hidden'}`}/><div><div className="text-sm font-bold">{fundamentals?.name || metadata.market?.base_coin || metadata.market?.symbol}</div><div className="text-[10px] uppercase text-[#787b86]">{metadata.market?.exchange} · {marketCategoryLabel(metadata.market?.category)}{fundamentals?.market_cap_rank ? ` · Rank #${fundamentals.market_cap_rank}` : ''}</div></div></div><div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">{rows.map(([label, value]) => value !== '—' && value !== '— / —' ? <div key={label} className="min-w-0"><div className="text-[9px] uppercase text-[#787b86]">{label}</div><div className="truncate text-xs font-semibold tabular-nums">{value}</div></div> : null)}</div>{fundamentals && <div className={`mt-3 grid grid-cols-2 gap-2 border-t pt-2 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}><Meta label="Market cap" value={compactNumber(fundamentals.market_cap)}/><Meta label="FDV" value={compactNumber(fundamentals.fully_diluted_valuation)}/><Meta label="Circulating" value={compactNumber(fundamentals.circulating_supply)}/><Meta label="Max supply" value={compactNumber(fundamentals.max_supply)}/><Meta label="ATH" value={metadataPrice(fundamentals.ath)}/><Meta label="ATL" value={metadataPrice(fundamentals.atl)}/></div>}{metadata.warnings?.length > 0 && <div className="mt-2 text-[9px] text-[#787b86]">{metadata.warnings.join(' ')}</div>}</>}
+  </div>;
+}
+
+function Meta({ label, value }) { return value === '—' ? null : <div><div className="text-[9px] uppercase text-[#787b86]">{label}</div><div className="text-xs font-semibold tabular-nums">{value}</div></div>; }

@@ -64,12 +64,14 @@ class AnnouncementsController extends Controller{
     }
 
     public function markAnnouncementAsRead(Request $request){
-        $announcementId = $request['announcement_id'];
-        $user = AdmUser::find(CommonHelpers::myId());
-        $user->announcements()->attach($announcementId);
+        $announcementId = $request->validate([
+            'announcement_id' => ['required', 'integer', 'exists:announcements,id'],
+        ])['announcement_id'];
+        $user = $request->user();
+        $user->announcements()->syncWithoutDetaching([$announcementId]);
 
         $unreadAnnouncements = Announcement::whereDoesntHave('admUsers', function($query) use ($user) {
-            $query->where('adm_user_id', CommonHelpers::myId());
+            $query->where('adm_user_id', $user->id);
         })->where('status','ACTIVE')->get();
         if($unreadAnnouncements->isEmpty()){
             Session::put('unread-announcement',false);

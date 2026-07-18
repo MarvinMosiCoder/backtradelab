@@ -47,6 +47,11 @@ return [
         'verify_tls' => env('MARKET_HTTP_VERIFY', true),
     ],
 
+    'coingecko' => [
+        'api_key' => env('COINGECKO_API_KEY'),
+        'mode' => env('COINGECKO_MODE', 'demo'),
+    ],
+
     'paymongo' => [
         'enabled' => env('PAYMONGO_ENABLED', false),
         'mode' => env('PAYMONGO_MODE', 'test'),

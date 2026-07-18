@@ -40,6 +40,18 @@ class LoginController extends Controller
         return Inertia::render('Auth/Login');
     }
 
+    public function checkEmail(Request $request)
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:255'],
+        ]);
+        $email = Str::lower(trim($data['email']));
+
+        return response()->json([
+            'exists' => AdmUser::query()->whereRaw('LOWER(email) = ?', [$email])->exists(),
+        ]);
+    }
+
     /**
      * Handle an incoming authentication request.
      */

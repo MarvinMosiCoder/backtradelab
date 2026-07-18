@@ -546,6 +546,7 @@ export default function TradingViewReplayChart({
   const autoTriggeredPositionRef = useRef(new Set());
   const pendingVisibleLogicalRangeRef = useRef(null);
   const pendingVisibleViewRef = useRef(null);
+  const pendingBackToLiveRef = useRef(false);
   const viewportInitializedKeyRef = useRef(null);
   const quickOpenBacktestPositionRef = useRef(null);
   const cancelBacktestPositionRef = useRef(null);
@@ -558,7 +559,9 @@ export default function TradingViewReplayChart({
   const latestReplayProgressRef = useRef(null);
   const replayAccessRequestRef = useRef(null);
   const historyReadyKeyRef = useRef(null);
+  const timeframeTransitionKeyRef = useRef(null);
   const pendingLiveCandlesRef = useRef([]);
+  const alertCheckInFlightRef = useRef(false);
 
   const [symbol, setSymbol] = useState(initialSymbol);
   const [exchange, setExchange] = useState(initialExchange);
@@ -1502,7 +1505,7 @@ export default function TradingViewReplayChart({
       return autoscaleInfo;
     }
 
-    if (replayModeRef.current && Number.isFinite(selectedPrice)) {
+    if (Number.isFinite(selectedPrice)) {
       backtestPrices.push(selectedPrice);
     }
 
@@ -1599,18 +1602,19 @@ export default function TradingViewReplayChart({
     if (!chart || !candleSeries || !candles.length) return;
 
     const time = chart.timeScale().coordinateToTime(x);
-    const price = candleSeries.coordinateToPrice(y);
-
-    if (price != null && Number.isFinite(Number(price))) {
-      setSelectedReplayPrice(Number(price));
-    }
-
     if (moveCandle && time != null) {
       const nearestIndex = findNearestCandleIndex(candles, time);
       if (nearestIndex >= 0) {
         setReplayIndex(nearestIndex);
+        setSelectedReplayPrice(Number(candles[nearestIndex].close));
         setIsPlaying(false);
       }
+      return;
+    }
+
+    const price = candleSeries.coordinateToPrice(y);
+    if (price != null && Number.isFinite(Number(price))) {
+      setSelectedReplayPrice(Number(price));
     }
   }, []);
 
@@ -2620,8 +2624,26 @@ export default function TradingViewReplayChart({
     );
 
     volumeSeries.setData(visibleVolume);
+
+    // Returning to Live expands visibleCandles from the Replay slice to the
+    // complete series. Wait until that complete data has reached the chart
+    // before moving the viewport; scrolling earlier leaves the viewport at
+    // the old Replay checkpoint while the live price line uses the last bar.
+    if (pendingBackToLiveRef.current && !replayMode) {
+      pendingBackToLiveRef.current = false;
+      isProgrammaticRangeChangeRef.current = true;
+      requestAnimationFrame(() => {
+        chart.timeScale().scrollToRealTime();
+        requestAnimationFrame(() => {
+          candleSeries.priceScale().applyOptions({ autoScale: true });
+          isProgrammaticRangeChangeRef.current = false;
+          scheduleOverlayRender();
+        });
+      });
+    }
+
     scheduleOverlayRender();
-  }, [scheduleOverlayRender, visibleCandles, visibleVolume]);
+  }, [replayMode, scheduleOverlayRender, visibleCandles, visibleVolume]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -2730,7 +2752,7 @@ export default function TradingViewReplayChart({
       selectedPriceLineRef.current = null;
     }
 
-    if (replayMode && selectedReplayPrice != null) {
+    if (selectedReplayPrice != null) {
       selectedPriceLineRef.current = candleSeries.createPriceLine({
         price: selectedReplayPrice,
         color: chartTheme.selectedReplayPriceMarker,
@@ -3500,9 +3522,13 @@ export default function TradingViewReplayChart({
       if (replayProgressLoadedKey !== replayProgressKey) return;
 
       const historyKey = `${exchange}:${marketCategory}:${symbol}:${timeframe}`;
+      if (timeframeTransitionKeyRef.current && timeframeTransitionKeyRef.current !== historyKey) {
+        timeframeTransitionKeyRef.current = null;
+      }
+      const isTimeframeTransition = timeframeTransitionKeyRef.current === historyKey;
       if (historyReadyKeyRef.current !== historyKey) {
         pendingLiveCandlesRef.current = [];
-        setLoading(true);
+        setLoading(!isTimeframeTransition);
       }
 
       const requestId = fetchRequestIdRef.current + 1;
@@ -3693,7 +3719,7 @@ export default function TradingViewReplayChart({
         const cachedCandles = candleCacheRef.current.get(cacheKey)?.candles;
         const shouldBlockForCandles = !cachedCandles?.length && historyReadyKeyRef.current !== historyKey;
 
-        setLoading(shouldBlockForCandles);
+        setLoading(shouldBlockForCandles && !isTimeframeTransition);
 
         if (cachedCandles?.length) {
           hasUsableCache = true;
@@ -3783,6 +3809,9 @@ export default function TradingViewReplayChart({
             candleFetchAbortRef.current = null;
           }
           setLoading(false);
+          if (timeframeTransitionKeyRef.current === historyKey) {
+            timeframeTransitionKeyRef.current = null;
+          }
         }
       }
     }
@@ -3818,23 +3847,14 @@ export default function TradingViewReplayChart({
     }
 
     // Going live changes only the current view. The last replay checkpoint
-    // remains persisted and is available the next time replay is opened.
+    // and its price guide remain available until the market context changes.
+    pendingBackToLiveRef.current = true;
     setReplayMode(false);
     setFollowReplay(true);
     setTool(null);
     setTempDrawing(null);
     setTextInput(null);
     setIsReplayPricePickActive(false);
-    requestAnimationFrame(() => {
-      const chart = chartRef.current;
-      if (!chart) return;
-      isProgrammaticRangeChangeRef.current = true;
-      chart.timeScale().scrollToRealTime();
-      requestAnimationFrame(() => {
-        isProgrammaticRangeChangeRef.current = false;
-        scheduleOverlayRender();
-      });
-    });
   };
 
   const handleCreatePriceAlert = useCallback((presetPrice = null) => {
@@ -3893,6 +3913,45 @@ export default function TradingViewReplayChart({
       alertPriceLinesRef.current.set(alert.id, line);
     });
   }, [priceAlerts]);
+
+  useEffect(() => {
+    if (replayMode || alertCheckInFlightRef.current || !Number.isFinite(Number(currentPrice))) return;
+
+    const price = Number(currentPrice);
+    const shouldCheck = priceAlerts.some((alert) => {
+      const target = Number(alert.target_price);
+      const last = alert.last_price == null ? null : Number(alert.last_price);
+      if (!Number.isFinite(target)) return false;
+      if (alert.direction === 'above') return price >= target;
+      if (alert.direction === 'below') return price <= target;
+      return Number.isFinite(last) && ((last < target && price >= target) || (last > target && price <= target));
+    });
+
+    if (!shouldCheck) return;
+
+    alertCheckInFlightRef.current = true;
+    axios.post('/market-price-alerts/check', {
+      exchange,
+      category: marketCategory,
+      symbol,
+      price,
+    }).then(({ data }) => {
+      const triggered = Array.isArray(data?.triggered) ? data.triggered : [];
+      const alertIds = new Set(triggered.map((item) => Number(item.alert_id)));
+      if (alertIds.size) {
+        setPriceAlerts((items) => items.filter((item) => !alertIds.has(Number(item.id))));
+        triggered.forEach((item) => window.dispatchEvent(new CustomEvent('backtradelab-alert-triggered', {
+          detail: { id: Number(item.notification_id), content: item.content },
+        })));
+      } else {
+        axios.get('/market-price-alerts').then((response) => {
+          setPriceAlerts((response.data?.alerts ?? []).filter((item) => item.exchange === exchange && item.category === marketCategory && item.symbol === symbol && item.status === 'active'));
+        }).catch(() => {});
+      }
+    }).catch(() => {}).finally(() => {
+      alertCheckInFlightRef.current = false;
+    });
+  }, [currentPrice, exchange, marketCategory, priceAlerts, replayMode, symbol]);
 
   const activeExchangeSymbol = useMemo(() => {
     const selected = symbols.find((item) => (
@@ -4840,8 +4899,9 @@ export default function TradingViewReplayChart({
       pendingVisibleViewRef.current = null;
     }
 
+    timeframeTransitionKeyRef.current = `${exchange}:${marketCategory}:${symbol}:${nextTimeframe}`;
     setTimeframe(nextTimeframe);
-  }, [timeframe]);
+  }, [exchange, marketCategory, symbol, timeframe]);
 
   const chartHeaderProps = {
     symbol,
@@ -4983,7 +5043,7 @@ export default function TradingViewReplayChart({
           })}
 
           {chartOrderAction && !loading && !error && <div className="pointer-events-none absolute left-0 right-0 z-10 border-t border-dashed border-[#787b86]" style={{ top: chartOrderAction.y }} />}
-          <div className={`pointer-events-none absolute bottom-8 right-16 z-20 flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-semibold shadow ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722]/90 text-[#d1d4dc]' : 'border-slate-200 bg-white/90 text-slate-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${replayMode ? 'bg-violet-500' : liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`}/>{replayMode ? 'Replay' : liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}</div>
+          <div className={`pointer-events-none absolute bottom-8 right-20 z-20 flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-semibold shadow ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722]/90 text-[#d1d4dc]' : 'border-slate-200 bg-white/90 text-slate-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${replayMode ? 'bg-violet-500' : liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`}/>{replayMode ? 'Replay' : liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}</div>
 
           {chartOrderAction && !loading && !error && (
             <button

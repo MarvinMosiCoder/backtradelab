@@ -16,6 +16,7 @@ use App\Http\Controllers\Dashboard\DashboardController;
 use App\Http\Controllers\MarketBacktestController;
 use App\Http\Controllers\MarketDrawingController;
 use App\Http\Controllers\MarketDataController;
+use App\Http\Controllers\MarketOverviewController;
 use App\Http\Controllers\MarketReplayProgressController;
 use App\Http\Controllers\MarketToolSettingController;
 use App\Http\Controllers\MarketPriceAlertController;
@@ -54,6 +55,9 @@ Route::get('/terms-of-service', fn () => Inertia::render('Public/TermsOfService'
     'legal' => config('legal'),
 ]))->name('terms-of-service');
 Route::get('login', [LoginController::class, 'index'])->name('login');
+Route::post('login/check-email', [LoginController::class, 'checkEmail'])
+    ->middleware('throttle:login-email-check')
+    ->name('login.check-email');
 Route::get('/reset_password', [ResetPasswordController::class, 'getIndex'])->name('reset_password');
 Route::post('/send_resetpass_email', [ResetPasswordController::class, 'sendResetPasswordInstructions'])
     ->middleware('throttle:password-reset-request');
@@ -103,12 +107,15 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('market', function () {
         return Inertia::render('Market/Market');
     })->name('market');
+    Route::get('/market-overview', MarketOverviewController::class)->name('market-overview.show');
     Route::get('trade-report', function () {
         return Inertia::render('Market/TradeReportPage');
     })->name('trade-report');
     Route::get('/help', fn () => Inertia::render('Help/Index'))->name('help');
     Route::get('/market-drawings', [MarketDrawingController::class, 'show'])->name('market-drawings.show');
     Route::get('/market-symbols', [MarketDataController::class, 'symbols'])->name('market-symbols.index');
+    Route::get('/market-metadata', [MarketDataController::class, 'metadata'])->middleware('throttle:60,1')->name('market-metadata.show');
+    Route::post('/market-metadata/batch', [MarketDataController::class, 'metadataBatch'])->middleware('throttle:20,1')->name('market-metadata.batch');
     Route::post('/market-symbols', [MarketDataController::class, 'storeSymbol'])->middleware('throttle:market-write')->name('market-symbols.store');
     Route::delete('/market-symbols/{marketSymbol}', [MarketDataController::class, 'destroySymbol'])->middleware('throttle:market-write')->name('market-symbols.destroy');
     Route::put('/market-drawings', [MarketDrawingController::class, 'update'])->name('market-drawings.update');
@@ -116,6 +123,7 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::put('/market-tool-settings', [MarketToolSettingController::class, 'update'])->name('market-tool-settings.update');
     Route::get('/market-price-alerts', [MarketPriceAlertController::class, 'index']);
     Route::post('/market-price-alerts', [MarketPriceAlertController::class, 'store'])->middleware('throttle:price-alert-write');
+    Route::post('/market-price-alerts/check', [MarketPriceAlertController::class, 'check'])->middleware('throttle:price-alert-check');
     Route::delete('/market-price-alerts/{marketPriceAlert}', [MarketPriceAlertController::class, 'destroy'])->middleware('throttle:price-alert-write');
     Route::get('/replay-access', [ReplayAccessController::class, 'status']);
     Route::post('/replay-trial/activate', [ReplayAccessController::class, 'activateTrial'])->middleware('throttle:market-write');

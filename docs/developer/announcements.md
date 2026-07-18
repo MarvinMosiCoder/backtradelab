@@ -9,6 +9,7 @@ Administrators create/edit announcements; authenticated users retrieve unread an
 | `/announcement*` | List/create/edit actions |
 | `GET /unread-announcement` | Current user's unread items |
 | `POST /read-announcement` | Update pivot read state |
+| `GET /market-overview` | Latest four active announcements with sanitized excerpts and read state |
 | `AnnouncementsController.php` | Announcement and audience logic |
 | `Announcement.php` | Many-to-many user relationship |
 | `announcements`, `announcement_user` | Content and per-user read state |
@@ -19,7 +20,9 @@ Administrators create/edit announcements; authenticated users retrieve unread an
 1. Admin creates content and target/audience settings.
 2. Records are associated to users through `announcement_user`.
 3. Authenticated UI requests unread items.
-4. Reading updates the authenticated user's pivot row.
+4. Reading updates the authenticated user's pivot row with `syncWithoutDetaching`, so repeated requests remain idempotent.
+
+Market Summary reuses active administrator announcements as trusted “News & updates.” The overview returns only plain-text excerpts, newest first, and never exposes executable rich content. Expanding an unread item calls the existing read endpoint.
 
 ## Maintenance and verification
 
