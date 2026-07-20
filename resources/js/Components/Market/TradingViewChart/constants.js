@@ -46,6 +46,12 @@ export const TIMEFRAMES = [
   { value: '1M', label: '1 Month' },
 ];
 
+const MEXC_TIMEFRAME_VALUES = new Set(['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w', '1M']);
+
+export const supportedTimeframes = (exchange) => (
+  exchange === 'mexc' ? TIMEFRAMES.filter((item) => MEXC_TIMEFRAME_VALUES.has(item.value)) : TIMEFRAMES
+);
+
 export const POPULAR_SYMBOLS = [
   'BTCUSDT',
   'ETHUSDT',

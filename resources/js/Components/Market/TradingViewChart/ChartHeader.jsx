@@ -4,7 +4,7 @@ import { Bell, ChevronDown, CircleHelp, Info, LoaderCircle, Menu, Play, Search, 
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
-export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, candleColors, candleSize, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onCandleColorChange, onCandleSizeChange, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
+export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, candleColors, candleSize, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onCandleColorChange, onCandleSizeChange, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
   const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
@@ -152,7 +152,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           </select>
 
           <select value={timeframe} onChange={(e) => onTimeframeChange(e.target.value)} className={`${compactFieldClass} w-28 min-w-28`} title="Timeframe">
-            {TIMEFRAMES.map((tf) => (
+            {timeframeOptions.map((tf) => (
               <option key={tf.value} value={tf.value}>
                 {tf.label}
               </option>
@@ -339,7 +339,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
         <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
           <label className="sr-only">Timeframe</label>
           <select value={timeframe} onChange={(e) => onTimeframeChange(e.target.value)} className={`${fieldClass} w-full`}>
-            {TIMEFRAMES.map((tf) => (
+            {timeframeOptions.map((tf) => (
               <option key={tf.value} value={tf.value}>
                 {tf.label}
               </option>

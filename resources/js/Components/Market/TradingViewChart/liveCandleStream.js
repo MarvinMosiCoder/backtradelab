@@ -1,3 +1,5 @@
+import { decodeMexcSpotMessage } from './mexcProtobuf';
+
 const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000, 30000];
 const FIRST_CANDLE_TIMEOUT = 10000;
 const STALE_CANDLE_TIMEOUT = 45000;
@@ -103,7 +105,9 @@ function buildAdapter({ exchange, category, symbol, exchangeSymbol, timeframe })
       ? nativeSymbol
       : nativeSymbol.replace(/(USDT|USDC|USD)$/i, '-$1');
     return {
-      url: 'wss://open-api-swap.bingx.com/swap-market',
+      url: category === 'spot'
+        ? 'wss://open-api-ws.bingx.com/market'
+        : 'wss://open-api-swap.bingx.com/swap-market',
       subscribe: { id: `kline-${Date.now()}`, reqType: 'sub', dataType: `${bingxSymbol}@kline_${interval}` },
       parse: (message) => {
         const row = message?.data?.data?.[0] ?? message?.data?.[0] ?? message?.data;
@@ -117,10 +121,11 @@ function buildAdapter({ exchange, category, symbol, exchangeSymbol, timeframe })
     if (category === 'spot') {
       return {
         url: 'wss://wbs-api.mexc.com/ws',
-        subscribe: { method: 'SUBSCRIPTION', params: [`spot@public.kline.v3.api@${nativeSymbol}@${interval}`] },
+        subscribe: { method: 'SUBSCRIPTION', params: [`spot@public.kline.v3.api.pb@${nativeSymbol}@${interval}`] },
+        decode: decodeMexcSpotMessage,
         parse: (message) => {
-          const row = message?.d?.k;
-          return row ? candle(row.t, row.o, row.h, row.l, row.c, row.v) : null;
+          const row = message?.publicSpotKline;
+          return row ? candle(row.windowStart, row.openingPrice, row.highestPrice, row.lowestPrice, row.closingPrice, row.volume) : null;
         },
         error: (message) => message?.code != null && Number(message.code) !== 0 ? (message?.msg || 'MEXC rejected the subscription.') : null,
       };
@@ -187,8 +192,10 @@ export function createLiveCandleStream(options) {
 
   const scheduleReconnect = () => {
     if (stopped) return;
+    window.clearTimeout(reconnectTimer);
     setStatus('reconnecting');
-    const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+    const baseDelay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+    const delay = Math.round(baseDelay * (0.8 + (Math.random() * 0.4)));
     reconnectAttempt += 1;
     reconnectTimer = window.setTimeout(connect, delay);
   };
@@ -221,13 +228,14 @@ export function createLiveCandleStream(options) {
       };
       socket.onmessage = async (event) => {
         try {
-          const text = await decodeMessage(event.data);
+          const text = adapter.decode ? null : await decodeMessage(event.data);
           if (text === 'Ping') {
             socket?.send('Pong');
             return;
           }
           if (text === 'pong') return;
-          const message = JSON.parse(text);
+          const message = adapter.decode ? await adapter.decode(event.data) : JSON.parse(text);
+          if (!message) return;
           const subscriptionError = adapter.error?.(message);
           if (subscriptionError) {
             reconnectSocket(subscriptionError);

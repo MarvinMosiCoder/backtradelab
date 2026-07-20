@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
-import { Bell, Trash2, X } from 'lucide-react';
+import { Bell, Trash2, Wallet, X } from 'lucide-react';
 import {
   createChart,
   CandlestickSeries,
@@ -23,7 +23,7 @@ import {
   DRAWING_COLOR,
   INTERVAL_MAP,
   TIMEFRAME_SECONDS,
-  TIMEFRAMES,
+  supportedTimeframes,
 } from './TradingViewChart/constants';
 import {
   buildStorageKey,
@@ -50,6 +50,8 @@ const MIN_CANDLE_SIZE = 3;
 const MAX_CANDLE_SIZE = 24;
 
 const MAX_DRAWING_UNDO_STEPS = 25;
+const MARKET_DATA_POLL_SECONDS = Math.max(5, Number(import.meta.env.VITE_MARKET_DATA_POLL_SECONDS ?? 10));
+const WEBSOCKET_DELAY_SECONDS = 45;
 
 function movingAverage(candles, period) {
   return candles.map((candle, index) => {
@@ -392,6 +394,27 @@ function formatOverlayPnl(value) {
   });
 }
 
+function formatFeedAge(seconds) {
+  if (!Number.isFinite(seconds)) return 'Waiting for first update';
+  if (seconds < 1) return 'Just now';
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}m ${remainder}s ago` : `${minutes}m ago`;
+}
+
+function formatLocalFeedTime(timestamp) {
+  if (!Number.isFinite(Number(timestamp))) return 'Waiting for first update';
+  return new Date(Number(timestamp)).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+}
+
 function estimatePositionNetPnl(position, exitPrice, feeRate = 0.0004) {
   const entryPrice = Number(position?.entryPrice);
   const quantity = Number(position?.quantity);
@@ -607,6 +630,7 @@ export default function TradingViewReplayChart({
   const [isRemovingSymbol, setIsRemovingSymbol] = useState(false);
   const [isLoadingAvailableSymbols, setIsLoadingAvailableSymbols] = useState(false);
   const [timeframe, setTimeframe] = useState(initialTimeframe);
+  const timeframeOptions = useMemo(() => supportedTimeframes(exchange), [exchange]);
 
   const [allCandles, setAllCandles] = useState([]);
   const [loadedTimeframe, setLoadedTimeframe] = useState(initialTimeframe);
@@ -637,6 +661,9 @@ export default function TradingViewReplayChart({
   const [replayAccessStatus, setReplayAccessStatus] = useState('idle');
   const [replayAccessError, setReplayAccessError] = useState('');
   const [liveConnectionStatus, setLiveConnectionStatus] = useState('connecting');
+  const [liveFeedInfo, setLiveFeedInfo] = useState({ source: null, receivedAt: null });
+  const [browserOnline, setBrowserOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [feedStatusClock, setFeedStatusClock] = useState(() => Date.now());
   const replayAccessAllowedRef = useRef(false);
   const [tourStep, setTourStep] = useState(auth?.user?.chart_tour_completed_at ? -1 : 0);
   const tourSteps = [
@@ -662,6 +689,9 @@ export default function TradingViewReplayChart({
   const [orderLineDraftPatch, setOrderLineDraftPatch] = useState(null);
   const [chartOrderAction, setChartOrderAction] = useState(null);
   const [chartOrderRequest, setChartOrderRequest] = useState(null);
+  const [chartContextMenu, setChartContextMenu] = useState(null);
+  const chartContextMenuRef = useRef(null);
+  const chartContextMenuFirstItemRef = useRef(null);
   const [orderDraftClearRequest, setOrderDraftClearRequest] = useState(null);
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: CHART_HEIGHT });
   const [overlayRenderVersion, setOverlayRenderVersion] = useState(0);
@@ -722,6 +752,26 @@ export default function TradingViewReplayChart({
     if (!visibleCandles.length) return null;
     return visibleCandles[visibleCandles.length - 1].close;
   }, [visibleCandles]);
+  const latestCandleStartedAt = useMemo(() => {
+    const candleTime = Number(visibleCandles.at(-1)?.time);
+    return Number.isFinite(candleTime) ? candleTime * 1000 : null;
+  }, [visibleCandles]);
+  const liveFeedAgeSeconds = liveFeedInfo.receivedAt
+    ? Math.max(0, Math.floor((feedStatusClock - liveFeedInfo.receivedAt) / 1000))
+    : null;
+  const liveFeedDelayThreshold = liveFeedInfo.source === 'websocket'
+    ? WEBSOCKET_DELAY_SECONDS
+    : Math.max(20, MARKET_DATA_POLL_SECONDS * 2);
+  const isLiveFeedDelayed = liveFeedAgeSeconds !== null && liveFeedAgeSeconds >= liveFeedDelayThreshold;
+  const visibleLiveStatus = useMemo(() => {
+    if (replayMode) return { key: 'replay', label: 'Replay' };
+    if (!browserOnline) return { key: 'offline', label: 'Offline' };
+    if (liveConnectionStatus === 'connecting') return { key: 'connecting', label: 'Connecting' };
+    if (liveConnectionStatus === 'reconnecting') return { key: 'reconnecting', label: 'Reconnecting' };
+    if (isLiveFeedDelayed) return { key: 'delayed', label: 'Delayed' };
+    if (liveConnectionStatus === 'live') return { key: 'live', label: 'Live' };
+    return { key: 'polling', label: 'REST Polling' };
+  }, [browserOnline, isLiveFeedDelayed, liveConnectionStatus, replayMode]);
   const currentPriceCoordinate = useMemo(() => {
     const series = candleSeriesRef.current;
     if (!series || !Number.isFinite(Number(currentPrice))) return null;
@@ -822,6 +872,32 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     setReplayAccessStatus('idle');
     setReplayAccessError('');
+  }, [exchange, marketCategory, symbol, timeframe]);
+
+  useEffect(() => {
+    if (timeframeOptions.some((item) => item.value === timeframe)) return;
+    setTimeframe(timeframeOptions.find((item) => item.value === '15m')?.value ?? timeframeOptions[0]?.value ?? '1m');
+  }, [timeframe, timeframeOptions]);
+
+  useEffect(() => {
+    const updateOnlineStatus = () => {
+      setBrowserOnline(navigator.onLine);
+      setFeedStatusClock(Date.now());
+    };
+    const clock = window.setInterval(() => setFeedStatusClock(Date.now()), 1000);
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    return () => {
+      window.clearInterval(clock);
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    setLiveFeedInfo({ source: null, receivedAt: null });
+    setFeedStatusClock(Date.now());
   }, [exchange, marketCategory, symbol, timeframe]);
 
   useEffect(() => {
@@ -1664,8 +1740,9 @@ export default function TradingViewReplayChart({
       event.preventDefault();
       event.stopPropagation();
       setChartOrderAction(action);
-      setChartOrderRequest({
-        id: Date.now(),
+      setChartContextMenu({
+        x: Math.max(8, Math.min(event.clientX, window.innerWidth - 228)),
+        y: Math.max(8, Math.min(event.clientY, window.innerHeight - 116)),
         price: action.price,
       });
     };
@@ -1680,6 +1757,56 @@ export default function TradingViewReplayChart({
       el.removeEventListener('contextmenu', handleContextMenu);
     };
   }, []);
+
+  useEffect(() => {
+    if (!chartContextMenu) return undefined;
+
+    chartContextMenuFirstItemRef.current?.focus();
+
+    const closeMenu = (event) => {
+      if (event?.type === 'pointerdown' && chartContextMenuRef.current?.contains(event.target)) return;
+      setChartContextMenu(null);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setChartContextMenu(null);
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+
+      const items = Array.from(chartContextMenuRef.current?.querySelectorAll('[role="menuitem"]') ?? []);
+      if (!items.length) return;
+      event.preventDefault();
+      const currentIndex = items.indexOf(document.activeElement);
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (currentIndex + 1 + items.length) % items.length
+            : (currentIndex - 1 + items.length) % items.length;
+      items[nextIndex].focus();
+    };
+
+    document.addEventListener('pointerdown', closeMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('wheel', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', closeMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('wheel', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+    };
+  }, [chartContextMenu]);
+
+  useEffect(() => {
+    setChartContextMenu(null);
+  }, [exchange, marketCategory, symbol, timeframe]);
 
   const getDefaultPositionStop = useCallback((type, entry, target) => {
     const priceMove = Math.abs(target.price - entry.price);
@@ -3981,6 +4108,9 @@ export default function TradingViewReplayChart({
         if (import.meta.env.DEV) console.warn('[live-candle-stream]', streamError?.message, streamError?.cause ?? '');
       },
       onCandle: (nextCandle) => {
+        const receivedAt = Date.now();
+        setLiveFeedInfo({ source: 'websocket', receivedAt });
+        setFeedStatusClock(receivedAt);
         const historyKey = `${exchange}:${marketCategory}:${symbol}:${timeframe}`;
         if (historyReadyKeyRef.current !== historyKey) {
           pendingLiveCandlesRef.current = normalizeApiCandles([...pendingLiveCandlesRef.current, nextCandle]);
@@ -3994,7 +4124,9 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     if (replayMode || liveConnectionStatus === 'live') return undefined;
     let cancelled = false;
+    let timer = null;
     const refreshLatest = async () => {
+      if (document.hidden || !navigator.onLine || cancelled) return;
       try {
         const params = new URLSearchParams({
           exchange,
@@ -4010,6 +4142,9 @@ export default function TradingViewReplayChart({
         const result = await response.json();
         const latest = normalizeApiCandles(result.candles ?? []).at(-1);
         if (!cancelled && latest) {
+          const receivedAt = Date.now();
+          setLiveFeedInfo({ source: 'rest', receivedAt });
+          setFeedStatusClock(receivedAt);
           setAllCandles((items) => normalizeApiCandles([...items, latest]));
           setLiveConnectionStatus((status) => (
             status === 'live' || status === 'connecting' || status === 'reconnecting'
@@ -4019,9 +4154,25 @@ export default function TradingViewReplayChart({
         }
       } catch {}
     };
-    refreshLatest();
-    const timer = window.setInterval(refreshLatest, 5000);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    const startPolling = () => {
+      window.clearInterval(timer);
+      if (document.hidden || !navigator.onLine || cancelled) return;
+      refreshLatest();
+      timer = window.setInterval(refreshLatest, MARKET_DATA_POLL_SECONDS * 1000);
+    };
+    const stopPolling = () => window.clearInterval(timer);
+    const handleVisibility = () => document.hidden ? stopPolling() : startPolling();
+    startPolling();
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', startPolling);
+    window.addEventListener('offline', stopPolling);
+    return () => {
+      cancelled = true;
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', startPolling);
+      window.removeEventListener('offline', stopPolling);
+    };
   }, [exchange, liveConnectionStatus, marketCategory, replayMode, symbol, timeframe]);
 
   const stepBackward = async () => {
@@ -4914,6 +5065,7 @@ export default function TradingViewReplayChart({
     isLoadingAvailableSymbols,
     symbolError,
     timeframe,
+    timeframeOptions,
     replayMode,
     replayAccessStatus,
     liveConnectionStatus,
@@ -4953,6 +5105,48 @@ export default function TradingViewReplayChart({
     {alertModalOpen && <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 p-4 sm:items-center" onMouseDown={(e)=>e.target===e.currentTarget&&setAlertModalOpen(false)}><div className={`w-full max-w-sm rounded-xl border p-5 shadow-2xl ${chartTheme.mode==='dark'?'border-[#2a2e39] bg-[#131722] text-white':'border-slate-200 bg-white text-slate-900'}`} role="dialog" aria-modal="true"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-bold"><Bell size={17}/>Set {symbol} alert</h2><button onClick={()=>setAlertModalOpen(false)} aria-label="Close"><X size={18}/></button></div><label className="mt-4 block text-xs font-semibold">Price<input autoFocus type="number" min="0" step="any" value={alertDraft.price} onChange={(e)=>setAlertDraft((d)=>({...d,price:e.target.value}))} className="mt-1 h-10 w-full rounded-md border border-gray-600 bg-transparent px-3 outline-none focus:border-[#2962ff]"/></label><div className="mt-3 grid grid-cols-2 gap-2">{[['rise','Rise to price'],['drop','Drop to price']].map(([value,label])=><button key={value} onClick={()=>setAlertDraft((d)=>({...d,type:value}))} className={`h-10 rounded-md border text-xs font-semibold ${alertDraft.type===value?'border-[#2962ff] bg-[#2962ff] text-white':'border-gray-600'}`}>{label}</button>)}</div>{alertError&&<p className="mt-2 text-xs text-red-400">{alertError}</p>}<button onClick={savePriceAlert} className="mt-4 h-10 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white">Create alert</button></div></div>}
     {tourStep >= 0 && <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/55 p-4 sm:items-center"><div className="w-full max-w-md rounded-xl border border-[#2a2e39] bg-[#131722] p-5 text-white shadow-2xl"><div className="text-xs font-semibold uppercase tracking-wider text-[#5b8cff]">Getting started · {tourStep + 1}/{tourSteps.length}</div><h2 className="mt-2 text-lg font-bold">{tourSteps[tourStep][0]}</h2><p className="mt-2 text-sm leading-6 text-[#b2b5be]">{tourSteps[tourStep][1]}</p><div className="mt-5 flex justify-between"><button onClick={finishTour} className="text-sm text-[#787b86] hover:text-white">Skip</button><button onClick={() => tourStep === tourSteps.length - 1 ? finishTour() : setTourStep(tourStep + 1)} className="rounded bg-[#2962ff] px-4 py-2 text-sm font-semibold">{tourStep === tourSteps.length - 1 ? 'Open chart' : 'Next'}</button></div></div></div>}
     {alertModalOpen && <aside className={`fixed bottom-4 right-4 z-[10003] w-[min(92vw,320px)] rounded-xl border p-4 shadow-2xl sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Alert settings</h3><button onClick={toggleAlertSound} className="rounded-md border px-2 py-1 text-xs font-semibold">Sound {alertSoundEnabled ? 'on' : 'off'}</button></div><p className="mt-2 text-[11px] text-[#787b86]">Alerts monitor live markets in the background. Replay alerts are disabled.</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto">{priceAlerts.map(alert => <div key={alert.id} className="flex items-center justify-between rounded-md border p-2 text-xs"><span>{alert.direction} {formatOverlayPrice(Number(alert.target_price))}</span><button onClick={() => cancelPriceAlert(alert.id)} className="text-red-400" aria-label="Cancel alert"><Trash2 size={14}/></button></div>)}{!priceAlerts.length && <div className="text-xs text-[#787b86]">No active alerts for this market.</div>}</div></aside>}
+    {chartContextMenu && (
+      <div
+        ref={chartContextMenuRef}
+        role="menu"
+        aria-label={`Chart actions at ${formatOverlayPrice(chartContextMenu.price)}`}
+        data-chart-ui="price-context-menu"
+        onContextMenu={(event) => event.preventDefault()}
+        className={`fixed z-[10005] w-[220px] overflow-hidden rounded-lg border p-1.5 shadow-2xl ${chartTheme.mode === 'dark' ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800'}`}
+        style={{ left: chartContextMenu.x, top: chartContextMenu.y }}
+      >
+        <div className="px-2.5 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-[#787b86]">
+          Price {formatOverlayPrice(chartContextMenu.price)}
+        </div>
+        <button
+          ref={chartContextMenuFirstItemRef}
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            const price = chartContextMenu.price;
+            setChartContextMenu(null);
+            handleCreatePriceAlert(price);
+          }}
+          className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-semibold outline-none ${chartTheme.mode === 'dark' ? 'hover:bg-white/10 focus:bg-white/10' : 'hover:bg-slate-100 focus:bg-slate-100'}`}
+        >
+          <Bell size={15} className="text-amber-500" />
+          Set Alarm
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            const price = chartContextMenu.price;
+            setChartContextMenu(null);
+            setChartOrderRequest({ id: Date.now(), price });
+          }}
+          className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-semibold outline-none ${chartTheme.mode === 'dark' ? 'hover:bg-white/10 focus:bg-white/10' : 'hover:bg-slate-100 focus:bg-slate-100'}`}
+        >
+          <Wallet size={15} className="text-[#5b8cff]" />
+          Trigger Position
+        </button>
+      </div>
+    )}
     <div
       ref={fullscreenRef}
       className={
@@ -5043,7 +5237,40 @@ export default function TradingViewReplayChart({
           })}
 
           {chartOrderAction && !loading && !error && <div className="pointer-events-none absolute left-0 right-0 z-10 border-t border-dashed border-[#787b86]" style={{ top: chartOrderAction.y }} />}
-          <div className={`pointer-events-none absolute bottom-8 right-20 z-20 flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-semibold shadow ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722]/90 text-[#d1d4dc]' : 'border-slate-200 bg-white/90 text-slate-700'}`}><span className={`h-1.5 w-1.5 rounded-full ${replayMode ? 'bg-violet-500' : liveConnectionStatus === 'live' ? 'bg-emerald-500' : liveConnectionStatus === 'connecting' || liveConnectionStatus === 'reconnecting' ? 'animate-pulse bg-amber-400' : 'bg-sky-500'}`}/>{replayMode ? 'Replay' : liveConnectionStatus === 'live' ? 'Live' : liveConnectionStatus === 'connecting' ? 'Connecting' : liveConnectionStatus === 'reconnecting' ? 'Reconnecting' : 'Polling'}</div>
+          <div className="group absolute bottom-8 right-20 z-30">
+            <button
+              type="button"
+              className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-semibold shadow outline-none transition focus:ring-2 focus:ring-[#2962ff]/60 ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722]/95 text-[#d1d4dc]' : 'border-slate-200 bg-white/95 text-slate-700'}`}
+              aria-label={`${visibleLiveStatus.label}. Show market feed details.`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${
+                visibleLiveStatus.key === 'replay' ? 'bg-violet-500'
+                  : visibleLiveStatus.key === 'offline' ? 'bg-red-500'
+                    : visibleLiveStatus.key === 'live' ? 'bg-emerald-500'
+                      : visibleLiveStatus.key === 'polling' ? 'bg-sky-500'
+                        : 'animate-pulse bg-amber-400'
+              }`} />
+              {visibleLiveStatus.label}
+            </button>
+            <div
+              role="tooltip"
+              className={`pointer-events-none absolute bottom-full right-0 mb-2 w-72 translate-y-1 rounded-lg border p-3 text-xs opacity-0 shadow-2xl transition group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${chartTheme.mode === 'dark' ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800'}`}
+            >
+              <div className="mb-2 flex items-center justify-between gap-3 border-b border-current/10 pb-2">
+                <span className="font-bold">Market feed</span>
+                <span className={`font-semibold ${isLiveFeedDelayed ? 'text-amber-500' : browserOnline ? 'text-emerald-500' : 'text-red-500'}`}>{visibleLiveStatus.label}</span>
+              </div>
+              <dl className="space-y-1.5">
+                <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Internet</dt><dd className="text-right font-semibold">{browserOnline ? 'Online' : 'Offline'}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Feed</dt><dd className="text-right font-semibold">{liveFeedInfo.source === 'websocket' ? 'WebSocket' : liveFeedInfo.source === 'rest' ? 'REST fallback' : 'Waiting for first update'}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Market</dt><dd className="text-right font-semibold">{exchange.toUpperCase()} · {marketCategory === 'spot' ? 'Spot' : 'Futures'}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Last update</dt><dd className="max-w-[165px] text-right font-semibold">{formatLocalFeedTime(liveFeedInfo.receivedAt)}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Chart delay</dt><dd className={`text-right font-semibold ${isLiveFeedDelayed ? 'text-amber-500' : ''}`}>{formatFeedAge(liveFeedAgeSeconds)}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Candle started</dt><dd className="max-w-[165px] text-right font-semibold">{formatLocalFeedTime(latestCandleStartedAt)}</dd></div>
+              </dl>
+              <p className="mt-2 border-t border-current/10 pt-2 text-[10px] leading-4 text-[#787b86]">Delay is the time since BacktradeLab received a valid candle, not network latency.</p>
+            </div>
+          </div>
 
           {chartOrderAction && !loading && !error && (
             <button

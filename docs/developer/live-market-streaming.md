@@ -27,6 +27,8 @@ Only a valid normalized candle should change the UI to `Live`. Repeated timestam
 - Clear sockets, reconnect timers, stale watchdogs, and polling on dependency change/unmount.
 - Keep production CSP/firewall access for all configured WebSocket hosts.
 - Avoid `fitContent()` during every tick; preserve the user's viewport.
+- REST fallback polls every 10 seconds by default, pauses while the tab is hidden or offline, and resumes immediately when visible/online. The server coalesces identical latest-candle requests for five seconds.
+- Reconnect delays include jitter. BingX uses separate Spot and swap WebSocket hosts. MEXC Spot decodes the current protobuf K-line channel; unsupported MEXC timeframes are not offered.
 
 ## Verification
 
@@ -41,4 +43,4 @@ Related: [Market data](market-data-and-symbols.md), [Trading chart](trading-char
 
 Live candles are buffered until the matching REST history request completes. The loading skeleton remains visible until at least two valid historical candles are available, preventing a one-candle chart flash during exchange connection or market/timeframe changes. RSI and MACD pane sizes are calculated from the fixed chart viewport, so candle updates do not grow the chart.
 
-The current mode (`Replay`, `Live`, `Connecting`, `Reconnecting`, or `Polling`) is displayed at the chart's bottom-right.
+The chart's bottom-right badge displays `Replay`, `Offline`, `Connecting`, `Reconnecting`, `Delayed`, `Live`, or `REST Polling`. Hovering or focusing it shows browser connectivity, WebSocket/REST source, market, last valid receipt time, receipt age, and the current candle's interval start in browser-local time. WebSocket data becomes delayed after 45 seconds without a valid candle; REST data becomes delayed after two missed polling intervals with a 20-second minimum. The displayed chart delay is receipt age inside BacktradeLab, not exchange network round-trip latency. Candle interval start is kept separate so a current long-timeframe candle is not mislabeled as delayed.

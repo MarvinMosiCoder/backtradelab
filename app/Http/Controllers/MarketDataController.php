@@ -4,14 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Models\MarketSymbol;
 use App\Services\MarketMetadataService;
+use App\Services\ExchangeMarketDataGateway;
+use App\Exceptions\ExchangeRateLimitedException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 
 class MarketDataController extends Controller
 {
     private const EXCHANGES = ['binance', 'bybit', 'okx', 'bingx', 'mexc'];
+
+    public function __construct(private readonly ExchangeMarketDataGateway $marketGateway)
+    {
+    }
 
     public function metadata(Request $request, MarketMetadataService $metadata)
     {
@@ -186,20 +191,40 @@ class MarketDataController extends Controller
 
     public function klines(Request $request)
     {
-        $symbol = strtoupper($request->query('symbol', 'BTCUSDT'));
-        $interval = $request->query('interval', '60');
-        $category = $request->query('category', 'spot');
-        $exchange = strtolower($request->query('exchange', 'bybit'));
+        $validated = $request->validate([
+            'symbol' => ['nullable', 'string', 'max:32', 'regex:/^[A-Za-z0-9]+$/'],
+            'interval' => ['nullable', Rule::in(['1', '3', '5', '15', '30', '60', '120', '240', '360', '720', 'D', 'W', 'M'])],
+            'category' => ['nullable', Rule::in(['spot', 'linear', 'inverse'])],
+            'exchange' => ['nullable', Rule::in(self::EXCHANGES)],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:1000'],
+            'max_candles' => ['nullable', 'integer', 'min:1', 'max:20000'],
+            'start' => ['nullable', 'integer', 'min:1'],
+            'end' => ['nullable', 'integer', 'min:1'],
+            'fresh' => ['nullable', 'boolean'],
+        ]);
+
+        $symbol = strtoupper($validated['symbol'] ?? 'BTCUSDT');
+        $interval = (string) ($validated['interval'] ?? '60');
+        $category = $validated['category'] ?? 'spot';
+        $exchange = strtolower($validated['exchange'] ?? 'bybit');
 
         // per-request chunk size for Bybit
-        $chunkLimit = max(1, min((int) $request->query('limit', 1000), 1000));
+        $chunkLimit = (int) ($validated['limit'] ?? 1000);
 
         // total candles you want to return to frontend
-        $maxCandles = max(1, min((int) $request->query('max_candles', 5000), 20000));
+        $maxCandles = (int) ($validated['max_candles'] ?? 5000);
 
-        $start = $request->query('start'); // ms timestamp
-        $end = $request->query('end');     // ms timestamp
-        $fresh = $request->boolean('fresh');
+        $start = $validated['start'] ?? null;
+        $end = $validated['end'] ?? null;
+        $fresh = filter_var($validated['fresh'] ?? false, FILTER_VALIDATE_BOOL);
+
+        if ($start && $end && $start > $end) {
+            return response()->json(['success' => false, 'message' => 'Start must not be later than end.'], 422);
+        }
+
+        if (!$this->supportsInterval($exchange, $category, $interval)) {
+            return response()->json(['success' => false, 'message' => 'The selected timeframe is not supported by this exchange.'], 422);
+        }
 
         $allowedCategories = ['spot', 'linear', 'inverse'];
         $allowedIntervals = ['1', '3', '5', '15', '30', '60', '120', '240', '360', '720', 'D', 'W', 'M'];
@@ -248,10 +273,12 @@ class MarketDataController extends Controller
                 : ['bingx', 'bybit', 'mexc', 'okx', 'binance'];
             $candidateExchanges = $category === 'spot'
                 ? [$exchange]
-                : array_values(array_unique([$exchange, ...$futuresFallbacks]));
+                : array_slice(array_values(array_filter(array_unique([$exchange, ...$futuresFallbacks]), fn ($candidate) => $this->supportsInterval($candidate, $category, $interval))), 0, 2);
             $allRows = [];
             $usedExchange = $exchange;
+            $usedRequests = 0;
             $fallbackErrors = [];
+            $retryAfter = 0;
 
             foreach ($candidateExchanges as $candidateExchange) {
                 $marketSymbol = MarketSymbol::query()
@@ -267,7 +294,9 @@ class MarketDataController extends Controller
                 $currentEnd = $end ? (int) $end : null;
 
                 // hard loop guard
-                $maxRequests = 30;
+                $maxRequests = $maxCandles > 5000
+                    ? (int) config('market-data.replay_max_pages', 20)
+                    : (int) config('market-data.normal_max_pages', 10);
                 $requests = 0;
 
                 while (count($candidateRows) < $maxCandles && $requests < $maxRequests) {
@@ -284,6 +313,9 @@ class MarketDataController extends Controller
 
                     if (!$rowsResult['success']) {
                         $fallbackErrors[$candidateExchange] = $rowsResult['payload']['message'] ?? 'Failed to fetch market data';
+                        if (($rowsResult['status'] ?? 0) === 429) {
+                            $retryAfter = max($retryAfter, (int) ($rowsResult['payload']['retry_after'] ?? 1));
+                        }
                         break;
                     }
 
@@ -335,6 +367,7 @@ class MarketDataController extends Controller
                 if (!empty($candidateRows)) {
                     $allRows = $candidateRows;
                     $usedExchange = $candidateExchange;
+                    $usedRequests = $requests;
                     break;
                 }
 
@@ -347,14 +380,17 @@ class MarketDataController extends Controller
             });
 
             if (empty($allRows)) {
-                return response()->json([
+                $response = response()->json([
                     'success' => false,
-                    'message' => 'No candle data returned for this market and timeframe',
+                    'message' => $retryAfter > 0 ? 'Market data is temporarily rate limited.' : 'No candle data returned for this market and timeframe',
                     'exchange' => $exchange,
                     'category' => $category,
                     'symbol' => $symbol,
                     'fallbackErrors' => $fallbackErrors,
-                ], 502);
+                    ...($retryAfter > 0 ? ['retry_after' => $retryAfter] : []),
+                ], $retryAfter > 0 ? 429 : 502);
+                if ($retryAfter > 0) $response->header('Retry-After', (string) $retryAfter);
+                return $response;
             }
 
             // trim to latest maxCandles if needed
@@ -379,6 +415,8 @@ class MarketDataController extends Controller
                 'requested_exchange' => $exchange,
                 'count' => count($candles),
                 'candles' => $candles,
+                'partial' => count($candles) < $maxCandles,
+                'upstream_pages' => $usedRequests,
             ];
 
             if (!$fresh) {
@@ -386,6 +424,13 @@ class MarketDataController extends Controller
             }
 
             return response()->json($payload);
+        } catch (ExchangeRateLimitedException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'exchange' => $e->exchange,
+                'retry_after' => $e->retryAfter,
+            ], 429)->header('Retry-After', (string) $e->retryAfter);
         } catch (\Throwable $e) {
             return response()->json([
                 'success' => false,
@@ -399,28 +444,28 @@ class MarketDataController extends Controller
     {
         try {
             $response = match ($exchange) {
-                'binance' => $this->marketHttp()->get(
+                'binance' => $this->marketGateway->get($exchange, 'symbols',
                     $category === 'spot'
                         ? 'https://api.binance.com/api/v3/exchangeInfo'
-                        : 'https://fapi.binance.com/fapi/v1/exchangeInfo'
+                        : 'https://fapi.binance.com/fapi/v1/exchangeInfo', [], 30
                 ),
-                'okx' => $this->marketHttp()->get('https://www.okx.com/api/v5/public/instruments', [
+                'okx' => $this->marketGateway->get($exchange, 'symbols', 'https://www.okx.com/api/v5/public/instruments', [
                     'instType' => $category === 'spot' ? 'SPOT' : 'SWAP',
-                ]),
-                'bingx' => $this->marketHttp()->get(
+                ], 30),
+                'bingx' => $this->marketGateway->get($exchange, 'symbols',
                     $category === 'spot'
                         ? 'https://open-api.bingx.com/openApi/spot/v1/common/symbols'
-                        : 'https://open-api.bingx.com/openApi/swap/v2/quote/contracts'
+                        : 'https://open-api.bingx.com/openApi/swap/v2/quote/contracts', [], 30
                 ),
-                'mexc' => $this->marketHttp()->get(
+                'mexc' => $this->marketGateway->get($exchange, 'symbols',
                     $category === 'spot'
                         ? 'https://api.mexc.com/api/v3/exchangeInfo'
-                        : 'https://contract.mexc.com/api/v1/contract/detail'
+                        : 'https://contract.mexc.com/api/v1/contract/detail', [], 30
                 ),
-                default => $this->marketHttp()->get('https://api.bybit.com/v5/market/instruments-info', [
+                default => $this->marketGateway->get($exchange, 'symbols', 'https://api.bybit.com/v5/market/instruments-info', [
                     'category' => $category,
                     ...($category !== 'spot' ? ['limit' => 1000] : []),
-                ]),
+                ], 30),
             };
 
             if (!$response->successful()) {
@@ -581,57 +626,57 @@ class MarketDataController extends Controller
     ): array {
         try {
             $response = match ($exchange) {
-                'binance' => $this->marketHttp()->get(
+                'binance' => $this->marketGateway->get($exchange, 'klines',
                     $category === 'spot'
                         ? 'https://api.binance.com/api/v3/klines'
                         : 'https://fapi.binance.com/fapi/v1/klines',
                     [
                         'symbol' => $symbol,
-                        'interval' => $this->mapInterval($exchange, $interval),
+                        'interval' => $this->mapInterval($exchange, $interval, $category),
                         'limit' => min($limit, 1000),
                         ...($end ? ['endTime' => $end] : []),
                         ...($start ? ['startTime' => $start] : []),
-                    ]
+                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30
                 ),
-                'okx' => $this->marketHttp()->get('https://www.okx.com/api/v5/market/history-candles', [
+                'okx' => $this->marketGateway->get($exchange, 'klines', 'https://www.okx.com/api/v5/market/history-candles', [
                     'instId' => $exchangeSymbol,
-                    'bar' => $this->mapInterval($exchange, $interval),
+                    'bar' => $this->mapInterval($exchange, $interval, $category),
                     'limit' => min($limit, 300),
                     ...($end ? ['after' => $end] : []),
-                ]),
-                'bingx' => $this->marketHttp()->get(
+                ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30),
+                'bingx' => $this->marketGateway->get($exchange, 'klines',
                     $category === 'spot'
                         ? 'https://open-api.bingx.com/openApi/spot/v1/market/kline'
                         : 'https://open-api.bingx.com/openApi/swap/v3/quote/klines',
                     [
                     'symbol' => $exchangeSymbol,
-                    'interval' => $this->mapInterval($exchange, $interval),
+                    'interval' => $this->mapInterval($exchange, $interval, $category),
                     'limit' => min($limit, 1000),
                     ...($end ? ['endTime' => $end] : []),
                     ...($start ? ['startTime' => $start] : []),
-                    ]
+                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30
                 ),
                 'mexc' => $category === 'spot'
-                    ? $this->marketHttp()->get('https://api.mexc.com/api/v3/klines', [
+                    ? $this->marketGateway->get($exchange, 'klines', 'https://api.mexc.com/api/v3/klines', [
                         'symbol' => $symbol,
-                        'interval' => $this->mapInterval($exchange, $interval),
+                        'interval' => $this->mapInterval($exchange, $interval, $category),
                         'limit' => min($limit, 1000),
                         ...($end ? ['endTime' => $end] : []),
                         ...($start ? ['startTime' => $start] : []),
-                    ])
-                    : $this->marketHttp()->get('https://contract.mexc.com/api/v1/contract/kline/' . $exchangeSymbol, [
-                        'interval' => $this->mapInterval($exchange, $interval),
+                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30)
+                    : $this->marketGateway->get($exchange, 'klines', 'https://contract.mexc.com/api/v1/contract/kline/' . $exchangeSymbol, [
+                        'interval' => $this->mapInterval($exchange, $interval, $category),
                         ...($end ? ['end' => (int) floor($end / 1000)] : []),
                         ...($start ? ['start' => (int) floor($start / 1000)] : []),
-                    ]),
-                default => $this->marketHttp()->get('https://api.bybit.com/v5/market/kline', [
+                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30),
+                default => $this->marketGateway->get($exchange, 'klines', 'https://api.bybit.com/v5/market/kline', [
                     'category' => $category,
                     'symbol' => $symbol,
                     'interval' => $interval,
                     'limit' => $limit,
                     ...($end ? ['end' => $end] : []),
                     ...($start ? ['start' => $start] : []),
-                ]),
+                ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30),
             };
 
             if (!$response->successful()) {
@@ -671,6 +716,18 @@ class MarketDataController extends Controller
                 'status' => 200,
                 'payload' => [],
                 'rows' => $rows,
+            ];
+        } catch (ExchangeRateLimitedException $e) {
+            return [
+                'success' => false,
+                'status' => 429,
+                'payload' => [
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'exchange' => $e->exchange,
+                    'retry_after' => $e->retryAfter,
+                ],
+                'rows' => [],
             ];
         } catch (\Throwable $e) {
             return [
@@ -773,7 +830,14 @@ class MarketDataController extends Controller
         return $symbol;
     }
 
-    private function mapInterval(string $exchange, string $interval): string
+    private function supportsInterval(string $exchange, string $category, string $interval): bool
+    {
+        if ($exchange !== 'mexc') return true;
+
+        return in_array($interval, ['1', '5', '15', '30', '60', '240', 'D', 'W', 'M'], true);
+    }
+
+    private function mapInterval(string $exchange, string $interval, string $category = 'spot'): string
     {
         $minutes = [
             '1' => '1m',
@@ -805,6 +869,8 @@ class MarketDataController extends Controller
         }
 
         if ($exchange === 'mexc') {
+            if ($category === 'spot') return $minutes[$interval] ?? $interval;
+
             return [
                 '1' => 'Min1',
                 '5' => 'Min5',
@@ -819,18 +885,6 @@ class MarketDataController extends Controller
         }
 
         return $minutes[$interval] ?? $interval;
-    }
-
-    private function marketHttp()
-    {
-        return Http::withOptions([
-            'verify' => filter_var(config('services.market_data.verify_tls', true), FILTER_VALIDATE_BOOL),
-        ])
-            ->withHeaders([
-                'User-Agent' => 'Mozilla/5.0',
-                'Accept' => '*/*',
-            ])
-            ->timeout(20);
     }
 
     private function klineCacheSeconds(string $interval, bool $isHistorical): int

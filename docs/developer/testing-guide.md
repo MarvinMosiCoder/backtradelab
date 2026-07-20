@@ -49,6 +49,9 @@ After documentation changes:
 - Confirm ready-tool selections persist across login/device reload and every new drawing can be selected, resized, moved, duplicated, saved, and restored.
 - Confirm preset name collisions require overwrite approval and range labels calculate correctly.
 - Switch markets while a live update arrives and confirm the skeleton remains until the full history response.
+- Disconnect each exchange WebSocket and confirm one coalesced 10-second REST fallback refresh serves concurrent charts, hidden tabs stop polling, and visibility resumes immediately.
+- Mock exchange 429/418 responses and verify `Retry-After`, shared cooldown, stale success, bounded pagination, one compatible fallback, and recovery without a request storm.
+- Verify BingX Spot uses its Spot socket, MEXC Spot protobuf candles decode, and unsupported MEXC timeframes are absent and rejected server-side.
 - Leave RSI/MACD open through live updates and fullscreen transitions and confirm pane heights remain stable.
 - Run `php artisan market-alerts:monitor --once --force` with test alerts and mocked exchange responses; verify trigger idempotency, cancellation, notification ownership, and failed-market backoff.
 - With a live chart open, cross rise and drop targets and verify the authenticated check creates one notification, removes the alert line, and shows one six-second toast even after the navbar poll runs.

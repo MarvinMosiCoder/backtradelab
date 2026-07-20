@@ -81,6 +81,8 @@ Stop the Vite development server and remove a stale `public/hot` marker if Larav
 Configure only the integration being tested:
 
 - Google/Facebook: `GOOGLE_*` and `FACEBOOK_*`
+- Coin fundamentals: `COINMARKETCAP_API_KEY`; optional fallback `COINGECKO_API_KEY` and `COINGECKO_MODE`
+- Market-data hardening: local file cache works for one instance; production requires Redis and the `MARKET_DATA_*` limits documented in `.env.example`
 - PayMongo: `PAYMONGO_*`; keep disabled until configured
 - Mail: `MAIL_*`
 - Private/shared files: `FILESYSTEM_DISK` and `AWS_*`

@@ -2,9 +2,9 @@
 
 ## Required services and configuration
 
-Use managed MySQL, shared Redis for cache/session/rate limits/queues, private S3-compatible storage for sensitive/shared files, supervised queue workers, HTTPS, and scheduled Laravel commands.
+Use managed MySQL, shared Redis for cache/session/rate limits/queues, private S3-compatible storage for sensitive/shared files, supervised queue workers, HTTPS, and scheduled Laravel commands. Market-data protection requires `CACHE_DRIVER=redis` in production and the PHP Redis extension (or an explicitly installed compatible Redis client); the application refuses to boot in production without the shared cache unless `MARKET_DATA_REQUIRE_REDIS=false` is deliberately set for an emergency single-instance deployment.
 
-Production secrets belong in the deployment environment. Important groups are `APP_*`, `DB_*`, `REDIS_*`, `MAIL_*`, `AWS_*`, `GOOGLE_*`, `FACEBOOK_*`, `LEGAL_*`, and `PAYMONGO_*`.
+Production secrets belong in the deployment environment. Important groups are `APP_*`, `DB_*`, `REDIS_*`, `MAIL_*`, `AWS_*`, `GOOGLE_*`, `FACEBOOK_*`, `LEGAL_*`, `COINMARKETCAP_API_KEY`, optional CoinGecko fallback `COINGECKO_*`, and `PAYMONGO_*`.
 
 Recommended deployment commands:
 
@@ -44,6 +44,7 @@ Validate available merchant payment methods; configuring `card,gcash` does not g
 - Verify rate limits behind the real proxy/CDN.
 - Load-test candle, replay, order, report, and checkout endpoints.
 - Verify WebSocket hosts in CSP/network rules and REST fallback behavior.
+- Verify Redis-backed exchange budgets/cooldowns, stale-cache behavior, and structured 429/418 monitoring before exposing chart APIs to production traffic.
 - Test PayMongo success/failure/abandonment/delayed/duplicate/missed webhook.
 - Confirm subscription plan prices and durations.
 - Verify private/shared storage and backup restore.

@@ -11,6 +11,13 @@ use Throwable;
 
 class MarketMetadataService
 {
+    private ExchangeMarketDataGateway $marketGateway;
+
+    public function __construct(?ExchangeMarketDataGateway $marketGateway = null)
+    {
+        $this->marketGateway = $marketGateway ?? app(ExchangeMarketDataGateway::class);
+    }
+
     public function get(string $exchange, string $category, string $symbol): array
     {
         $exchange = strtolower($exchange);
@@ -36,17 +43,33 @@ class MarketMetadataService
         }
 
         $fundamentals = null;
-        $coinGeckoKey = trim((string) config('services.coingecko.api_key'));
-        if ($base !== '' && $coinGeckoKey !== '') {
+        $fundamentalsSource = null;
+        $coinMarketCapKey = trim((string) config('services.coinmarketcap.api_key'));
+        if ($base !== '' && $coinMarketCapKey !== '') {
             try {
-                $fundamentals = $this->coinGeckoFundamentals($base);
-                if (!$fundamentals) $warnings[] = 'No exact CoinGecko match was found for this asset.';
+                $fundamentals = $this->coinMarketCapFundamentals($base);
+                if (!$fundamentals) $warnings[] = 'No exact CoinMarketCap match was found for this asset.';
+                else $fundamentalsSource = 'coinmarketcap';
             } catch (Throwable $exception) {
                 report($exception);
-                $warnings[] = 'Coin fundamentals are temporarily unavailable.';
+                $warnings[] = 'CoinMarketCap fundamentals are temporarily unavailable.';
             }
-        } elseif ($base !== '') {
-            $warnings[] = 'CoinGecko is not configured; exchange statistics are still available.';
+        }
+
+        $coinGeckoKey = trim((string) config('services.coingecko.api_key'));
+        if ($base !== '' && !$fundamentals && $coinGeckoKey !== '') {
+            try {
+                $fundamentals = $this->coinGeckoFundamentals($base);
+                if (!$fundamentals) $warnings[] = 'No exact CoinGecko fallback match was found for this asset.';
+                else $fundamentalsSource = 'coingecko';
+            } catch (Throwable $exception) {
+                report($exception);
+                $warnings[] = 'CoinGecko fallback fundamentals are temporarily unavailable.';
+            }
+        }
+
+        if ($base !== '' && $coinMarketCapKey === '' && $coinGeckoKey === '') {
+            $warnings[] = 'Coin fundamentals providers are not configured; exchange statistics are still available.';
         }
 
         return [
@@ -61,7 +84,7 @@ class MarketMetadataService
             ],
             'stats' => $exchangeData,
             'fundamentals' => $fundamentals,
-            'sources' => array_values(array_filter([$exchangeAvailable ? $exchange : null, $fundamentals ? 'coingecko' : null])),
+            'sources' => array_values(array_filter([$exchangeAvailable ? $exchange : null, $fundamentalsSource])),
             'warnings' => $warnings,
             'updated_at' => now()->toIso8601String(),
         ];
@@ -83,11 +106,11 @@ class MarketMetadataService
     {
         $futures = $category !== 'spot';
         $base = $futures ? 'https://fapi.binance.com' : 'https://api.binance.com';
-        $ticker = $this->http()->get($base.($futures ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr'), ['symbol' => $native])->throw()->json();
+        $ticker = $this->marketGateway->get('binance', 'ticker', $base.($futures ? '/fapi/v1/ticker/24hr' : '/api/v3/ticker/24hr'), ['symbol' => $native], 10)->throw()->json();
         $extra = [];
         if ($futures) {
-            $premium = $this->http()->get($base.'/fapi/v1/premiumIndex', ['symbol' => $native]);
-            $interest = $this->http()->get($base.'/fapi/v1/openInterest', ['symbol' => $native]);
+            $premium = $this->marketGateway->get('binance', 'premium-index', $base.'/fapi/v1/premiumIndex', ['symbol' => $native], 10);
+            $interest = $this->marketGateway->get('binance', 'open-interest', $base.'/fapi/v1/openInterest', ['symbol' => $native], 10);
             if ($premium->successful()) $extra = array_merge($extra, $premium->json());
             if ($interest->successful()) $extra = array_merge($extra, $interest->json());
         }
@@ -111,10 +134,10 @@ class MarketMetadataService
 
     private function bybitStats(string $category, string $native): array
     {
-        $payload = $this->http()->get('https://api.bybit.com/v5/market/tickers', [
+        $payload = $this->marketGateway->get('bybit', 'ticker', 'https://api.bybit.com/v5/market/tickers', [
             'category' => $category === 'spot' ? 'spot' : $category,
             'symbol' => $native,
-        ])->throw()->json();
+        ], 10)->throw()->json();
         $ticker = $payload['result']['list'][0] ?? [];
 
         return $this->stats([
@@ -136,7 +159,7 @@ class MarketMetadataService
 
     private function okxStats(string $category, string $native): array
     {
-        $ticker = $this->http()->get('https://www.okx.com/api/v5/market/ticker', ['instId' => $native])->throw()->json('data.0') ?? [];
+        $ticker = $this->marketGateway->get('okx', 'ticker', 'https://www.okx.com/api/v5/market/ticker', ['instId' => $native], 10)->throw()->json('data.0') ?? [];
         $last = $this->number($ticker['last'] ?? null);
         $open = $this->number($ticker['open24h'] ?? null);
         $change = $last !== null && $open && $open != 0 ? (($last - $open) / $open) * 100 : null;
@@ -147,7 +170,7 @@ class MarketMetadataService
                 ['https://www.okx.com/api/v5/public/funding-rate', ['instId' => $native], 'fundingRate'],
                 ['https://www.okx.com/api/v5/public/open-interest', ['instType' => 'SWAP', 'instId' => $native], 'oi'],
             ] as [$url, $params, $field]) {
-                $response = $this->http()->get($url, $params);
+                $response = $this->marketGateway->get('okx', 'derivative-metadata', $url, $params, 10);
                 if ($response->successful()) $extra[$field] = data_get($response->json(), 'data.0.'.$field);
                 if ($field === 'fundingRate' && $response->successful()) $extra['nextFundingTime'] = data_get($response->json(), 'data.0.nextFundingTime');
             }
@@ -173,9 +196,9 @@ class MarketMetadataService
     {
         $spot = $category === 'spot';
         $symbol = str_contains($native, '-') ? $native : preg_replace('/(USDT|USDC|USD)$/i', '-$1', $native);
-        $response = $this->http()->get(
+        $response = $this->marketGateway->get('bingx', 'ticker',
             $spot ? 'https://open-api.bingx.com/openApi/spot/v1/ticker/24hr' : 'https://open-api.bingx.com/openApi/swap/v2/quote/ticker',
-            ['symbol' => $symbol]
+            ['symbol' => $symbol], 10
         )->throw()->json();
         $ticker = $response['data'] ?? [];
         if (array_is_list($ticker)) $ticker = $ticker[0] ?? [];
@@ -199,9 +222,9 @@ class MarketMetadataService
     private function mexcStats(string $category, string $native): array
     {
         $spot = $category === 'spot';
-        $response = $this->http()->get(
+        $response = $this->marketGateway->get('mexc', 'ticker',
             $spot ? 'https://api.mexc.com/api/v3/ticker/24hr' : 'https://contract.mexc.com/api/v1/contract/ticker',
-            ['symbol' => $native]
+            ['symbol' => $native], 10
         )->throw()->json();
         $ticker = $spot ? $response : ($response['data'] ?? []);
         if (array_is_list($ticker)) $ticker = $ticker[0] ?? [];
@@ -222,10 +245,79 @@ class MarketMetadataService
         ]);
     }
 
+    private function coinMarketCapFundamentals(string $base): ?array
+    {
+        $coinId = Cache::remember("market-metadata:coinmarketcap-map:v1:{$base}", now()->addDay(), function () use ($base) {
+            $coins = $this->coinMarketCap()->get('/v1/cryptocurrency/map', [
+                'symbol' => $base,
+                'listing_status' => 'active',
+            ])->throw()->json('data') ?? [];
+            if (!is_array($coins)) throw new RuntimeException('CoinMarketCap returned an invalid map response.');
+            $ids = array_values(array_filter(array_map(
+                fn ($coin) => strtoupper((string) ($coin['symbol'] ?? '')) === $base ? ($coin['id'] ?? null) : null,
+                $coins
+            ), fn ($id) => is_numeric($id)));
+            if (!$ids) return '';
+
+            $quotes = $this->coinMarketCap()->get('/v2/cryptocurrency/quotes/latest', [
+                'id' => implode(',', $ids),
+                'convert' => 'USD',
+            ])->throw()->json('data') ?? [];
+            if (!is_array($quotes)) throw new RuntimeException('CoinMarketCap returned an invalid quotes response.');
+            $matches = array_values(array_filter(
+                $quotes,
+                fn ($coin) => is_array($coin) && strtoupper((string) ($coin['symbol'] ?? '')) === $base
+            ));
+            usort($matches, fn ($a, $b) => ($a['cmc_rank'] ?? PHP_INT_MAX) <=> ($b['cmc_rank'] ?? PHP_INT_MAX));
+            return $matches[0]['id'] ?? '';
+        });
+        if (!$coinId) return null;
+
+        $quote = Cache::remember("market-metadata:coinmarketcap-quote:v1:{$coinId}", now()->addMinutes(5), function () use ($coinId) {
+            $data = $this->coinMarketCap()->get('/v2/cryptocurrency/quotes/latest', [
+                'id' => $coinId,
+                'convert' => 'USD',
+            ])->throw()->json();
+            return data_get($data, 'data.'.(string) $coinId);
+        });
+        if (!is_array($quote)) return null;
+
+        $info = Cache::remember("market-metadata:coinmarketcap-info:v1:{$coinId}", now()->addDay(), function () use ($coinId) {
+            $data = $this->coinMarketCap()->get('/v2/cryptocurrency/info', ['id' => $coinId])->throw()->json();
+            return data_get($data, 'data.'.(string) $coinId, []);
+        });
+        $usd = data_get($quote, 'quote.USD', []);
+
+        return [
+            'provider_id' => $quote['id'] ?? (int) $coinId,
+            'name' => $quote['name'] ?? ($info['name'] ?? null),
+            'symbol' => strtoupper((string) ($quote['symbol'] ?? $info['symbol'] ?? '')),
+            'logo_url' => $info['logo'] ?? null,
+            'market_cap_rank' => $this->number($quote['cmc_rank'] ?? null),
+            'market_cap' => $this->number($usd['market_cap'] ?? null),
+            'fully_diluted_valuation' => $this->number($usd['fully_diluted_market_cap'] ?? null),
+            'circulating_supply' => $this->number($quote['circulating_supply'] ?? null),
+            'total_supply' => $this->number($quote['total_supply'] ?? null),
+            'max_supply' => $this->number($quote['max_supply'] ?? null),
+            'ath' => null,
+            'ath_date' => null,
+            'atl' => null,
+            'atl_date' => null,
+            'last_updated' => $usd['last_updated'] ?? ($quote['last_updated'] ?? null),
+        ];
+    }
+
+    private function coinMarketCap(): PendingRequest
+    {
+        return $this->http()->baseUrl('https://pro-api.coinmarketcap.com')
+            ->withHeaders(['X-CMC_PRO_API_KEY' => config('services.coinmarketcap.api_key')]);
+    }
+
     private function coinGeckoFundamentals(string $base): ?array
     {
         $coinId = Cache::remember("market-metadata:coingecko-map:v1:{$base}", now()->addDay(), function () use ($base) {
             $coins = $this->coinGecko()->get('/search', ['query' => $base])->throw()->json('coins') ?? [];
+            if (!is_array($coins)) throw new RuntimeException('CoinGecko returned an invalid search response.');
             $matches = array_values(array_filter($coins, fn ($coin) => strtoupper((string) ($coin['symbol'] ?? '')) === $base));
             usort($matches, fn ($a, $b) => ($a['market_cap_rank'] ?? PHP_INT_MAX) <=> ($b['market_cap_rank'] ?? PHP_INT_MAX));
             return $matches[0]['id'] ?? '';
@@ -238,6 +330,7 @@ class MarketMetadataService
                 'ids' => $coinId,
                 'price_change_percentage' => '24h',
             ])->throw()->json();
+            if (!is_array($items)) throw new RuntimeException('CoinGecko returned an invalid markets response.');
             $coin = $items[0] ?? null;
             if (!$coin) return null;
             return [

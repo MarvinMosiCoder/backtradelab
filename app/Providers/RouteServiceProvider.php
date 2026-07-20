@@ -29,6 +29,15 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
         });
 
+        RateLimiter::for('market-symbol-options', function (Request $request) {
+            return Limit::perMinute(6)->by(optional($request->user())->id ?: $request->ip());
+        });
+
+        RateLimiter::for('market-klines', function (Request $request) {
+            $limit = $request->boolean('fresh') ? 30 : 10;
+            return Limit::perMinute($limit)->by(optional($request->user())->id ?: $request->ip());
+        });
+
         RateLimiter::for('market-write', function (Request $request) {
             return Limit::perMinute(15)->by(optional($request->user())->id ?: $request->ip());
         });

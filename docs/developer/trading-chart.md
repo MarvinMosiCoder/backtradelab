@@ -23,11 +23,13 @@ The workspace chart renders candlesticks and volume with Lightweight Charts, ind
 4. Header/rail state changes symbol, timeframe, indicators, replay, drawings, alerts, or positions.
 5. Authenticated preferences and domain records are persisted through their feature endpoints.
 
-The chart header's Market Info control fetches `/market-metadata` on demand and displays normalized 24-hour exchange statistics plus optional CoinGecko fundamentals. The popover follows chart theme colors, omits missing values, and never participates in candle loading. Market Summary uses the batch metadata endpoint to add the same identity and headline statistics to saved-market cards.
+The chart header's Market Info control fetches `/market-metadata` on demand and displays normalized 24-hour exchange statistics plus optional CoinMarketCap fundamentals with CoinGecko fallback. The popover follows chart theme colors, omits missing values, and never participates in candle loading. Market Summary uses the batch metadata endpoint to add the same identity and headline statistics to saved-market cards.
 
 In fullscreen mode, the left chart rail keeps Replay available alongside drawing tools. Its Replay flyout uses the same access checks and playback controls as the embedded chart, and an open Replay flyout is preserved when entering or leaving fullscreen. The drawing Tool Style and Presets editor floats at the top center of the usable chart pane in both embedded and fullscreen modes; other rail flyouts remain left-aligned.
 
 The component deliberately coordinates several domains; put reusable pure logic in `utils.js`, constants in `constants.js`, and isolated UI in subcomponents rather than expanding the container unnecessarily.
+
+Right-clicking a valid chart price opens a cursor-anchored action menu instead of immediately opening an order ticket. **Set Alarm** passes the selected price into the existing live-market alert dialog, while **Trigger Position** passes it into the existing Enter Position flyout. The menu is keyboard accessible, constrained to the viewport, and closes on selection, outside click, Escape, scrolling, resizing, or a market-context change. Existing hover shortcuts remain available.
 
 The full chart skeleton is reserved for initial navigation/reload and market identity changes. A timeframe change keeps the current chart visible until the replacement history is ready. The compact Replay control does not duplicate connection text; connection state remains in the bottom-right chart badge.
 

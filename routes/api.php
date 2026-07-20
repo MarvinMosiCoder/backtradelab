@@ -18,8 +18,8 @@ use App\Http\Controllers\MarketDataController;
 Route::apiResource('getSidebar', AdminUsersController::class);
 
 Route::apiResource('postAddSave', AdminUsersController::class);
-Route::get('/market-symbol-options', [MarketDataController::class, 'availableSymbols']);
-Route::get('/klines', [MarketDataController::class, 'klines']);
+Route::get('/market-symbol-options', [MarketDataController::class, 'availableSymbols'])->middleware('throttle:market-symbol-options');
+Route::get('/klines', [MarketDataController::class, 'klines'])->middleware('throttle:market-klines');
 Route::middleware(['auth:sanctum', 'account.active'])->get('/user', function (Request $request) {
     return $request->user();
 });

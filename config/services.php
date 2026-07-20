@@ -47,6 +47,10 @@ return [
         'verify_tls' => env('MARKET_HTTP_VERIFY', true),
     ],
 
+    'coinmarketcap' => [
+        'api_key' => env('COINMARKETCAP_API_KEY'),
+    ],
+
     'coingecko' => [
         'api_key' => env('COINGECKO_API_KEY'),
         'mode' => env('COINGECKO_MODE', 'demo'),
