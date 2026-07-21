@@ -39,7 +39,11 @@ For local development only, `PAYMONGO_TEST_BYPASS_CAPABILITIES=true` skips the m
 
 Never expose secret/webhook keys to React. Never trust amount, duration, paid status, or livemode from the browser.
 
+The admin overview reports lifetime and rolling-30-day verified PHP revenue, paid counts, pending sessions, and failed/expired sessions. Revenue includes only `status=paid`, uses `paid_at` for the rolling window, and does not mix currencies.
+
 Each subscription plan owns a display-only `features` JSON list. Administrators can add, remove, edit, and reorder up to eight feature labels; labels are trimmed, deduplicated case-insensitively, and limited to 80 characters. These labels describe the plan in the compact selection modal and do not alter Replay entitlement or PayMongo verification. The modal keeps plan features inside each plan card and uses a viewport-bounded scrolling fallback only when the available screen is too short.
+
+The admin pricing editor follows the shared application theme for cards, fields, borders, actions, loading text, and save feedback in both dark and light modes.
 
 ## Verification
 

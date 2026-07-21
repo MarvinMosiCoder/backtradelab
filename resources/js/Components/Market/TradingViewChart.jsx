@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
-import { Bell, Trash2, Wallet, X } from 'lucide-react';
+import { Bell, HelpCircle, Trash2, Wallet, X } from 'lucide-react';
 import {
   createChart,
   CandlestickSeries,
@@ -18,6 +18,7 @@ import SubscriptionModal from './TradingViewChart/SubscriptionModal';
 import IndicatorSettingsPanel, { IndicatorClickTargets } from './TradingViewChart/IndicatorSettingsPanel';
 import { createLiveCandleStream } from './TradingViewChart/liveCandleStream';
 import FullscreenChartHeader from './TradingViewChart/FullscreenChartHeader';
+import WorkspaceTour from './WorkspaceTour';
 import {
   CHART_HEIGHT,
   DRAWING_COLOR,
@@ -665,13 +666,14 @@ export default function TradingViewReplayChart({
   const [browserOnline, setBrowserOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [feedStatusClock, setFeedStatusClock] = useState(() => Date.now());
   const replayAccessAllowedRef = useRef(false);
-  const [tourStep, setTourStep] = useState(auth?.user?.chart_tour_completed_at ? -1 : 0);
+  const [tourStep, setTourStep] = useState(() => new URLSearchParams(window.location.search).get('tour') === '1' || !auth?.user?.chart_tour_completed_at ? 0 : -1);
   const tourSteps = [
-    ['Your free backtesting week is ready', 'Your seven-day countdown starts only when you activate it from Replay or Subscription.'],
-    ['Choose your market', 'Select a symbol, Spot or Futures, and the timeframe from the chart header.'],
-    ['Analyze the chart', 'Use Appearance for Volume, SMA, EMA, RSI, candle colors, size, and price alerts.'],
-    ['Replay history', 'Start Replay and click the historical candle where your practice session should begin.'],
-    ['Execute and review', 'Use Enter Position for paper orders, Assets for demo balances, and Trade journal for review.'],
+    {selector:'[data-tour="market"]',title:'Choose your market',description:'Select a symbol and choose Spot or Futures.'},
+    {selector:'[data-tour="timeframe"]',title:'Set the timeframe',description:'Choose the candle interval for your analysis.'},
+    {selector:'[data-tour="drawings"]',title:'Draw on the chart',description:'Open the drawing rail for lines, positions, notes, and other tools.'},
+    {selector:'[data-tour="replay"]',title:'Replay history',description:'Start Replay, then choose a historical candle.'},
+    {selector:'[data-tour="position"]',title:'Practice execution',description:'Enter Position opens the simulated-order controls.'},
+    {selector:'[data-tour="appearance"]',title:'Customize the chart',description:'Open Appearance for indicators, candle styling, and alerts.'},
   ];
   const finishTour = () => { setTourStep(-1); axios.post('/chart-tour/complete').catch(() => setTourStep(0)); };
 
@@ -5095,6 +5097,7 @@ export default function TradingViewReplayChart({
 
   return (
     <>
+    <button type="button" onClick={()=>setTourStep(0)} className="fixed bottom-4 right-4 z-[10000] flex h-9 w-9 items-center justify-center rounded-full border border-[#2962ff]/40 bg-[#131722] text-[#5b8cff] shadow-xl" title="Restart workspace tour" aria-label="Restart workspace tour"><HelpCircle size={17}/></button>
     {showSubscriptionModal && <SubscriptionModal onClose={() => setShowSubscriptionModal(false)} onTrialActivated={() => {
       setReplayAccessAllowed(true);
       replayAccessAllowedRef.current = true;
@@ -5103,7 +5106,7 @@ export default function TradingViewReplayChart({
     {replayAccessError && <div className="fixed right-4 top-4 z-[10004] max-w-sm rounded-lg border border-red-500/40 bg-[#131722] p-4 text-sm text-white shadow-2xl"><div>{replayAccessError}</div><div className="mt-2 flex gap-3"><button onClick={() => requireReplayAccess({ showProgress: true })} className="font-semibold text-[#5b8cff]">Try again</button><button onClick={() => setReplayAccessError('')} className="text-[#9598a1]">Dismiss</button></div></div>}
     {alertNotice && <div className="fixed right-4 top-4 z-[10003] flex max-w-sm items-start gap-3 rounded-lg border border-amber-400/40 bg-[#131722] p-4 text-sm text-white shadow-2xl"><Bell size={18} className="mt-0.5 shrink-0 text-amber-400"/><span>{alertNotice}</span><button onClick={()=>setAlertNotice('')} aria-label="Dismiss alert"><X size={16}/></button></div>}
     {alertModalOpen && <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 p-4 sm:items-center" onMouseDown={(e)=>e.target===e.currentTarget&&setAlertModalOpen(false)}><div className={`w-full max-w-sm rounded-xl border p-5 shadow-2xl ${chartTheme.mode==='dark'?'border-[#2a2e39] bg-[#131722] text-white':'border-slate-200 bg-white text-slate-900'}`} role="dialog" aria-modal="true"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-bold"><Bell size={17}/>Set {symbol} alert</h2><button onClick={()=>setAlertModalOpen(false)} aria-label="Close"><X size={18}/></button></div><label className="mt-4 block text-xs font-semibold">Price<input autoFocus type="number" min="0" step="any" value={alertDraft.price} onChange={(e)=>setAlertDraft((d)=>({...d,price:e.target.value}))} className="mt-1 h-10 w-full rounded-md border border-gray-600 bg-transparent px-3 outline-none focus:border-[#2962ff]"/></label><div className="mt-3 grid grid-cols-2 gap-2">{[['rise','Rise to price'],['drop','Drop to price']].map(([value,label])=><button key={value} onClick={()=>setAlertDraft((d)=>({...d,type:value}))} className={`h-10 rounded-md border text-xs font-semibold ${alertDraft.type===value?'border-[#2962ff] bg-[#2962ff] text-white':'border-gray-600'}`}>{label}</button>)}</div>{alertError&&<p className="mt-2 text-xs text-red-400">{alertError}</p>}<button onClick={savePriceAlert} className="mt-4 h-10 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white">Create alert</button></div></div>}
-    {tourStep >= 0 && <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/55 p-4 sm:items-center"><div className="w-full max-w-md rounded-xl border border-[#2a2e39] bg-[#131722] p-5 text-white shadow-2xl"><div className="text-xs font-semibold uppercase tracking-wider text-[#5b8cff]">Getting started · {tourStep + 1}/{tourSteps.length}</div><h2 className="mt-2 text-lg font-bold">{tourSteps[tourStep][0]}</h2><p className="mt-2 text-sm leading-6 text-[#b2b5be]">{tourSteps[tourStep][1]}</p><div className="mt-5 flex justify-between"><button onClick={finishTour} className="text-sm text-[#787b86] hover:text-white">Skip</button><button onClick={() => tourStep === tourSteps.length - 1 ? finishTour() : setTourStep(tourStep + 1)} className="rounded bg-[#2962ff] px-4 py-2 text-sm font-semibold">{tourStep === tourSteps.length - 1 ? 'Open chart' : 'Next'}</button></div></div></div>}
+    {tourStep >= 0 && <WorkspaceTour step={tourStep} steps={tourSteps} onStep={setTourStep} onFinish={finishTour} dark={chartTheme.mode==='dark'}/>}
     {alertModalOpen && <aside className={`fixed bottom-4 right-4 z-[10003] w-[min(92vw,320px)] rounded-xl border p-4 shadow-2xl sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Alert settings</h3><button onClick={toggleAlertSound} className="rounded-md border px-2 py-1 text-xs font-semibold">Sound {alertSoundEnabled ? 'on' : 'off'}</button></div><p className="mt-2 text-[11px] text-[#787b86]">Alerts monitor live markets in the background. Replay alerts are disabled.</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto">{priceAlerts.map(alert => <div key={alert.id} className="flex items-center justify-between rounded-md border p-2 text-xs"><span>{alert.direction} {formatOverlayPrice(Number(alert.target_price))}</span><button onClick={() => cancelPriceAlert(alert.id)} className="text-red-400" aria-label="Cancel alert"><Trash2 size={14}/></button></div>)}{!priceAlerts.length && <div className="text-xs text-[#787b86]">No active alerts for this market.</div>}</div></aside>}
     {chartContextMenu && (
       <div

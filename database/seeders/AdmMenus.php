@@ -56,7 +56,26 @@ class AdmMenus extends Seeder
                 'is_active'         => 1,
                 'is_dashboard'      => 1,
                 'id_adm_privileges' => 1,
-                'sorting'           => 1
+                'sorting'           => 2
+            ]
+        );
+
+        DB::table('adm_menuses')->updateOrInsert(
+            [
+                'name'              => 'Workspace Chart',
+            ],
+            [
+                'name'              => 'Workspace Chart',
+                'type'              => 'Route',
+                'path'              => 'admin.workspace',
+                'slug'              => 'admin/workspace',
+                'color'             => NULL,
+                'icon'              => 'fa fa-chart-line',
+                'parent_id'         => 0,
+                'is_active'         => 1,
+                'is_dashboard'      => 1,
+                'id_adm_privileges' => 1,
+                'sorting'           => 3
             ]
         );
 
@@ -76,7 +95,7 @@ class AdmMenus extends Seeder
                 'is_active'         => 1,
                 'is_dashboard'      => 1,
                 'id_adm_privileges' => 1,
-                'sorting'           => 1
+                'sorting'           => 4
             ]
         );
 

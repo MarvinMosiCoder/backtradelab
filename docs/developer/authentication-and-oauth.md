@@ -50,6 +50,7 @@ Route::post('login-save', [LoginController::class, 'authenticate'])
 - Provider callback error/cancel behavior.
 - Normal-user versus superadmin redirect.
 - Reset token, password rules, and password-history rejection.
+- Password submission shows the theme-aware, accessible “Signing in” overlay until navigation or an authentication error; the email lookup retains its smaller button state.
 
 Related: [Users, profiles, and deactivation](users-profiles-and-deactivation.md), [Roles](roles-privileges-menus.md).
 # Two-step login and social consent

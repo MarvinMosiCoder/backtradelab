@@ -68,6 +68,7 @@ function ControlButton({
     <button
       type="button"
       aria-label={title}
+      data-tour={title === 'Drawing Tools' ? 'drawings' : title === 'Enter Position' ? 'position' : undefined}
       className={`${controlBaseClass} ${controlVariantClass(variant, active, chartTheme)} ${className}`}
       {...props}
     >

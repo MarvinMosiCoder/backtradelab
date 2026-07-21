@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\MenusController;
 use App\Http\Controllers\Admin\AdminUsersController;
 use App\Http\Controllers\MarketDataController;
+use App\Http\Controllers\FeaturedCoinController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -20,6 +21,7 @@ Route::apiResource('getSidebar', AdminUsersController::class);
 Route::apiResource('postAddSave', AdminUsersController::class);
 Route::get('/market-symbol-options', [MarketDataController::class, 'availableSymbols'])->middleware('throttle:market-symbol-options');
 Route::get('/klines', [MarketDataController::class, 'klines'])->middleware('throttle:market-klines');
+Route::get('/featured-coins', FeaturedCoinController::class)->middleware('throttle:featured-coins');
 Route::middleware(['auth:sanctum', 'account.active'])->get('/user', function (Request $request) {
     return $request->user();
 });

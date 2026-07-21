@@ -9,7 +9,7 @@ Use this index to find the feature owner of a source file. Detailed behavior bel
 | `app/Http/Controllers/Auth/*` | [Authentication](authentication-and-oauth.md) |
 | `app/Http/Controllers/Users/*`, `AccountDeactivationService.php` | [Users and profiles](users-profiles-and-deactivation.md) |
 | `AdminUsersController.php`, `PrivilegesController.php`, `MenusController.php`, `ModulsController.php` | [Roles and menus](roles-privileges-menus.md) |
-| `DashboardController.php`, `Pages/Dashboard/*`, `Layouts/*` | [Dashboard and layouts](dashboard-and-layouts.md) |
+| `DashboardController.php`, `Pages/Dashboard/*`, `Layouts/*` | [Dashboard and layouts](dashboard-and-layouts.md), including admin operations and workspace mode |
 | `Pages/Public/*`, `CookieNotice.jsx`, `config/legal.php` | [Public and legal](public-and-legal-pages.md) |
 | `MarketDataController.php`, `MarketMetadataService.php`, `MarketOverviewController.php`, `MarketOverviewService.php`, `MarketSymbol.php` | [Market data](market-data-and-symbols.md) |
 | `Components/Market/TradingViewChart*` | [Trading chart](trading-chart.md) |
@@ -29,3 +29,6 @@ Use this index to find the feature owner of a source file. Detailed behavior bel
 ## Route coverage ownership
 
 Shared authentication/profile/market/subscription/feedback/admin routes are covered by their guides. Notification/filter/export and database-generated controller routes are legacy admin infrastructure covered by [Roles and menus](roles-privileges-menus.md), [Announcements](announcements.md), [Admin API generator](admin-api-generator.md), or [System settings](system-settings.md). `routes/channels.php` and `routes/console.php` are framework/operations entry points; document new channel or scheduled-command behavior in the owning feature guide.
+- `resources/js/Components/Market/WorkspaceTour.jsx`: reusable accessible spotlight tour.
+- `resources/js/Components/Feedback/FeedbackChat.jsx`: customer/admin support conversation with visible-tab polling.
+- `app/Models/UserFeedbackMessage.php`: threaded payment/subscription support message.

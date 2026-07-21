@@ -7,6 +7,7 @@ The workspace chart renders candlesticks and volume with Lightweight Charts, ind
 | File | Responsibility |
 |---|---|
 | `Pages/Market/Market.jsx` | Workspace page and onboarding entry |
+| `Pages/Dashboard/Dashboard.jsx` | Full chart workspace for traders and explicit admin workspace mode |
 | `TradingViewChart.jsx` | Main state, refs, fetching, chart events, feature coordination |
 | `ChartHeader.jsx` | Market/timeframe/replay/indicator/appearance commands |
 | `FullscreenChartHeader.jsx` | Fullscreen command bar |
@@ -28,6 +29,8 @@ The chart header's Market Info control fetches `/market-metadata` on demand and 
 In fullscreen mode, the left chart rail keeps Replay available alongside drawing tools. Its Replay flyout uses the same access checks and playback controls as the embedded chart, and an open Replay flyout is preserved when entering or leaving fullscreen. The drawing Tool Style and Presets editor floats at the top center of the usable chart pane in both embedded and fullscreen modes; other rail flyouts remain left-aligned.
 
 The component deliberately coordinates several domains; put reusable pure logic in `utils.js`, constants in `constants.js`, and isolated UI in subcomponents rather than expanding the container unnecessarily.
+
+Superadmins open the same complete workspace at `/admin/workspace`; the route is authorization-protected and keeps browser preferences scoped to the authenticated administrator ID.
 
 Right-clicking a valid chart price opens a cursor-anchored action menu instead of immediately opening an order ticket. **Set Alarm** passes the selected price into the existing live-market alert dialog, while **Trigger Position** passes it into the existing Enter Position flyout. The menu is keyboard accessible, constrained to the viewport, and closes on selection, outside click, Escape, scrolling, resizing, or a market-context change. Existing hover shortcuts remain available.
 
@@ -55,3 +58,6 @@ Selecting a Replay candle anchors the guide to that candle's close price rather 
 - No cleanup errors after unmount or navigation.
 
 Related: [Drawings](chart-drawings-and-settings.md), [Streaming](live-market-streaming.md), [Replay](replay-and-progress.md).
+# Interactive workspace tour
+
+First-time workspace users receive a spotlight tour of the actual market, timeframe, drawing, replay, simulated-position, and appearance controls. The highlighted control remains usable, while the rest of the page is blocked. The tour supports keyboard navigation, responsive/fullscreen repositioning, missing-target fallback, and restart via Help or the chart help button. `?tour=1` explicitly restarts it without clearing completion history.

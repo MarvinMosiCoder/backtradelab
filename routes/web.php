@@ -104,6 +104,7 @@ Route::post('/webhooks/paymongo', PayMongoWebhookController::class)->middleware(
 
 Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/admin/workspace', [DashboardController::class, 'workspace'])->name('admin.workspace');
     Route::get('market', function () {
         return Inertia::render('Market/Market');
     })->name('market');
@@ -144,6 +145,8 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/feedback', [UserFeedbackController::class, 'userPage'])->name('feedback.index');
     Route::get('/feedback/items', [UserFeedbackController::class, 'index'])->name('feedback.items');
     Route::post('/feedback/items', [UserFeedbackController::class, 'store'])->middleware('throttle:feedback-write')->name('feedback.store');
+    Route::get('/feedback/items/{feedback}/messages', [UserFeedbackController::class, 'messages'])->name('feedback.messages');
+    Route::post('/feedback/items/{feedback}/messages', [UserFeedbackController::class, 'storeMessage'])->middleware('throttle:feedback-write')->name('feedback.messages.store');
     Route::get('/admin/feedback', [UserFeedbackController::class, 'adminPage'])->name('admin.feedback.index');
     Route::get('/admin/feedback/items', [UserFeedbackController::class, 'adminIndex'])->name('admin.feedback.items');
     Route::put('/admin/feedback/items/{feedback}', [UserFeedbackController::class, 'update'])->middleware('throttle:feedback-write')->name('admin.feedback.update');

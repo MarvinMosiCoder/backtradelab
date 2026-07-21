@@ -5,13 +5,42 @@ import axios from 'axios';
 import { useAuth } from '../../Context/AuthContext';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 
-const LoginLoaderOverlay = () => {
+const LoginLoaderOverlay = ({ isDark, applogo }) => {
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black-screen-color">
-            <div className="flex items-center gap-3">
-                <span className="h-3 w-3 rounded-full bg-gray-200 dot-1" />
-                <span className="h-3 w-3 rounded-full bg-gray-500 dot-2" />
-                <span className="h-3 w-3 rounded-full bg-gray-200 dot-3" />
+        <div
+            className={`fixed inset-0 z-[9999] flex items-center justify-center px-4 backdrop-blur-md ${isDark ? 'bg-[#070a10]/90' : 'bg-slate-100/90'}`}
+            role="status"
+            aria-live="polite"
+            aria-label="Signing in. Securely preparing your workspace."
+        >
+            <div className={`relative w-full max-w-sm overflow-hidden rounded-2xl border p-7 text-center shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722] text-white shadow-blue-950/40' : 'border-slate-200 bg-white text-slate-950 shadow-slate-300/50'}`}>
+                <div className="pointer-events-none absolute -left-16 -top-16 h-36 w-36 rounded-full bg-[#2962ff]/20 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-16 -right-16 h-36 w-36 rounded-full bg-emerald-400/10 blur-3xl" />
+
+                <div className="relative mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-[#5b8cff]/30 bg-[#2962ff]/10 shadow-[0_0_30px_rgba(41,98,255,.18)]">
+                    {applogo ? (
+                        <img src={applogo} className="h-full w-full object-contain p-2" alt="" />
+                    ) : (
+                        <span className="font-poppins text-sm font-bold text-[#5b8cff]">BT</span>
+                    )}
+                </div>
+
+                <div className="relative mt-5 flex items-center justify-center gap-2">
+                    <h2 className="font-poppins text-lg font-bold">Signing in</h2>
+                    <span className="flex items-end gap-1 pb-1" aria-hidden="true">
+                        {[0, 150, 300].map((delay) => (
+                            <span
+                                key={delay}
+                                className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#5b8cff] motion-reduce:animate-none"
+                                style={{ animationDelay: `${delay}ms`, animationDuration: '900ms' }}
+                            />
+                        ))}
+                    </span>
+                </div>
+                <p className={`relative mt-2 text-sm ${isDark ? 'text-[#9598a1]' : 'text-slate-500'}`}>Securely preparing your workspace</p>
+                <div className={`relative mt-6 h-1 overflow-hidden rounded-full ${isDark ? 'bg-[#2a2e39]' : 'bg-slate-100'}`} aria-hidden="true">
+                    <span className="block h-full w-1/2 animate-pulse rounded-full bg-gradient-to-r from-[#2962ff] to-[#5b8cff] motion-reduce:animate-none" />
+                </div>
             </div>
         </div>
     );
@@ -97,7 +126,7 @@ const LoginPage = () => {
 
     return (
         <>
-            {loading && <LoginLoaderOverlay />}
+            {loading && <LoginLoaderOverlay isDark={isDark} applogo={applogo} />}
             <div className={`min-h-screen px-4 py-6 ${isDark ? 'bg-black-screen-color text-white' : 'bg-slate-50 text-slate-950'}`}>
                 <div className="mx-auto flex max-w-6xl items-center justify-between">
                     <Link href="/" className={`inline-flex items-center gap-2 text-sm font-semibold ${isDark ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-950'}`}>
@@ -195,7 +224,7 @@ const LoginPage = () => {
                                 disabled={loading || checkingEmail}
                                 className={`mt-5 h-11 w-full rounded-md px-4 font-poppins text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${isDark ? 'bg-white text-skin-black hover:bg-gray-200' : 'bg-skin-black text-white hover:bg-skin-black-light'}`}
                             >
-                                {loading ? 'Logging in, please wait...' : checkingEmail ? 'Checking email...' : step === 'email' ? 'Continue' : 'Sign in'}
+                                {checkingEmail ? 'Checking email...' : step === 'email' ? 'Continue' : 'Sign in'}
                             </button>
                         </form>
 

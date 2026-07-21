@@ -7,6 +7,7 @@ Unauthenticated visitors use the product homepage, login page, privacy policy, t
 | Route/file | Responsibility |
 |---|---|
 | `GET /` / `Pages/Public/Home.jsx` | Public product page |
+| `GET /api/featured-coins` | Rate-limited BTC, ETH, and SOL public market summary |
 | `GET /privacy-policy` / `PrivacyPolicy.jsx` | Privacy disclosures |
 | `GET /terms-of-service` / `TermsOfService.jsx` | Service terms |
 | `LegalPage.jsx` | Shared legal layout |
@@ -25,6 +26,8 @@ Route::get('/privacy-policy', fn () => Inertia::render('Public/PrivacyPolicy', [
 
 Public pages bypass the authenticated layout. Home and login share the browser key `backtradelab-theme`. The cookie notice stores acknowledgment locally and links to the privacy policy; it does not disable required session/CSRF storage.
 
+The homepage requests a fixed Bybit Spot BTCUSDT, ETHUSDT, and SOLUSDT summary. It combines cached exchange statistics and optional fundamentals with static educational descriptions. Loading, partial-provider, and unavailable states keep the public page usable, and the section identifies the data as informational rather than investment advice.
+
 ## Maintenance
 
 - Edit legal content in the dedicated page, shared presentation in `LegalPage.jsx`, and operator facts in configuration.
@@ -39,5 +42,6 @@ Public pages bypass the authenticated layout. Home and login share the browser k
 - Legal props render configured values.
 - Cookie notice dismisses and remains dismissed.
 - Homepage/login footer links are correct.
+- Featured coins render with complete, partial, and unavailable provider responses.
 
 Related: [Authentication](authentication-and-oauth.md), [Deployment](deployment-and-production.md).

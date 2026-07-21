@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class UserFeedback extends Model
 {
@@ -32,5 +33,10 @@ class UserFeedback extends Model
     public function responder(): BelongsTo
     {
         return $this->belongsTo(AdmUser::class, 'responded_by');
+    }
+
+    public function messages(): HasMany
+    {
+        return $this->hasMany(UserFeedbackMessage::class, 'user_feedback_id');
     }
 }

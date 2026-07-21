@@ -8,6 +8,7 @@ The market layer discovers instruments from supported exchanges, normalizes hist
 |---|---|
 | `GET /api/market-symbol-options` | Public exchange symbol discovery |
 | `GET /api/klines` | Public normalized candles |
+| `GET /api/featured-coins` | Public fixed BTC/ETH/SOL market and fundamentals summary |
 | `GET/POST/DELETE /market-symbols` | Authenticated saved-symbol collection |
 | `GET /market-metadata` | Authenticated normalized exchange statistics and optional fundamentals |
 | `POST /market-metadata/batch` | Authenticated metadata for up to 50 saved markets |
@@ -23,7 +24,10 @@ The public API routes are:
 ```php
 Route::get('/market-symbol-options', [MarketDataController::class, 'availableSymbols']);
 Route::get('/klines', [MarketDataController::class, 'klines']);
+Route::get('/featured-coins', FeaturedCoinController::class);
 ```
+
+The featured-coins endpoint accepts no market input. It exposes only the fixed Bybit Spot BTCUSDT, ETHUSDT, and SOLUSDT set, sanitizes the existing metadata service output, isolates failures per coin, and uses a dedicated per-IP rate limit.
 
 ## Data flow
 
@@ -61,5 +65,6 @@ Supported exchange-specific behavior is implemented in the controller and live-s
 - Metadata authentication, validation, provider fixtures, caching, and graceful partial responses.
 - Overview authentication, featured/saved deduplication, partial loading, empty-watchlist CTA, and responsive dark/light layouts.
 - Dedicated public limits: symbol discovery 6/minute and candles 10/minute, or 30/minute for latest-candle fallback, per user/IP.
+- Featured coins are limited to 30 requests/minute per IP and never expose provider credentials or raw upstream errors.
 
 Related: [Live streaming](live-market-streaming.md), [Trading chart](trading-chart.md).

@@ -310,7 +310,7 @@ const ProfilePage = ({ page_title, user }) => {
                         </div>
                     </form>
 
-                    <section className={`mt-8 w-full rounded-xl border p-5 ${theme === 'bg-skin-black' ? 'border-red-500/30 bg-red-950/20 text-[#d1d4dc]' : 'border-red-200 bg-red-50 text-slate-900'}`}>
+                    <section className={`mx-auto mt-8 w-full max-w-xl rounded-xl border p-5 ${theme === 'bg-skin-black' ? 'border-red-500/30 bg-red-950/20 text-[#d1d4dc]' : 'border-red-200 bg-red-50 text-slate-900'}`}>
                         <h2 className="text-sm font-bold text-red-500">Deactivate account</h2>
                         <p className="mt-2 text-xs leading-5 text-[#787b86]">Deactivation signs you out, disables price alerts, freezes paper-trading activity, and blocks all account access. Your charts, drawings, sessions, orders, journal, payment records, and trading history are preserved. Trial and paid-access dates continue to run. An administrator is required to reactivate the account.</p>
                         {!showDeactivate ? (
@@ -321,7 +321,7 @@ const ProfilePage = ({ page_title, user }) => {
                                 {requiresDeactivationPassword && <label className="text-xs font-semibold">Current password<input type="password" value={deactivationPassword} onChange={(event) => setDeactivationPassword(event.target.value)} className="mt-1.5 h-10 w-full rounded-lg border border-red-500/40 bg-transparent px-3 text-sm outline-none focus:border-red-500" autoComplete="current-password" /></label>}
                                 <label className="text-xs font-semibold">Type DEACTIVATE to confirm<input value={deactivationConfirmation} onChange={(event) => setDeactivationConfirmation(event.target.value.toUpperCase())} className="mt-1.5 h-10 w-full rounded-lg border border-red-500/40 bg-transparent px-3 text-sm outline-none focus:border-red-500" /></label>
                                 {deactivationError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-2 text-xs text-red-500">{deactivationError}</div>}
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-col gap-2 sm:flex-row">
                                     <button type="button" onClick={deactivateAccount} disabled={loading || deactivationConfirmation !== 'DEACTIVATE' || (requiresDeactivationPassword && !deactivationPassword)} className="h-10 rounded-lg bg-red-600 px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">{loading ? 'Deactivating…' : 'Confirm deactivation'}</button>
                                     <button type="button" onClick={() => { setShowDeactivate(false); setDeactivationError(''); }} disabled={loading} className="h-10 rounded-lg border border-gray-500 px-4 text-xs font-semibold">Cancel</button>
                                 </div>

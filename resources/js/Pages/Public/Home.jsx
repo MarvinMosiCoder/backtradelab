@@ -1,21 +1,47 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from '@inertiajs/react';
-import { Activity, ArrowRight, BarChart3, BookOpen, ChevronDown, LogIn, Moon, Search, ShieldCheck, TrendingUp, UserCircle } from 'lucide-react';
+import { Activity, ArrowRight, BarChart3, BookOpen, ChevronDown, CircleDollarSign, LogIn, Moon, Search, ShieldCheck, TrendingUp, UserCircle } from 'lucide-react';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 import LoginDetails from '../../Components/SystemSettings/LoginDetails';
 
 const navItems = [
     ['Workspace', '#workspace'],
+    ['Coins', '#coins'],
     ['Replay', '#features'],
     ['Journal', '#features'],
     ['Process', '#process'],
 ];
+
+const coinDescriptions = {
+    BTC: 'Bitcoin is the largest crypto asset by market value and is often used as the market benchmark.',
+    ETH: 'Ether powers Ethereum, a network for smart contracts, applications, and tokenized assets.',
+    SOL: 'Solana is a high-throughput smart-contract network designed for fast, low-cost transactions.',
+};
+
+const number = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatPrice = (value) => {
+    const parsed = number(value);
+    if (parsed === null) return 'Unavailable';
+    const digits = parsed >= 1000 ? 2 : parsed >= 1 ? 2 : 6;
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: digits }).format(parsed);
+};
+
+const formatCompact = (value) => {
+    const parsed = number(value);
+    return parsed === null ? '—' : new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(parsed);
+};
 
 export default function Home() {
     const [applogo, setApplogo] = useState('');
     const [heroImage, setHeroImage] = useState('');
     const [isLoginMenuOpen, setIsLoginMenuOpen] = useState(false);
     const [theme, setTheme] = useState('dark');
+    const [featuredCoins, setFeaturedCoins] = useState([]);
+    const [coinStatus, setCoinStatus] = useState('loading');
     const isDark = theme === 'dark';
 
     useEffect(() => {
@@ -28,6 +54,26 @@ export default function Home() {
                 setTheme(storedTheme);
             }
         } catch {}
+    }, []);
+
+    useEffect(() => {
+        const controller = new AbortController();
+        setCoinStatus('loading');
+
+        fetch('/api/featured-coins', { headers: { Accept: 'application/json' }, signal: controller.signal })
+            .then(async (response) => {
+                if (!response.ok) throw new Error('Unable to load featured coins.');
+                return response.json();
+            })
+            .then((payload) => {
+                setFeaturedCoins(Array.isArray(payload?.items) ? payload.items : []);
+                setCoinStatus(Array.isArray(payload?.items) && payload.items.length ? 'ready' : 'empty');
+            })
+            .catch((error) => {
+                if (error.name !== 'AbortError') setCoinStatus('error');
+            });
+
+        return () => controller.abort();
     }, []);
 
     const toggleTheme = () => {
@@ -185,6 +231,58 @@ export default function Home() {
                                 ))}
                             </div>
                         </div>
+                    </div>
+                </section>
+
+                <section id="coins" className={`border-t px-4 py-14 ${isDark ? 'border-gray-800 bg-skin-black' : 'border-slate-200 bg-white'}`}>
+                    <div className="mx-auto max-w-7xl">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                            <div className="max-w-2xl">
+                                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.2em] text-[#2962ff]"><CircleDollarSign size={16} />Featured markets</div>
+                                <h2 className="mt-2 text-3xl font-bold">Know the assets before you practice.</h2>
+                                <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>A quick view of three widely followed crypto assets, using Bybit spot-market data and available fundamentals.</p>
+                            </div>
+                            <div className="text-xs text-slate-500">Informational data may be delayed. Not investment advice.</div>
+                        </div>
+
+                        {coinStatus === 'loading' && (
+                            <div className="mt-7 grid gap-4 md:grid-cols-3" aria-label="Loading featured coin information">
+                                {[0, 1, 2].map((item) => <div key={item} className={`h-72 animate-pulse rounded-xl border ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-slate-50'}`} />)}
+                            </div>
+                        )}
+
+                        {(coinStatus === 'error' || coinStatus === 'empty') && (
+                            <div className={`mt-7 rounded-xl border p-6 text-sm ${isDark ? 'border-[#2a2e39] bg-[#131722] text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-700'}`} role="status">
+                                Live market details are temporarily unavailable. You can still sign in and use the replay workspace.
+                            </div>
+                        )}
+
+                        {coinStatus === 'ready' && (
+                            <div className="mt-7 grid gap-4 md:grid-cols-3">
+                                {featuredCoins.map((coin) => {
+                                    const base = coin.market?.base_coin || coin.market?.symbol?.replace(/USDT$/, '') || 'Coin';
+                                    const change = number(coin.stats?.change_24h_percent);
+                                    const unavailable = number(coin.stats?.last_price) === null;
+                                    return (
+                                        <article key={coin.market?.symbol || base} className={`rounded-xl border p-5 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-slate-50'}`}>
+                                            <div className="flex items-start justify-between gap-3">
+                                                <div className="flex min-w-0 items-center gap-3">
+                                                    {coin.fundamentals?.logo_url ? <img src={coin.fundamentals.logo_url} alt="" className="h-10 w-10 rounded-full object-contain" /> : <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#2962ff]/15 text-xs font-bold text-[#5b8cff]">{base}</span>}
+                                                    <div className="min-w-0"><h3 className="truncate text-base font-bold">{coin.fundamentals?.name || base}</h3><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{base}/USDT · Bybit spot</div></div>
+                                                </div>
+                                                {coin.fundamentals?.market_cap_rank && <span className="rounded bg-[#2962ff]/10 px-2 py-1 text-[10px] font-bold text-[#5b8cff]">Rank #{coin.fundamentals.market_cap_rank}</span>}
+                                            </div>
+                                            <div className="mt-5 flex items-end justify-between gap-3"><div><div className="text-[10px] uppercase tracking-wider text-slate-500">Current price</div><div className="mt-1 text-2xl font-bold tabular-nums">{formatPrice(coin.stats?.last_price)}</div></div>{change !== null && <div className={`text-sm font-bold tabular-nums ${change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{change >= 0 ? '+' : ''}{change.toFixed(2)}%</div>}</div>
+                                            <dl className={`mt-5 grid grid-cols-2 gap-3 border-y py-3 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                                                {[['24h high', formatPrice(coin.stats?.high_24h)], ['24h low', formatPrice(coin.stats?.low_24h)], ['24h volume', formatCompact(coin.stats?.volume_24h)], ['Market cap', formatCompact(coin.fundamentals?.market_cap)]].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-[9px] uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1 truncate text-xs font-semibold tabular-nums">{value}</dd></div>)}
+                                            </dl>
+                                            <p className={`mt-4 text-xs leading-5 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>{coinDescriptions[base] || 'Review the market structure and risk before starting a simulated trade.'}</p>
+                                            {(unavailable || coin.warnings?.length > 0) && <p className="mt-3 text-[10px] text-amber-500">{unavailable ? 'Live exchange statistics are currently unavailable.' : 'Some fundamentals are currently unavailable.'}</p>}
+                                        </article>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </section>
 

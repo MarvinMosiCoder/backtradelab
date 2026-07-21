@@ -93,7 +93,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           <ChevronDown size={13} className={`transition-transform ${isMobileMenuOpen ? 'rotate-180' : ''}`} />
         </button>
         <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} absolute left-0 right-0 top-full z-[110] mt-2 max-h-[calc(100dvh-5rem)] flex-wrap items-center gap-2 overflow-y-auto rounded-lg border p-2 shadow-2xl lg:contents ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
-          <div className="relative">
+          <div className="relative" data-tour="market">
             <button type="button" onClick={() => setIsAddOpen((value) => !value)} className={`${compactFieldClass} flex w-44 max-w-[42vw] items-center justify-between gap-2`}>
               <span className="truncate font-semibold text-emerald-500">
                 {symbol} <span className={`text-[9px] font-medium ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>{String(exchange).toUpperCase()}</span>
@@ -151,7 +151,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             <option value="spot">Spot</option>
           </select>
 
-          <select value={timeframe} onChange={(e) => onTimeframeChange(e.target.value)} className={`${compactFieldClass} w-28 min-w-28`} title="Timeframe">
+          <select data-tour="timeframe" value={timeframe} onChange={(e) => onTimeframeChange(e.target.value)} className={`${compactFieldClass} w-28 min-w-28`} title="Timeframe">
             {timeframeOptions.map((tf) => (
               <option key={tf.value} value={tf.value}>
                 {tf.label}
@@ -159,7 +159,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             ))}
           </select>
 
-          <button type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`} title={replayMode ? 'Back to live' : 'Start replay'}>
+          <button data-tour="replay" type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`} title={replayMode ? 'Back to live' : 'Start replay'}>
             {replayAccessStatus === 'checking-access' ? <LoaderCircle size={14} className="animate-spin" /> : replayMode ? <X size={14} /> : <Play size={14} />}
             <span className="hidden sm:inline">{replayAccessStatus === 'checking-access' ? 'Checking…' : replayAccessStatus === 'pick-candle' ? 'Click candle' : replayMode ? 'Live' : 'Replay'}</span>
           </button>
@@ -200,7 +200,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             )}
           </div>
           <div className="relative">
-            <button type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
+            <button data-tour="appearance" type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
               <SlidersHorizontal size={13} />
               <span className="hidden md:inline">Style</span>
             </button>
@@ -349,14 +349,14 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
 
         <div className="col-span-2 min-w-0 sm:col-span-3 lg:col-span-2">
           <label className="sr-only">Replay</label>
-          <button type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`}>
+          <button data-tour="replay" type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`}>
             {replayAccessStatus === 'checking-access' ? <LoaderCircle size={15} className="animate-spin" /> : replayMode ? <X size={15} /> : <Play size={15} />}
             {replayAccessStatus === 'checking-access' ? 'Checking replay access…' : replayAccessStatus === 'pick-candle' ? 'Click a candle to start' : replayMode ? 'Back to Live' : 'Start Replay'}
           </button>
         </div>
 
         <div className="relative col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
-          <button type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
+          <button data-tour="appearance" type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
             <SlidersHorizontal size={14} />
             <span className="hidden xl:inline">Style</span>
           </button>

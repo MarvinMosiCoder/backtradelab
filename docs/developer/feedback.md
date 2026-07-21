@@ -28,6 +28,7 @@ Traders submit categorized feedback and review their history. Superadmins search
 - Validate enum-like status/priority/category values and text lengths.
 - Treat page URLs and user text as untrusted output.
 - Add notifications deliberately if the response workflow later requires them.
+- The admin overview summarizes lifetime, rolling-30-day, open, high-priority, and awaiting-response counts and limits its recent list to five requests.
 
 ## Verification
 
@@ -37,3 +38,6 @@ Traders submit categorized feedback and review their history. Superadmins search
 - Search/filter/update and response persistence.
 
 Related: [Roles](roles-privileges-menus.md), [Notifications](price-alerts-and-notifications.md).
+# Support conversations
+
+Payment and subscription feedback supports an asynchronous, text-only thread through `GET` and `POST /feedback/items/{feedback}/messages`. Access is limited to the ticket owner and active superadmins. Reading marks messages from the other party as read; sending is disabled for completed and declined tickets. Other categories continue to use the single admin-response field, and historical responses remain visible as legacy team responses. Open conversations poll every ten seconds only while the browser tab is visible.

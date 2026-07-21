@@ -47,7 +47,7 @@ class AdminSidebarMenuses extends Seeder
                 'color'             => NULL,
                 'icon'              => 'fa fa-bars',
                 'parent_id'         => 0,
-                'is_active'         => 1,
+                'is_active'         => 0,
                 'sorting'           => 3,
                 'created_at'        => date('Y-m-d H:i:s')
             ],
@@ -58,7 +58,7 @@ class AdminSidebarMenuses extends Seeder
                 'color'             => NULL,
                 'icon'              => 'fa fa-th',
                 'parent_id'         => 0,
-                'is_active'         => 1,
+                'is_active'         => 0,
                 'sorting'           => 4,
                 'created_at'        => date('Y-m-d H:i:s')
             ],
@@ -69,7 +69,7 @@ class AdminSidebarMenuses extends Seeder
                 'color'             => NULL,
                 'icon'              => 'fa fa-code-merge',
                 'parent_id'         => 0,
-                'is_active'         => 1,
+                'is_active'         => 0,
                 'sorting'           => 5,
                 'created_at'        => date('Y-m-d H:i:s')
             ],

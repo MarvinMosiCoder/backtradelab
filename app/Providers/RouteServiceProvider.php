@@ -38,6 +38,10 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute($limit)->by(optional($request->user())->id ?: $request->ip());
         });
 
+        RateLimiter::for('featured-coins', function (Request $request) {
+            return Limit::perMinute(30)->by('featured-coins:'.$request->ip());
+        });
+
         RateLimiter::for('market-write', function (Request $request) {
             return Limit::perMinute(15)->by(optional($request->user())->id ?: $request->ip());
         });
