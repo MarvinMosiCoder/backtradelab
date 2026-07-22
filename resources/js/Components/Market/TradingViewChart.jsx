@@ -192,6 +192,63 @@ function ChartSkeletonLoader({ isDark }) {
   );
 }
 
+function ChartMarketLegend({ symbol, exchange, timeframe, candle, isTimeframeLoading, chartTheme }) {
+  const open = Number(candle?.open);
+  const high = Number(candle?.high);
+  const low = Number(candle?.low);
+  const close = Number(candle?.close);
+  const hasCandle = [open, high, low, close].every(Number.isFinite);
+  const change = hasCandle ? close - open : null;
+  const changePercent = hasCandle && open !== 0 ? (change / open) * 100 : null;
+  const direction = Number(change) > 0 ? 'up' : Number(change) < 0 ? 'down' : 'neutral';
+  const valueColor = direction === 'up'
+    ? '#089981'
+    : direction === 'down'
+      ? '#f23645'
+      : chartTheme.text;
+  const exchangeLabel = String(exchange || '').replace(/(^|[-_\s])\w/g, (letter) => letter.toUpperCase());
+  const timeframeLabel = INTERVAL_MAP[timeframe] ?? timeframe;
+  const signedChange = Number.isFinite(change)
+    ? `${change > 0 ? '+' : ''}${formatOverlayPrice(change)}`
+    : '---';
+  const signedPercent = Number.isFinite(changePercent)
+    ? `${changePercent > 0 ? '+' : ''}${changePercent.toFixed(2)}%`
+    : '---';
+
+  return (
+    <div
+      data-chart-ui="market-legend"
+      className="pointer-events-none absolute left-2 top-1.5 z-30 select-none text-[11px] font-semibold leading-5 sm:left-3 sm:top-2 sm:text-xs"
+      style={{ color: chartTheme.text, maxWidth: 'calc(100% - 4.5rem)' }}
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1 whitespace-nowrap">
+        <span className="font-bold">{symbol}</span>
+        <span className="text-[#787b86]">·</span>
+        <span>{timeframeLabel}</span>
+        <span className="text-[#787b86]">·</span>
+        <span className="text-[#787b86]">Last price {exchangeLabel}</span>
+        <span className="ml-0.5" style={{ color: valueColor }}><span className="text-[#787b86]">O</span> {hasCandle ? formatOverlayPrice(open) : '---'}</span>
+        <span style={{ color: valueColor }}><span className="text-[#787b86]">H</span> {hasCandle ? formatOverlayPrice(high) : '---'}</span>
+        <span style={{ color: valueColor }}><span className="text-[#787b86]">L</span> {hasCandle ? formatOverlayPrice(low) : '---'}</span>
+        <span style={{ color: valueColor }}><span className="text-[#787b86]">C</span> {hasCandle ? formatOverlayPrice(close) : '---'}</span>
+        <span style={{ color: valueColor }}>{signedChange} ({signedPercent})</span>
+        {isTimeframeLoading && (
+          <span className="ml-1 inline-flex h-4 items-center gap-0.5" role="status" aria-label={`Loading ${timeframe} candles`}>
+            {[0, 1, 2].map((dot) => (
+              <span
+                key={dot}
+                className="h-1 w-1 animate-bounce rounded-full bg-[#787b86]"
+                style={{ animationDelay: `${dot * 120}ms`, animationDuration: '720ms' }}
+                aria-hidden="true"
+              />
+            ))}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function cloneDrawingsForHistory(drawings) {
   if (typeof structuredClone === 'function') {
     return structuredClone(drawings);
@@ -635,6 +692,7 @@ export default function TradingViewReplayChart({
 
   const [allCandles, setAllCandles] = useState([]);
   const [loadedTimeframe, setLoadedTimeframe] = useState(initialTimeframe);
+  const [hoveredLegendCandle, setHoveredLegendCandle] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -747,6 +805,10 @@ export default function TradingViewReplayChart({
   }, [symbol]);
 
   useEffect(() => {
+    setHoveredLegendCandle(null);
+  }, [exchange, marketCategory, symbol, timeframe]);
+
+  useEffect(() => {
     backtestAccountRef.current = backtestAccount;
   }, [backtestAccount]);
 
@@ -754,6 +816,8 @@ export default function TradingViewReplayChart({
     if (!visibleCandles.length) return null;
     return visibleCandles[visibleCandles.length - 1].close;
   }, [visibleCandles]);
+  const legendCandle = hoveredLegendCandle ?? visibleCandles.at(-1) ?? null;
+  const isTimeframeLoading = timeframe !== loadedTimeframe && !error;
   const latestCandleStartedAt = useMemo(() => {
     const candleTime = Number(visibleCandles.at(-1)?.time);
     return Number.isFinite(candleTime) ? candleTime * 1000 : null;
@@ -2449,8 +2513,37 @@ export default function TradingViewReplayChart({
       setIsReplayPricePickActive(false);
     };
 
+    const handleCrosshairMove = (param) => {
+      const candle = param?.time != null ? param?.seriesData?.get(candleSeries) : null;
+      const nextCandle = candle && [candle.open, candle.high, candle.low, candle.close].every((value) => Number.isFinite(Number(value)))
+        ? {
+            time: Number(param.time),
+            open: Number(candle.open),
+            high: Number(candle.high),
+            low: Number(candle.low),
+            close: Number(candle.close),
+          }
+        : null;
+
+      setHoveredLegendCandle((current) => {
+        if (!nextCandle) return current === null ? current : null;
+        if (
+          current?.time === nextCandle.time
+          && current?.open === nextCandle.open
+          && current?.high === nextCandle.high
+          && current?.low === nextCandle.low
+          && current?.close === nextCandle.close
+        ) {
+          return current;
+        }
+
+        return nextCandle;
+      });
+    };
+
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
     chart.subscribeClick(handleChartClick);
+    chart.subscribeCrosshairMove(handleCrosshairMove);
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
@@ -2580,6 +2673,7 @@ export default function TradingViewReplayChart({
 
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
       chart.unsubscribeClick(handleChartClick);
+      chart.unsubscribeCrosshairMove(handleCrosshairMove);
 
       if (containerRef.current) {
         containerRef.current.removeEventListener('wheel', handlePriceScaleWheel, { capture: true });
@@ -5201,6 +5295,15 @@ export default function TradingViewReplayChart({
             onSaveText={handleSaveText}
             onCancelText={handleCancelText}
             onToggleFullscreen={handleToggleFullscreen}
+          />
+
+          <ChartMarketLegend
+            symbol={symbol}
+            exchange={exchange}
+            timeframe={timeframe}
+            candle={legendCandle}
+            isTimeframeLoading={isTimeframeLoading}
+            chartTheme={chartTheme}
           />
 
           <IndicatorSettingsPanel
