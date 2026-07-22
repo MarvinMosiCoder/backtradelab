@@ -7,9 +7,14 @@ use App\Models\UserFeedbackMessage;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use App\Services\AdminAccessService;
 
 class UserFeedbackController extends Controller
 {
+    public function __construct(private readonly AdminAccessService $adminAccess)
+    {
+    }
+
     private const CATEGORIES = ['payment', 'subscription', 'account', 'enhancement', 'feature', 'bug', 'usability', 'performance', 'other'];
     private const STATUSES = ['submitted', 'reviewing', 'planned', 'in_progress', 'completed', 'declined'];
     private const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
@@ -171,12 +176,12 @@ class UserFeedbackController extends Controller
 
     private function ensureSuperAdmin(Request $request): void
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
+        abort_unless($this->adminAccess->isSuperadmin($request->user()), 403);
     }
 
     private function authorizeFeedback(Request $request, UserFeedback $feedback): void
     {
-        $isAdmin = (bool) $request->session()->get('admin_is_superadmin');
+        $isAdmin = $this->adminAccess->isSuperadmin($request->user());
         abort_unless($isAdmin || (int) $feedback->adm_user_id === (int) $request->user()->id, 404);
     }
 

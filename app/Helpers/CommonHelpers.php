@@ -13,6 +13,8 @@ use Storage;
 use Validator;
 use App\Models\AdmModels\AdmAdminMenus;
 use App\Models\AdmModels\AdmMenus;
+use App\Services\AdminAccessService;
+use Illuminate\Support\Facades\Auth;
 
 class CommonHelpers {
 
@@ -67,7 +69,7 @@ class CommonHelpers {
     }
 
     public static function isSuperadmin(){
-        return Session::get('admin_is_superadmin');
+        return app(AdminAccessService::class)->isSuperadmin(Auth::user());
     }
 
     public static function myId(){
@@ -293,113 +295,28 @@ class CommonHelpers {
         }
     }
 
-    public static function isCreate(){
-        if (self::isSuperadmin()) {
-            return true;
+    public static function isCreate(){ return self::hasAdminPermission('create'); }
+
+    public static function isView(){ return self::hasAdminPermission('view'); }
+
+    public static function isUpdate(){ return self::hasAdminPermission('edit'); }
+
+    public static function isRead(){ return self::hasAdminPermission('read'); }
+
+    public static function isDelete(){ return self::hasAdminPermission('delete'); }
+
+    public static function isVoid(){ return self::hasAdminPermission('void'); }
+
+    public static function isOverride(){ return self::hasAdminPermission('override'); }
+
+    private static function hasAdminPermission(string $action): bool
+    {
+        $modulePath = self::getModulePath();
+        if (!Auth::check() || !is_string($modulePath) || $modulePath === '') {
+            return false;
         }
 
-        $session = Session::get('admin_privileges_roles');
-        if($session){
-            foreach ($session as $v) {
-                if ($v->path == self::getModulePath()) {
-                    return (bool) $v->is_create;
-                }
-            }
-        }
-        
-    }
-
-    public static function isView(){
-        if (self::isSuperadmin()) {
-            return true;
-        }
-
-        $session = Session::get('admin_privileges_roles');
-        if($session){
-            foreach ($session as $v) {
-                if ($v->path == self::getModulePath()) {
-                    return (bool) $v->is_visible;
-                }
-            }
-        }
-        
-    }
-
-    public static function isUpdate(){
-        if (self::isSuperadmin()) {
-            return true;
-        }
-    
-        $session = Session::get('admin_privileges_roles');
-        if($session){
-            foreach ($session as $v) {
-                if ($v->path == self::getModulePath()) {
-                    return (bool) $v->is_edit;
-                }
-            }
-        }
-        
-    }
-
-    public static function isRead(){
-        if (self::isSuperadmin()) {
-            return true;
-        }
-
-        $session = Session::get('admin_privileges_roles');
-        if($session){
-            foreach ($session as $v) {
-                if ($v->path == self::getModulePath()) {
-                    return (bool) $v->is_read;
-                }
-            }
-        }
-        
-    }
-
-    public static function isDelete(){
-        if (self::isSuperadmin()) {
-            return true;
-        }
-
-        $session = Session::get('admin_privileges_roles');
-        if($session){
-            foreach ($session as $v) {
-                if ($v->path == self::getModulePath()) {
-                    return (bool) $v->is_delete;
-                }
-            }
-        }
-    }
-
-    public static function isVoid(){
-        if (self::isSuperadmin()) {
-            return true;
-        }
-
-        $session = Session::get('admin_privileges_roles');
-        if($session){
-            foreach ($session as $v) {
-                if ($v->path == self::getModulePath()) {
-                    return (bool) $v->is_void;
-                }
-            }
-        }
-    }
-
-    public static function isOverride(){
-        if (self::isSuperadmin()) {
-            return true;
-        }
-
-        $session = Session::get('admin_privileges_roles');
-        if($session){
-            foreach ($session as $v) {
-                if ($v->path == self::getModulePath()) {
-                    return (bool) $v->is_override;
-                }
-            }
-        }
+        return app(AdminAccessService::class)->allows(Auth::user(), $modulePath, $action);
     }
 
     public static function getModulePath(){
@@ -530,8 +447,8 @@ class CommonHelpers {
     public static function insertLog($description, $details = '') {
         $a                 = array();
         $a['created_at']   = date('Y-m-d H:i:s');
-        $a['ipaddress']    = $_SERVER['REMOTE_ADDR'];
-        $a['useragent']    = $_SERVER['HTTP_USER_AGENT'];
+        $a['ipaddress']    = request()->ip();
+        $a['useragent']    = request()->userAgent() ?? '';
         $a['url']          = Request::url();
         $a['description']  = $description;
         $a['details']      = $details;

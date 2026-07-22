@@ -44,7 +44,7 @@ const AppNavbar = () => {
         }
     });
     const swalColor = useThemeSwalColor(theme);
-    const isSuperAdmin = Boolean(auth?.sessions?.admin_is_superadmin);
+    const isSuperAdmin = Boolean(auth?.role?.isSuperadmin);
     useEffect(() => {
         getAppName().then((appName) => {
             setAppname(appName);

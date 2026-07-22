@@ -4,6 +4,8 @@
 
 The legacy administration layer stores privileges, modules, menus, and their mappings in the database. It controls admin navigation and can register module controller routes dynamically.
 
+`adm_privileges.is_admin` distinguishes administrative roles from the protected `Users` trader role. `is_superadmin` grants a full bypass; restricted administrators require an explicit `adm_privileges_roles` action for the current module. The `admin`, `superadmin`, and `admin.permission:{module},{action}` middleware enforce these rules from current database state.
+
 ## Files and data
 
 | File/table | Responsibility |
@@ -38,6 +40,8 @@ after migrations/seeders and before changing a generated module.
 - Require `check.user` for admin-only pages and verify privilege in controller actions.
 - Keep parent/child menu ordering and privilege mappings consistent.
 - Do not assume hiding a menu authorizes an endpoint; authorization belongs on the server.
+- Never use `admin_is_admin`, `admin_is_superadmin`, or menu visibility as a backend authorization decision.
+- Keep the `Users` privilege non-admin, prevent self-demotion and final-superadmin removal, and deny missing module mappings by default.
 - Review generated controller/view code before committing it.
 
 ## Verification

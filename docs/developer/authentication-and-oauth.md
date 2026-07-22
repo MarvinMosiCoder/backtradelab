@@ -2,13 +2,14 @@
 
 ## Purpose
 
-Users can sign in with email/password, reset a password, or authenticate with Google/Facebook. Successful normal users enter `/market`; superadmins enter `/dashboard`.
+Traders sign in at `/login` with email/password or Google/Facebook. Administrative accounts use the separate email/password-only `/admin/login`. Both use the same `adm_users` identity table and Laravel session guard; current database privileges determine authorization. Successful traders enter `/market`; administrators enter `/dashboard`.
 
 ## Routes and files
 
 | Route/file | Responsibility |
 |---|---|
 | `GET /login`, `POST /login-save` | Render and process password login |
+| `GET/POST /admin/login` | Render and process the admin-only password login |
 | `GET /auth/{provider}/redirect`, callback | Socialite OAuth flow |
 | `/reset_password*`, `/send_resetpass_email*` | Password-reset screens and actions |
 | `app/Http/Controllers/Auth/LoginController.php` | Authentication, OAuth account matching/creation, session setup, logout |
@@ -28,7 +29,7 @@ Route::post('login-save', [LoginController::class, 'authenticate'])
 1. `Login.jsx` posts credentials to `/login-save`.
 2. Laravel validates the account, status, and password.
 3. `LoginController` loads privilege, menus, profile, theme, notification, and announcement session data.
-4. Laravel regenerates/uses the authenticated session and redirects by role.
+4. Laravel regenerates the authenticated session and redirects by the current database role. The trader endpoint rejects administrative accounts; the admin endpoint rejects non-admin accounts with a generic error.
 5. OAuth redirects through Socialite. The callback matches provider identity, then email, and may create a non-superadmin account.
 
 `adm_users` stores identity, provider fields, password-login state, status, privilege, onboarding, trial, and paid-access fields. Password history is stored in `adm_password_histories`.
@@ -37,6 +38,8 @@ Route::post('login-save', [LoginController::class, 'authenticate'])
 
 - Keep OAuth secrets in `.env`; expose only callback URLs publicly.
 - Do not allow OAuth registration to choose superadmin privilege.
+- Keep social authentication and registration unavailable from the admin login.
+- Treat `is_admin`, `is_superadmin`, and module permissions from the database as authoritative; session role values are presentation caches only.
 - Reject inactive accounts in every login path.
 - Regenerate sessions on authentication and invalidate them on logout.
 - Preserve named login/reset/social rate limiters when editing routes.

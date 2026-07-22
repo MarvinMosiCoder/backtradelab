@@ -11,14 +11,18 @@ use App\Models\AdmUser;
 use App\Models\SubscriptionRequest;
 use App\Models\UserFeedback;
 use Illuminate\Http\Request;
+use App\Services\AdminAccessService;
 
 class DashboardController extends Controller
 {
+    public function __construct(private readonly AdminAccessService $adminAccess)
+    {
+    }
 
     public function index(Request $request): Response
     {
         $sidebarMenus = CommonHelpers::sidebarMenu();
-        $isSuperAdmin = (bool) $request->session()->get('admin_is_superadmin');
+        $isSuperAdmin = $this->adminAccess->isSuperadmin($request->user());
 
         if (!$isSuperAdmin) {
             return Inertia::render('Dashboard/Dashboard', [
@@ -90,8 +94,18 @@ class DashboardController extends Controller
 
     public function workspace(Request $request): Response
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
+        abort_unless($this->adminAccess->isSuperadmin($request->user()), 403);
 
+        return $this->renderTradingWorkspace();
+    }
+
+    public function tradingWorkspace(): Response
+    {
+        return $this->renderTradingWorkspace();
+    }
+
+    private function renderTradingWorkspace(): Response
+    {
         return Inertia::render('Dashboard/Dashboard', [
             'menus' => CommonHelpers::sidebarMenu(),
             'workspaceMode' => true,

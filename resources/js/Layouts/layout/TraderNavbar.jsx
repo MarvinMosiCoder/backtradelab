@@ -59,7 +59,7 @@ export default function TraderNavbar() {
         };
         const poll = async () => {
             try {
-                const { data } = await axios.get('/notifications');
+                const { data } = await axios.get('/notifications/feed');
                 if (stopped) return;
                 setUnreadNotifications(Number(data.unread_notifications) || 0);
                 alertSoundEnabledRef.current = data.alert_sound_enabled !== false;
@@ -121,7 +121,7 @@ export default function TraderNavbar() {
         setActiveSymbol(selected);
         localStorage.setItem(activeSymbolStorageKey, JSON.stringify(selected));
         window.dispatchEvent(new CustomEvent('backtradelab-active-symbol-change', { detail: selected }));
-        router.visit('/dashboard');
+        router.visit('/workspace');
     };
 
     const toggleTheme = () => {
@@ -195,7 +195,7 @@ export default function TraderNavbar() {
                 <Menu size={18} />
             </button>
 
-            <Link href="/dashboard" className="flex shrink-0 items-center gap-2 pr-3 sm:pr-5">
+            <Link href="/workspace" className="flex shrink-0 items-center gap-2 pr-3 sm:pr-5">
                 <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md bg-[#2962ff]">
                     {logo ? <img src={logo} alt="BacktradeLab" className="h-full w-full object-contain p-1" /> : <BarChart3 size={17} className="text-white" />}
                 </div>

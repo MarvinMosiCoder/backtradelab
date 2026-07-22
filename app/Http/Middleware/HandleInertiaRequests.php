@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Illuminate\Support\Facades\Auth;
 use App\Models\AdmModels\AdmUserProfiles; 
+use App\Services\AdminAccessService;
 class HandleInertiaRequests extends Middleware
 {
     /**
@@ -36,10 +37,22 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $adminAccess = app(AdminAccessService::class);
+        $role = $adminAccess->role($request->user());
+        if ($request->hasSession() && $request->user()) {
+            $request->session()->put('admin_is_admin', $adminAccess->isAdmin($request->user()));
+            $request->session()->put('admin_is_superadmin', $adminAccess->isSuperadmin($request->user()));
+        }
+
         return array_merge(parent::share($request), [
             'csrf_token' => csrf_token(),
             'auth' => [
                 'user' => $request->user(),
+                'role' => [
+                    'name' => $role?->name,
+                    'isAdmin' => $adminAccess->isAdmin($request->user()),
+                    'isSuperadmin' => $adminAccess->isSuperadmin($request->user()),
+                ],
                 'sessions' => $request->session()->all(),
                 'access' => [
                     'isView' => CommonHelpers::isView(),

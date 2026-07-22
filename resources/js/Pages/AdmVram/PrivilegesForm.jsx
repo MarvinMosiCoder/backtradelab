@@ -20,7 +20,7 @@ const PrivilegesForm = ({ moduleses, row }) => {
 
     const { setTitle } = useContext(NavbarContext);
     const { handleToast } = useToast();
-    const [roles, setRoles] = useState({ is_superadmin: '0',});
+    const [roles, setRoles] = useState({ is_admin: '1', is_superadmin: '0',});
     const [modules, setModules] = useState([]);
     const [rows, setRows] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -43,6 +43,7 @@ const PrivilegesForm = ({ moduleses, row }) => {
     const [forms, setForms] = useState({
         header_id: '',
         name:  '',
+        is_admin: '1',
         is_superadmin: '',
         privileges: {},
         theme_color: '',
@@ -188,6 +189,7 @@ const PrivilegesForm = ({ moduleses, row }) => {
         console.log(key,value);
         if(key == 'is_superadmin'){
             value == 1 ? setShowPriv(false) : setShowPriv(true);
+            if (value == 1) setForms((current) => ({ ...current, is_admin: '1' }));
         }
         setForms((forms) => ({
             ...forms,
@@ -208,6 +210,7 @@ const PrivilegesForm = ({ moduleses, row }) => {
     const validate = () => {
         const newErrors = {};
         if (!forms.name) newErrors.name = 'Name is required';
+        if (forms.is_admin === '' || forms.is_admin === undefined) newErrors.is_admin = 'Choose account type!';
         if (!forms.is_superadmin) newErrors.is_superadmin = 'Choose privilege!';
         return newErrors;
     };
@@ -340,6 +343,15 @@ const PrivilegesForm = ({ moduleses, row }) => {
                                     value={ row.theme_color ? {label: convertText(row.theme_color) , value: row.theme_color ?? forms.theme_color} : row.theme_color ?? forms.theme_color}
                                 />
                             </ div>
+                            <div className="flex-1 mb-2">
+                                <label className={`block text-sm font-bold ${textColor} font-poppins`}>Administrative Role</label>
+                                <div className="relative rounded-lg mt-1 flex space-x-1 overflow-hidden border-2 bg-gray-300">
+                                    <div className={`absolute top-0 left-0 h-full w-1/2 transition-all duration-300 ${forms.is_admin == 1 ? 'translate-x-full' : ''} ${theme} rounded-md`}></div>
+                                    <button type="button" disabled={forms.is_superadmin == 1} onClick={() => handleInputChange({ target: { name: 'is_admin', value: '0' } })} className={`px-4 py-2 text-sm font-semibold w-full z-10 ${(forms.is_admin == 0) ? 'text-white' : 'text-black/50'}`}>No</button>
+                                    <button type="button" onClick={() => handleInputChange({ target: { name: 'is_admin', value: '1' } })} className={`px-4 py-2 text-sm font-semibold w-full z-10 ${forms.is_admin == 1 ? 'text-white' : 'text-black/50'}`}>Yes</button>
+                                </div>
+                                {errors.is_admin && <div className="font-poppins font-bold text-red-600 text-sm mt-1">{errors.is_admin}</div>}
+                            </div>
                             <div className="flex-1 mb-2">
                                 <label className={`block text-sm font-bold ${textColor}  font-poppins`}>Is SuperAdmin</label>
                                     <div className={`relative rounded-lg mt-1 flex space-x-1 overflow-hidden border-2 bg-gray-300`}>

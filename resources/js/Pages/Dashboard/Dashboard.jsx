@@ -9,7 +9,7 @@ const Dashboard = ({ userMetrics = {}, subscriptionMetrics = {}, feedbackMetrics
     const { auth } = usePage().props;
     const { theme } = useTheme();
     const isDark = theme === 'bg-skin-black';
-    const isSuperAdmin = Boolean(auth?.sessions?.admin_is_superadmin);
+    const isSuperAdmin = Boolean(auth?.role?.isSuperadmin);
     const watchlistKey = `backtradelab-watchlists:${auth?.user?.id ?? 'guest'}`;
     const [savedSymbols, setSavedSymbols] = useState([]);
     const [watchlists, setWatchlists] = useState(() => { try { return JSON.parse(localStorage.getItem(watchlistKey) || '{"Main":[]}'); } catch { return { Main: [] }; } });

@@ -68,5 +68,8 @@ class Kernel extends HttpKernel
         'check.user' => \App\Http\Middleware\CheckUserForceChangePassword::class,
         'replay.access' => \App\Http\Middleware\EnsureReplayAccess::class,
         'account.active' => \App\Http\Middleware\EnsureAccountIsActive::class,
+        'admin' => \App\Http\Middleware\EnsureAdmin::class,
+        'superadmin' => \App\Http\Middleware\EnsureSuperadmin::class,
+        'admin.permission' => \App\Http\Middleware\EnsureAdminPermission::class,
     ];
 }

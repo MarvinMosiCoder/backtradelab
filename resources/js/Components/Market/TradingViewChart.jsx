@@ -4026,7 +4026,7 @@ export default function TradingViewReplayChart({
   }, [alertDraft, currentPrice, exchange, marketCategory, symbol]);
 
   useEffect(() => {
-    Promise.all([axios.get('/market-price-alerts'), axios.get('/notifications')]).then(([alerts, notifications]) => {
+    Promise.all([axios.get('/market-price-alerts'), axios.get('/notifications/feed')]).then(([alerts, notifications]) => {
       setPriceAlerts((alerts.data.alerts ?? []).filter((item) => item.exchange === exchange && item.category === marketCategory && item.symbol === symbol && item.status === 'active'));
       setAlertSoundEnabled(notifications.data?.alert_sound_enabled !== false);
     }).catch(() => {});

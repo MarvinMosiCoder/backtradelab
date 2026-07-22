@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
-use app\Helpers\CommonHelpers;
+use App\Helpers\CommonHelpers;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\AdmUser;
@@ -26,9 +26,14 @@ use App\Models\AdmModels\AdmSettings;
 use App\Models\AdmModels\AdmAdminMenus;
 use App\Models\AdmModels\AdmMenus;
 use App\Models\AdmModels\admMenusPrivileges;
+use App\Services\AdminAccessService;
 
 class LoginController extends Controller
 {
+    public function __construct(private readonly AdminAccessService $adminAccess)
+    {
+    }
+
     /**
      * Display the login view.
      */
@@ -40,6 +45,15 @@ class LoginController extends Controller
         return Inertia::render('Auth/Login');
     }
 
+    public function adminIndex(): Response|RedirectResponse
+    {
+        if (auth()->check()) {
+            return redirect($this->adminAccess->isAdmin(auth()->user()) ? 'dashboard' : 'market');
+        }
+
+        return Inertia::render('Auth/AdminLogin');
+    }
+
     public function checkEmail(Request $request)
     {
         $data = $request->validate([
@@ -48,7 +62,12 @@ class LoginController extends Controller
         $email = Str::lower(trim($data['email']));
 
         return response()->json([
-            'exists' => AdmUser::query()->whereRaw('LOWER(email) = ?', [$email])->exists(),
+            'exists' => AdmUser::query()
+                ->join('adm_privileges', 'adm_privileges.id', '=', 'adm_users.id_adm_privileges')
+                ->whereRaw('LOWER(adm_users.email) = ?', [$email])
+                ->where('adm_privileges.is_admin', false)
+                ->where('adm_privileges.is_superadmin', false)
+                ->exists(),
         ]);
     }
 
@@ -62,6 +81,10 @@ class LoginController extends Controller
             'password' => ['required'],
         ]);
         $users = AdmUser::where("email", $credentials['email'])->first();
+
+        if ($this->adminAccess->isAdmin($users)) {
+            return redirect('login')->withErrors(['message' => 'The provided credentials do not match our records.']);
+        }
        
         [$error, $session_details] = $this->validateLoginUser($users);
         if($error){
@@ -84,6 +107,30 @@ class LoginController extends Controller
             'email' => 'The provided credentials do not match our records',
             'password' => 'Incorrect email or password'
         ])->onlyInput(['email', 'password']);
+    }
+
+    public function adminAuthenticate(Request $request): RedirectResponse
+    {
+        $credentials = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required'],
+        ]);
+        $user = AdmUser::query()->whereRaw('LOWER(email) = ?', [Str::lower(trim($credentials['email']))])->first();
+        $genericError = ['message' => 'The provided credentials do not match our records.'];
+
+        if (!$user || !$this->adminAccess->isAdmin($user) || $user->password_login_enabled === false) {
+            return back()->withErrors($genericError)->onlyInput('email');
+        }
+
+        [$error, $sessionDetails] = $this->validateLoginUser($user);
+        if ($error || !Auth::attempt(['email' => $user->email, 'password' => $credentials['password']])) {
+            return back()->withErrors($genericError)->onlyInput('email');
+        }
+
+        RateLimiter::clear('login-identity:'.sha1(Str::lower($user->email).'|'.$request->ip()));
+        $this->completeLogin($request, Auth::user(), $sessionDetails);
+
+        return redirect()->intended('dashboard');
     }
 
     public function redirectToProvider(string $provider)
@@ -145,6 +192,10 @@ class LoginController extends Controller
             ]);
         }
 
+        if ($this->adminAccess->isAdmin($users)) {
+            return redirect('login')->withErrors(['message' => 'Please use the administrator login page.']);
+        }
+
         $usesTemporaryPassword = \Hash::check('qwerty', $users->password);
         $users->forceFill([
             'social_provider' => $provider,
@@ -180,8 +231,8 @@ class LoginController extends Controller
             $request->session()->forget('pending_social_registration');
             return redirect('login')->withErrors(['message' => 'An account now exists for this email. Please sign in again.']);
         }
-        $defaultPrivilegeId = DB::table('adm_privileges')->where(fn ($query) => $query
-            ->where('is_superadmin', 0)->orWhereNull('is_superadmin'))->orderBy('id')->value('id');
+        $defaultPrivilegeId = DB::table('adm_privileges')
+            ->where('name', 'Users')->where('is_admin', false)->where('is_superadmin', false)->value('id');
         if (!$defaultPrivilegeId) return back()->withErrors(['accepted' => 'No trader role is configured. Please contact Administrator.']);
 
         $now = now();
@@ -224,11 +275,11 @@ class LoginController extends Controller
 
     private function loginDestination(?array $sessionDetails = null): string
     {
-        $isSuperadmin = $sessionDetails
-            ? (bool) $sessionDetails['priv']->is_superadmin
-            : (bool) session('admin_is_superadmin');
+        $isAdmin = $sessionDetails
+            ? ((bool) $sessionDetails['priv']->is_admin || (bool) $sessionDetails['priv']->is_superadmin)
+            : $this->adminAccess->isAdmin(auth()->user());
 
-        return $isSuperadmin ? 'dashboard' : 'market';
+        return $isAdmin ? 'dashboard' : 'market';
     }
 
     private function validateLoginUser($users): array
@@ -285,6 +336,7 @@ class LoginController extends Controller
 
         Session::put('admin_id', $users->id);
         Session::put('admin_is_superadmin', $session_details['priv']->is_superadmin);
+        Session::put('admin_is_admin', (bool) $session_details['priv']->is_admin || (bool) $session_details['priv']->is_superadmin);
         Session::put("admin_privileges", $session_details['priv']->id);
         Session::put('admin_privileges_roles', $session_details['roles']);
         Session::put('theme_color', $session_details['priv']->theme_color);

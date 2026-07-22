@@ -3,15 +3,20 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use App\Services\AdminAccessService;
 
 class EnsureReplayAccess
 {
+    public function __construct(private readonly AdminAccessService $adminAccess)
+    {
+    }
+
     public function handle(Request $request, Closure $next)
     {
         $user = $request->user();
         if (!$user) abort(401);
 
-        if ($request->session()->get('admin_is_superadmin')) return $next($request);
+        if ($this->adminAccess->isSuperadmin($request->user())) return $next($request);
 
         $allowed = ($user->replay_trial_ends_at && now()->lte($user->replay_trial_ends_at))
             || ($user->replay_access_ends_at && now()->lte($user->replay_access_ends_at));

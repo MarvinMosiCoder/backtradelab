@@ -20,6 +20,11 @@ class AdminApiController extends Controller
     private $perPage;
 
     public function __construct() {
+        $this->middleware('admin.permission:api_generator,view')->only('getIndex');
+        $this->middleware('admin.permission:api_generator,create')->only(['createKey', 'createApiView', 'createApi']);
+        $this->middleware('admin.permission:api_generator,edit')->only(['deactivateKey', 'activateKey', 'editApi', 'updateApi']);
+        $this->middleware('admin.permission:api_generator,read')->only('viewApi');
+        $this->middleware('admin.permission:api_generator,delete')->only(['deleteKey', 'bulkActions']);
         $this->sortBy = request()->get('sortBy', 'api_configurations.created_at');
         $this->sortDir = request()->get('sortDir', 'desc');
         $this->perPage = request()->get('perPage', 10);

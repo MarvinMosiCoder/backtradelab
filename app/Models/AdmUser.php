@@ -43,6 +43,7 @@ class AdmUser extends Authenticatable
         'terms_accepted_at',
         'privacy_accepted_at',
         'legal_effective_date',
+        'id_adm_privileges',
         'created_at',
         'updated_at'
     ];

@@ -7,6 +7,7 @@ Use this index to find the feature owner of a source file. Detailed behavior bel
 | `routes/web.php`, `routes/api.php` | [Architecture](02-project-architecture.md) and linked route owner |
 | `resources/js/app.jsx`, `AppInitializer.jsx` | [Architecture](02-project-architecture.md) |
 | `app/Http/Controllers/Auth/*` | [Authentication](authentication-and-oauth.md) |
+| `AdminAccessService.php`, `EnsureAdmin*.php` | [Roles and menus](roles-privileges-menus.md) |
 | `app/Http/Controllers/Users/*`, `AccountDeactivationService.php` | [Users and profiles](users-profiles-and-deactivation.md) |
 | `AdminUsersController.php`, `PrivilegesController.php`, `MenusController.php`, `ModulsController.php` | [Roles and menus](roles-privileges-menus.md) |
 | `DashboardController.php`, `Pages/Dashboard/*`, `Layouts/*` | [Dashboard and layouts](dashboard-and-layouts.md), including admin operations and workspace mode |

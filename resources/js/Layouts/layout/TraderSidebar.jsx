@@ -6,7 +6,7 @@ import { useTheme } from '../../Context/ThemeContext';
 
 const items = [
     { label: 'Market Summary', href: '/market', icon: CandlestickChart },
-    { label: 'Workspace', href: '/dashboard', icon: LayoutDashboard },
+    { label: 'Workspace', href: '/workspace', icon: LayoutDashboard },
     { label: 'Trade journal', href: '/trade-report', icon: BookOpen },
     { label: 'Subscription', href: '/subscription', icon: CreditCard },
     { label: 'Feedback & Customer Support', href: '/feedback', icon: MessageSquarePlus },
@@ -31,7 +31,7 @@ export default function TraderSidebar() {
 
                 <nav className="space-y-1">
                     {items.map(({ label, href, icon: Icon }) => {
-                        const active = url === href || (href === '/dashboard' && url.startsWith('/dashboard'));
+                        const active = url === href || (href === '/workspace' && url.startsWith('/workspace'));
                         return (
                             <Link
                                 key={href}

@@ -7,6 +7,7 @@ use App\Models\SubscriptionMessage;
 use App\Models\SubscriptionPlan;
 use App\Models\SubscriptionRequest;
 use App\Services\Payments\PayMongoCheckoutService;
+use App\Services\AdminAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -16,12 +17,15 @@ use Throwable;
 
 class ReplayAccessController extends Controller
 {
-    public function __construct(private readonly PayMongoCheckoutService $checkouts) {}
+    public function __construct(
+        private readonly PayMongoCheckoutService $checkouts,
+        private readonly AdminAccessService $adminAccess,
+    ) {}
 
     public function plans(Request $request)
     {
         $query = SubscriptionPlan::whereIn('code', ['weekly', 'monthly', 'yearly'])->orderBy('sort_order');
-        if (!$request->session()->get('admin_is_superadmin')) $query->where('is_active', true);
+        if (!$this->adminAccess->isSuperadmin($request->user())) $query->where('is_active', true);
 
         return response()->json([
             'plans' => $query->get(),
@@ -65,7 +69,7 @@ class ReplayAccessController extends Controller
         return Inertia::render('Subscriptions/UserIndex', [
             'subscription' => [
                 'status' => $paidActive ? 'active' : ($trialActive ? 'trial' : ($user->replay_trial_started_at ? 'expired' : 'available')),
-                'allowed' => (bool) $request->session()->get('admin_is_superadmin') || $trialActive || $paidActive,
+                'allowed' => $this->adminAccess->isSuperadmin($request->user()) || $trialActive || $paidActive,
                 'trialAvailable' => !$user->replay_trial_started_at && !$paidActive,
                 'trialStartedAt' => optional($user->replay_trial_started_at)->toIso8601String(),
                 'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
@@ -88,7 +92,7 @@ class ReplayAccessController extends Controller
         $paidActive = $user->replay_access_ends_at && now()->lte($user->replay_access_ends_at);
 
         return response()->json([
-            'allowed' => (bool) $request->session()->get('admin_is_superadmin') || ($activeUntil && now()->lte($activeUntil)),
+            'allowed' => $this->adminAccess->isSuperadmin($request->user()) || ($activeUntil && now()->lte($activeUntil)),
             'trialAvailable' => !$user->replay_trial_started_at && !$paidActive,
             'trialStartedAt' => optional($user->replay_trial_started_at)->toIso8601String(),
             'trialEndsAt' => optional($user->replay_trial_ends_at)->toIso8601String(),
@@ -251,14 +255,14 @@ class ReplayAccessController extends Controller
 
     private function authorizePayment(Request $request, SubscriptionRequest $payment): bool
     {
-        $isAdmin = (bool) $request->session()->get('admin_is_superadmin');
+        $isAdmin = $this->adminAccess->isSuperadmin($request->user());
         abort_unless($isAdmin || $payment->adm_user_id === $request->user()->id, 403);
         return $isAdmin;
     }
 
     private function requireAdmin(Request $request): void
     {
-        abort_unless((bool) $request->session()->get('admin_is_superadmin'), 403);
+        abort_unless($this->adminAccess->isSuperadmin($request->user()), 403);
     }
 
     private function paymentPayload(SubscriptionRequest $payment, bool $includeUser = false): array

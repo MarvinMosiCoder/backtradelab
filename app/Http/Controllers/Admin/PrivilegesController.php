@@ -11,6 +11,8 @@ use DB;
 use App\Models\AdmModels\AdmPrivileges;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\AdminAccessService;
+use Illuminate\Validation\Rule;
 
 class PrivilegesController extends Controller{
     private $table_name;
@@ -18,7 +20,10 @@ class PrivilegesController extends Controller{
     private $sortBy;
     private $sortDir;
     private $perPage;
-    public function __construct() {
+    public function __construct(private readonly AdminAccessService $adminAccess) {
+        $this->middleware('admin.permission:privileges,view')->only('getIndex');
+        $this->middleware('admin.permission:privileges,create')->only(['createPrivilegesView', 'postAddSave']);
+        $this->middleware('admin.permission:privileges,edit')->only(['getEdit', 'postEditSave']);
         $this->table_name  =  'adm_privileges';
         $this->primary_key = 'id';
         $this->sortBy = request()->get('sortBy', 'adm_privileges.created_at');
@@ -51,7 +56,7 @@ class PrivilegesController extends Controller{
         }
         $id = 0;
         $row = [];
-        $modules = DB::table("adm_modules")->where('is_protected', 0)->whereNull('deleted_at')
+        $modules = DB::table("adm_modules")->where('is_active', 1)->whereNull('deleted_at')
          ->select("adm_modules.*", 
                 DB::raw("(select is_visible from adm_privileges_roles where id_adm_modules = adm_modules.id and id_adm_privileges = '$id') as is_visible"), 
                 DB::raw("(select is_create from adm_privileges_roles where id_adm_modules  = adm_modules.id and id_adm_privileges = '$id') as is_create"), 
@@ -79,7 +84,7 @@ class PrivilegesController extends Controller{
             echo 'error!';
         }
         $row = DB::table($this->table_name)->where("id", $id)->first();
-        $modules = DB::table("adm_modules")->where('is_protected', 0)->where('deleted_at', null)->select("adm_modules.*")->orderby("name", "asc")->get();
+        $modules = DB::table("adm_modules")->where('is_active', 1)->where('deleted_at', null)->select("adm_modules.*")->orderby("name", "asc")->get();
         $modules->map(function ($modul) use ($id) {
             $modul->roles = DB::table('adm_privileges_roles')
                 ->where('id_adm_modules', $modul->id)
@@ -95,15 +100,23 @@ class PrivilegesController extends Controller{
     }
 
     public function postAddSave(Request $request){
-    
-        if (!CommonHelpers::isCreate()) {
-            echo 'error';
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255', Rule::unique('adm_privileges', 'name')],
+            'is_admin' => ['required', 'boolean'],
+            'is_superadmin' => ['required', 'boolean'],
+            'theme_color' => ['nullable', 'string', 'max:100'],
+            'privileges' => ['nullable', 'array'],
+        ]);
+        if ((bool) $data['is_superadmin']) {
+            abort_unless($this->adminAccess->isSuperadmin($request->user()), 403);
+            $data['is_admin'] = true;
         }
 
         $savePriv = [
-            "name" => $request->name,
-            "is_superadmin" => $request->is_superadmin,
-            "theme_color" => $request->theme_color,
+            "name" => $data['name'],
+            "is_admin" => $data['is_admin'],
+            "is_superadmin" => $data['is_superadmin'],
+            "theme_color" => $data['theme_color'] ?? null,
             "created_at"  => date('Y-m-d H:i:s')
         ];
 
@@ -140,15 +153,46 @@ class PrivilegesController extends Controller{
     }
 
     public function postEditSave(Request $request){
-        if (!CommonHelpers::isUpdate()){
-            echo 'error!';
-        }
+        $id = $request->integer('id');
+        $current = AdmPrivileges::findOrFail($id);
+        $data = $request->validate([
+            'id' => ['required', 'integer', 'exists:adm_privileges,id'],
+            'name' => ['required', 'string', 'max:255', Rule::unique('adm_privileges', 'name')->ignore($id)],
+            'is_admin' => ['required', 'boolean'],
+            'is_superadmin' => ['required', 'boolean'],
+            'theme_color' => ['nullable', 'string', 'max:100'],
+            'privileges' => ['nullable', 'array'],
+        ]);
 
-        $id = $request->id;
+        if ($current->name === 'Users' && ($data['name'] !== 'Users' || (bool) $data['is_admin'] || (bool) $data['is_superadmin'])) {
+            return response()->json(['message' => 'The default Users privilege cannot be renamed or elevated.'], 422);
+        }
+        if (!$this->adminAccess->isSuperadmin($request->user())
+            && ((bool) $current->is_admin !== (bool) $data['is_admin'] || (bool) $current->is_superadmin !== (bool) $data['is_superadmin'])) {
+            abort(403);
+        }
+        if ((int) $request->user()->id_adm_privileges === $id
+            && ((bool) $current->is_admin && !(bool) $data['is_admin'] || (bool) $current->is_superadmin && !(bool) $data['is_superadmin'])) {
+            return response()->json(['message' => 'You cannot demote your own active privilege.'], 422);
+        }
+        if ((bool) $current->is_superadmin && !(bool) $data['is_superadmin']) {
+            $anotherActiveSuperadminExists = DB::table('adm_users')
+                ->join('adm_privileges', 'adm_privileges.id', '=', 'adm_users.id_adm_privileges')
+                ->where('adm_privileges.is_superadmin', true)
+                ->where('adm_privileges.id', '!=', $id)
+                ->where(fn ($query) => $query->whereRaw('UPPER(adm_users.status) = ?', ['ACTIVE'])->orWhere('adm_users.status', 1))
+                ->exists();
+            if (!$anotherActiveSuperadminExists) {
+                return response()->json(['message' => 'At least one active super administrator is required.'], 422);
+            }
+        }
+        if ((bool) $data['is_superadmin']) $data['is_admin'] = true;
+
         $savePriv = [
-            "name" => $request->name,
-            "is_superadmin" => $request->is_superadmin,
-            "theme_color" => $request->theme_color,
+            "name" => $data['name'],
+            "is_admin" => $data['is_admin'],
+            "is_superadmin" => $data['is_superadmin'],
+            "theme_color" => $data['theme_color'] ?? null,
             "updated_at"  => date('Y-m-d H:i:s')
         ];
 

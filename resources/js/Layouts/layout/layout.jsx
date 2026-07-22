@@ -13,20 +13,20 @@ import AdminNavbar from './AdminNavbar';
 const Layout = ({ children }) => {
     const {theme} = useTheme();
     const { auth } = usePage().props;
-    const isSuperAdmin = Boolean(auth?.sessions?.admin_is_superadmin);
+    const isAdmin = Boolean(auth?.role?.isAdmin);
     return (
         <NavbarProvider>
             <div className="fixed z-[200] w-full">
-                {isSuperAdmin ? <AdminNavbar /> : <TraderNavbar />}
+                {isAdmin ? <AdminNavbar /> : <TraderNavbar />}
             </div>
             <div className="flex h-screen pt-14">
-                {isSuperAdmin ? <AppSidebar /> : <TraderSidebar />}
+                {isAdmin ? <AppSidebar /> : <TraderSidebar />}
                 <div className="flex min-w-0 w-full flex-col overflow-hidden">
                     <div className="flex-1 w-full flex flex-col overflow-auto">
                         <div className="flex-1">
                             <AppContent>{children}</AppContent>
                         </div>
-                        {isSuperAdmin && <AppFooter />}
+                        {isAdmin && <AppFooter />}
                     </div>
                 </div>
             </div>

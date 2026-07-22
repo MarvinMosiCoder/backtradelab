@@ -26,6 +26,7 @@ use App\Http\Controllers\PayMongoWebhookController;
 use App\Http\Controllers\Users\ChangePasswordController;
 use App\Http\Controllers\Users\ForceChangePasswordController;
 use App\Http\Controllers\Users\ProfilePageController;
+use App\Services\AdminAccessService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -41,9 +42,9 @@ use Inertia\Inertia;
 |
 */
 
-Route::get('/', function () {
+Route::get('/', function (AdminAccessService $access) {
     if (auth()->check()) {
-        return redirect()->intended(session('admin_is_superadmin') ? 'dashboard' : 'market');
+        return redirect()->intended($access->isAdmin(auth()->user()) ? 'dashboard' : 'market');
     }
 
     return Inertia::render('Public/Home');
@@ -55,6 +56,9 @@ Route::get('/terms-of-service', fn () => Inertia::render('Public/TermsOfService'
     'legal' => config('legal'),
 ]))->name('terms-of-service');
 Route::get('login', [LoginController::class, 'index'])->name('login');
+Route::get('/admin/login', [LoginController::class, 'adminIndex'])->name('admin.login');
+Route::post('/admin/login', [LoginController::class, 'adminAuthenticate'])
+    ->middleware('throttle:login')->name('admin.login.authenticate');
 Route::post('login/check-email', [LoginController::class, 'checkEmail'])
     ->middleware('throttle:login-email-check')
     ->name('login.check-email');
@@ -94,17 +98,18 @@ Route::group(['middleware' => ['auth', 'account.active', 'web']], function () {
     Route::get('unread-announcement', [AnnouncementsController::class, 'getUnreadAnnouncements'])->name('show-announcement');
     Route::post('read-announcement', [AnnouncementsController::class, 'markAnnouncementAsRead'])->name('read-announcement');
     Route::get('announcement', [AnnouncementsController::class, 'getAnnouncements'])->name('announcement');
-    Route::get('announcement/add-announcement', [AnnouncementsController::class, 'addAnnouncementForm'])->name('add-announcement');
-    Route::post('announcement/SaveAnnouncement', [AnnouncementsController::class, 'saveAnnouncement'])->name('announcement/SaveAnnouncement');
-    Route::get('announcement/edit-announcement/{id}', [AnnouncementsController::class, 'editAnnouncement'])->name('edit-announcement');
-    Route::post('announcement/saveEditAnnouncement', [AnnouncementsController::class, 'saveEditAnnouncement'])->name('saveEditAnnouncement');
+    Route::get('announcement/add-announcement', [AnnouncementsController::class, 'addAnnouncementForm'])->middleware('admin.permission:announcements,create')->name('add-announcement');
+    Route::post('announcement/SaveAnnouncement', [AnnouncementsController::class, 'saveAnnouncement'])->middleware('admin.permission:announcements,create')->name('announcement/SaveAnnouncement');
+    Route::get('announcement/edit-announcement/{id}', [AnnouncementsController::class, 'editAnnouncement'])->middleware('admin.permission:announcements,edit')->name('edit-announcement');
+    Route::post('announcement/saveEditAnnouncement', [AnnouncementsController::class, 'saveEditAnnouncement'])->middleware('admin.permission:announcements,edit')->name('saveEditAnnouncement');
 });
 
 Route::post('/webhooks/paymongo', PayMongoWebhookController::class)->middleware('throttle:api')->name('webhooks.paymongo');
 
 Route::middleware(['auth', 'account.active'])->group(function () {
-    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/admin/workspace', [DashboardController::class, 'workspace'])->name('admin.workspace');
+    Route::get('dashboard', [DashboardController::class, 'index'])->middleware('superadmin')->name('dashboard');
+    Route::get('workspace', [DashboardController::class, 'tradingWorkspace'])->name('workspace');
+    Route::get('/admin/workspace', [DashboardController::class, 'workspace'])->middleware('superadmin')->name('admin.workspace');
     Route::get('market', function () {
         return Inertia::render('Market/Market');
     })->name('market');
@@ -129,8 +134,8 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/replay-access', [ReplayAccessController::class, 'status']);
     Route::post('/replay-trial/activate', [ReplayAccessController::class, 'activateTrial'])->middleware('throttle:market-write');
     Route::get('/subscription-plans', [ReplayAccessController::class, 'plans']);
-    Route::put('/admin/subscription-plans', [ReplayAccessController::class, 'updatePlans'])->middleware('throttle:market-write');
-    Route::get('/admin/subscription-plans', [ReplayAccessController::class, 'adminPlansPage'])->name('admin.subscription-plans');
+    Route::put('/admin/subscription-plans', [ReplayAccessController::class, 'updatePlans'])->middleware(['superadmin', 'throttle:market-write']);
+    Route::get('/admin/subscription-plans', [ReplayAccessController::class, 'adminPlansPage'])->middleware('superadmin')->name('admin.subscription-plans');
     Route::get('/subscription', [ReplayAccessController::class, 'userPage'])->name('subscription.index');
     Route::post('/subscription-checkouts', [ReplayAccessController::class, 'createCheckout'])->middleware('throttle:market-write')->name('subscription.checkout.create');
     Route::get('/subscription-checkout/return/{token}', [ReplayAccessController::class, 'checkoutReturn'])->name('subscription.checkout.return');
@@ -139,17 +144,17 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/subscription-requests/{subscriptionRequest}/proof', [ReplayAccessController::class, 'proof'])->name('subscription.proof');
     Route::get('/subscription-messages/{subscriptionMessage}/attachment', [ReplayAccessController::class, 'messageAttachment'])->name('subscription.message-attachment');
     Route::post('/chart-tour/complete', [ReplayAccessController::class, 'completeTour'])->middleware('throttle:market-write');
-    Route::get('/admin/subscriptions', [ReplayAccessController::class, 'adminPage']);
-    Route::get('/admin/subscriptions/items', [ReplayAccessController::class, 'adminIndex']);
-    Route::post('/admin/subscriptions/{subscriptionRequest}/reconcile', [ReplayAccessController::class, 'adminReconcile'])->middleware('throttle:market-write');
+    Route::get('/admin/subscriptions', [ReplayAccessController::class, 'adminPage'])->middleware('superadmin');
+    Route::get('/admin/subscriptions/items', [ReplayAccessController::class, 'adminIndex'])->middleware('superadmin');
+    Route::post('/admin/subscriptions/{subscriptionRequest}/reconcile', [ReplayAccessController::class, 'adminReconcile'])->middleware(['superadmin', 'throttle:market-write']);
     Route::get('/feedback', [UserFeedbackController::class, 'userPage'])->name('feedback.index');
     Route::get('/feedback/items', [UserFeedbackController::class, 'index'])->name('feedback.items');
     Route::post('/feedback/items', [UserFeedbackController::class, 'store'])->middleware('throttle:feedback-write')->name('feedback.store');
     Route::get('/feedback/items/{feedback}/messages', [UserFeedbackController::class, 'messages'])->name('feedback.messages');
     Route::post('/feedback/items/{feedback}/messages', [UserFeedbackController::class, 'storeMessage'])->middleware('throttle:feedback-write')->name('feedback.messages.store');
-    Route::get('/admin/feedback', [UserFeedbackController::class, 'adminPage'])->name('admin.feedback.index');
-    Route::get('/admin/feedback/items', [UserFeedbackController::class, 'adminIndex'])->name('admin.feedback.items');
-    Route::put('/admin/feedback/items/{feedback}', [UserFeedbackController::class, 'update'])->middleware('throttle:feedback-write')->name('admin.feedback.update');
+    Route::get('/admin/feedback', [UserFeedbackController::class, 'adminPage'])->middleware('superadmin')->name('admin.feedback.index');
+    Route::get('/admin/feedback/items', [UserFeedbackController::class, 'adminIndex'])->middleware('superadmin')->name('admin.feedback.items');
+    Route::put('/admin/feedback/items/{feedback}', [UserFeedbackController::class, 'update'])->middleware(['superadmin', 'throttle:feedback-write'])->name('admin.feedback.update');
     Route::get('/market-replay-progress', [MarketReplayProgressController::class, 'show'])->name('market-replay-progress.show');
     Route::put('/market-replay-progress', [MarketReplayProgressController::class, 'update'])->middleware('replay.access')->name('market-replay-progress.update');
     Route::get('/market-backtest/account', [MarketBacktestController::class, 'show'])->middleware(['replay.access', 'throttle:backtest-read'])->name('market-backtest.show');
@@ -168,10 +173,10 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/sidebar', [MenusController::class, 'sidebarMenu'])->name('sidebar');
     //USERS
-    Route::post('create-user', [AdminUsersController::class, 'postAddSave'])->name('create-user');
-    Route::post('/postAddSave', [AdminUsersController::class, 'postAddSave'])->name('postAddSave');
-    Route::post('/postEditSave', [AdminUsersController::class, 'postEditSave'])->name('postEditSave');
-    Route::post('/deactivate-users', [AdminUsersController::class, 'setStatus'])->name('postDeactivateUsers');
+    Route::post('create-user', [AdminUsersController::class, 'postAddSave'])->middleware('admin.permission:users,create')->name('create-user');
+    Route::post('/postAddSave', [AdminUsersController::class, 'postAddSave'])->middleware('admin.permission:users,create')->name('postAddSave');
+    Route::post('/postEditSave', [AdminUsersController::class, 'postEditSave'])->middleware('admin.permission:users,edit')->name('postEditSave');
+    Route::post('/deactivate-users', [AdminUsersController::class, 'setStatus'])->middleware('admin.permission:users,delete')->name('postDeactivateUsers');
     //PROFILE PAGE
     Route::get('/profile', [ProfilePageController::class, 'getIndex'])->name('profile_page');
     Route::post('/save-edit-image', [ProfilePageController::class, 'saveEditImage'])->name('save-edit-image');
@@ -184,66 +189,68 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/change_password', [ChangePasswordController::class, 'getIndex'])->name('change_password');
     Route::post('/postChangePassword', [AdminUsersController::class, 'postUpdatePassword'])->name('postChangePassword');
     //PRIVILEGES
-    Route::get('privileges/create-privileges', [PrivilegesController::class, 'createPrivilegesView'])->name('create-privileges');
-    Route::get('privileges/edit-privileges/{id}', [PrivilegesController::class, 'getEdit'])->name('edit-privileges');
-    Route::post('/privilege/postAddSave', [PrivilegesController::class, 'postAddSave'])->name('postAddSave');
-    Route::post('/privilege/postEditSave', [PrivilegesController::class, 'postEditSave'])->name('postEditSave');
+    Route::get('privileges/create-privileges', [PrivilegesController::class, 'createPrivilegesView'])->middleware('admin.permission:privileges,create')->name('create-privileges');
+    Route::get('privileges/edit-privileges/{id}', [PrivilegesController::class, 'getEdit'])->middleware('admin.permission:privileges,edit')->name('edit-privileges');
+    Route::post('/privilege/postAddSave', [PrivilegesController::class, 'postAddSave'])->middleware('admin.permission:privileges,create')->name('postAddSave');
+    Route::post('/privilege/postEditSave', [PrivilegesController::class, 'postEditSave'])->middleware('admin.permission:privileges,edit')->name('postEditSave');
 
     //MODULES
-    Route::get('create-modules', [ModulsController::class, 'getAddModuls'])->name('create-modules');
-    Route::post('/module_generator/postAddSave', [ModulsController::class, 'postAddSave'])->name('postAddSave');
-    Route::get('/tables', [ModulsController::class, 'getTableNames']);
+    Route::get('create-modules', [ModulsController::class, 'getAddModuls'])->middleware('admin.permission:module_generator,create')->name('create-modules');
+    Route::post('/module_generator/postAddSave', [ModulsController::class, 'postAddSave'])->middleware('admin.permission:module_generator,create')->name('postAddSave');
+    Route::get('/tables', [ModulsController::class, 'getTableNames'])->middleware('admin.permission:module_generator,read');
 
     //MENUS
     Route::prefix('menu_management')->group(function () {
-        Route::post('/create_menu', [MenusController::class, 'createMenu']);
-        Route::post('/update_menu', [MenusController::class, 'updateMenu']);
-        Route::post('/auto_update_menu', [MenusController::class, 'autoUpdateMenu']);
-        Route::get('/edit/{menu}', [MenusController::class, 'editMenu']);
-        Route::post('/set-status-menus', [MenusController::class, 'postStatusSave'])->name('deleteMenus');
+        Route::post('/create_menu', [MenusController::class, 'createMenu'])->middleware('admin.permission:menu_management,create');
+        Route::post('/update_menu', [MenusController::class, 'updateMenu'])->middleware('admin.permission:menu_management,edit');
+        Route::post('/auto_update_menu', [MenusController::class, 'autoUpdateMenu'])->middleware('admin.permission:menu_management,edit');
+        Route::get('/edit/{menu}', [MenusController::class, 'editMenu'])->middleware('admin.permission:menu_management,read');
+        Route::post('/set-status-menus', [MenusController::class, 'postStatusSave'])->middleware('admin.permission:menu_management,delete')->name('deleteMenus');
     });
 
     // API GENERATOR
     Route::prefix('api_generator')->group(function () {
         //API Requests
-        Route::post('/generate_key', [AdminApiController::class, 'createKey']);
+        Route::post('/generate_key', [AdminApiController::class, 'createKey'])->middleware('admin.permission:api_generator,create');
         //API Key Generation
-        Route::post('/deactivate_key/{id}', [AdminApiController::class, 'deactivateKey']);
-        Route::post('/activate_key/{id}', [AdminApiController::class, 'activateKey']);
-        Route::post('/delete_key/{id}', [AdminApiController::class, 'deleteKey']);
+        Route::post('/deactivate_key/{id}', [AdminApiController::class, 'deactivateKey'])->middleware('admin.permission:api_generator,edit');
+        Route::post('/activate_key/{id}', [AdminApiController::class, 'activateKey'])->middleware('admin.permission:api_generator,edit');
+        Route::post('/delete_key/{id}', [AdminApiController::class, 'deleteKey'])->middleware('admin.permission:api_generator,delete');
         //API Create Generation
-        Route::get('/create_api_view', [AdminApiController::class, 'createApiView']);
-        Route::post('/create_api', [AdminApiController::class, 'createApi']);
+        Route::get('/create_api_view', [AdminApiController::class, 'createApiView'])->middleware('admin.permission:api_generator,create');
+        Route::post('/create_api', [AdminApiController::class, 'createApi'])->middleware('admin.permission:api_generator,create');
         //API Edit
-        Route::get('/edit/{id}', [AdminApiController::class, 'editApi']);
-        Route::post('/update_api', [AdminApiController::class, 'updateApi']);
+        Route::get('/edit/{id}', [AdminApiController::class, 'editApi'])->middleware('admin.permission:api_generator,edit');
+        Route::post('/update_api', [AdminApiController::class, 'updateApi'])->middleware('admin.permission:api_generator,edit');
         //VIEW API
-        Route::get('/view/{id}', [AdminApiController::class, 'viewApi']);
+        Route::get('/view/{id}', [AdminApiController::class, 'viewApi'])->middleware('admin.permission:api_generator,read');
         //BULK ACTIONS
-        Route::post('/bulk_action', [AdminApiController::class, 'bulkActions']);
+        Route::post('/bulk_action', [AdminApiController::class, 'bulkActions'])->middleware('admin.permission:api_generator,delete');
     });
 
     //Settings
-    Route::post('/settings/postSave', [SettingsController::class, 'postSave'])->name('settings-post-save');
-    Route::post('/settings/postDelete', [SettingsController::class, 'postDelete'])->name('settings-post-delete');
+    Route::post('/settings/postSave', [SettingsController::class, 'postSave'])->middleware('admin.permission:settings,edit')->name('settings-post-save');
+    Route::post('/settings/postDelete', [SettingsController::class, 'postDelete'])->middleware('admin.permission:settings,delete')->name('settings-post-delete');
 
     //NOTIFICATION
-    Route::get('/notifications', [NotificationsController::class, 'getLatestNotif'])->name('latest-notif');
+    // Keep the trader notification feed separate from the generated admin
+    // notifications page, which owns GET /notifications.
+    Route::get('/notifications/feed', [NotificationsController::class, 'getLatestNotif'])->name('latest-notif');
     Route::post('/notifications/read', [NotificationsController::class, 'markAsRead'])->name('notification-read');
     Route::post('/notifications/read-all', [NotificationsController::class, 'markAllAsRead'])->name('notification-read-all');
     Route::patch('/notification-preferences', [NotificationsController::class, 'updatePreferences'])->name('notification-preferences');
     Route::get('/notifications/view-notification/{id}', [NotificationsController::class, 'viewNotification'])->name('view-notification');
     Route::get('/notifications/view-all-notifications', [NotificationsController::class, 'viewAllNotification'])->name('view-all-notifications');
     //FILTER
-    Route::get('/filter/privileges', [AdmRequestController::class, 'privilegesFilter'])->name('privileges-filter');
-    Route::get('/filter/users', [AdmRequestController::class, 'usersFilter'])->name('users-filter');
-    Route::post('/filter/filter-data', [AdmRequestController::class, 'usersFilterData'])->name('filter-data');
+    Route::get('/filter/privileges', [AdmRequestController::class, 'privilegesFilter'])->middleware('admin.permission:users,read')->name('privileges-filter');
+    Route::get('/filter/users', [AdmRequestController::class, 'usersFilter'])->middleware('admin.permission:users,read')->name('users-filter');
+    Route::post('/filter/filter-data', [AdmRequestController::class, 'usersFilterData'])->middleware('admin.permission:users,read')->name('filter-data');
     //EXPORT
-    Route::post('/request/export', [AdmRequestController::class, 'export'])->name('export');
+    Route::post('/request/export', [AdmRequestController::class, 'export'])->middleware('superadmin')->name('export');
 });
 
 Route::group([
-    'middleware' => ['auth', 'check.user'],
+    'middleware' => ['auth', 'account.active', 'admin', 'check.user'],
     'prefix' => config('adm_url.ADMIN_PATH'),
     'namespace' => 'App\Http\Controllers',
 ], function () {
@@ -251,7 +258,10 @@ Route::group([
     // Todo: change table
     $modules = [];
     try {
-        $modules = DB::table('adm_modules')->whereIn('controller', CommonHelpers::getOthersControllerFiles())->get();
+        $modules = DB::table('adm_modules')
+            ->whereIn('controller', CommonHelpers::getOthersControllerFiles())
+            ->whereNotIn('path', ['dashboard'])
+            ->get();
     } catch (\Exception $e) {
         Log::error('Load adm moduls is failed. Caused = '.$e->getMessage());
     }
@@ -259,17 +269,19 @@ Route::group([
     foreach ($modules as $v) {
         if (@$v->path && @$v->controller) {
             try {
-                CommonHelpers::routeOtherController($v->path, $v->controller, 'app\Http\Controllers');
+                Route::middleware('admin.permission:'.$v->path.',view')->group(function () use ($v) {
+                    CommonHelpers::routeOtherController($v->path, $v->controller, 'app\Http\Controllers');
+                });
             } catch (\Exception $e) {
                 Log::error('Path = '.$v->path."\nController = ".$v->controller."\nError = ".$e->getMessage());
             }
         }
     }
-})->middleware(['auth', 'account.active']);
+});
 
 //ADMIN ROUTE
 Route::group([
-    'middleware' => ['auth', 'account.active', 'check.user'],
+    'middleware' => ['auth', 'account.active', 'admin', 'check.user'],
     'prefix' => config('ad_url.ADMIN_PATH'),
     'namespace' => 'App\Http\Controllers\Admin',
 ], function () {
@@ -295,10 +307,12 @@ Route::group([
     foreach ($modules as $v) {
         if (@$v->path && @$v->controller) {
             try {
-                CommonHelpers::routeController($v->path, $v->controller, 'app\Http\Controllers\Admin');
+                Route::middleware('admin.permission:'.$v->path.',view')->group(function () use ($v) {
+                    CommonHelpers::routeController($v->path, $v->controller, 'app\Http\Controllers\Admin');
+                });
             } catch (\Exception $e) {
                 Log::error('Path = '.$v->path."\nController = ".$v->controller."\nError = ".$e->getMessage());
             }
         }
     }
-})->middleware(['auth', 'account.active']);
+});

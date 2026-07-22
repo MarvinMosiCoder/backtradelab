@@ -17,6 +17,9 @@ class AnnouncementsController extends Controller{
     private $table_name;
     private $primary_key;
     public function __construct() {
+        $this->middleware('admin.permission:announcements,view')->only('getIndex');
+        $this->middleware('admin.permission:announcements,create')->only(['addAnnouncementForm', 'saveAnnouncement']);
+        $this->middleware('admin.permission:announcements,edit')->only(['editAnnouncement', 'saveEditAnnouncement']);
         $this->table_name  =  'announcements';
         $this->primary_key = 'id';
         $this->sortBy = request()->get('sortBy', 'announcements.created_at');

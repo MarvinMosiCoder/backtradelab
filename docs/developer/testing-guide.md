@@ -20,6 +20,7 @@ Current automated coverage includes PayMongo client/signature/route behavior and
 ## Required cross-cutting scenarios
 
 - Anonymous, active user, inactive user, restricted admin, superadmin.
+- Trader/admin login separation, stale or spoofed role sessions, immediate permission revocation, and direct admin mutation attempts.
 - Two users attempting to access each other's route-model-bound records.
 - Duplicate clicks, concurrent tabs, delayed/out-of-order requests.
 - Empty data, invalid input, timeout, upstream failure, throttling.

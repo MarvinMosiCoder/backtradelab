@@ -23,6 +23,9 @@ class ModulsController extends Controller{
     private $sortDir;
     private $perPage;
     public function __construct() {
+        $this->middleware('admin.permission:module_generator,view')->only('getIndex');
+        $this->middleware('admin.permission:module_generator,create')->only(['getAddModuls', 'postAddSave']);
+        $this->middleware('admin.permission:module_generator,read')->only('getTableNames');
         $this->table_name  = 'adm_modules';
         $this->primary_key = 'id';
         $this->sortBy = request()->get('sortBy', 'adm_modules.created_at');

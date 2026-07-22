@@ -109,7 +109,7 @@ export default function ChangePassword() {
         <>
             <Head title="Change Password" />
             <div className="mx-auto max-w-5xl py-2 sm:py-6">
-                <Link href="/dashboard" className="mb-4 inline-flex items-center gap-2 text-xs font-semibold text-[#787b86] hover:text-[#2962ff]"><ArrowLeft size={15} /> Back to workspace</Link>
+                <Link href="/workspace" className="mb-4 inline-flex items-center gap-2 text-xs font-semibold text-[#787b86] hover:text-[#2962ff]"><ArrowLeft size={15} /> Back to workspace</Link>
                 <div className={`grid overflow-hidden rounded-xl border shadow-2xl lg:grid-cols-[0.85fr_1.15fr] ${isDark ? 'border-[#2a2e39] bg-[#131722] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-900'}`}>
                     <aside className="relative overflow-hidden bg-[#2962ff] p-7 text-white sm:p-10">
                         <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10" />

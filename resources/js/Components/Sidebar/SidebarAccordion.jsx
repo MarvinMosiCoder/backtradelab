@@ -480,7 +480,7 @@ const SidebarAccordion = ({ open, closeSidebar }) => {
             ))}
 
             {/* SUPER ADMIN SIDE */}
-            {auth.sessions.admin_is_superadmin ? (
+            {auth?.role?.isSuperadmin ? (
                 <div className={`${['bg-skin-black','bg-skin-black-light'].includes(theme) ? `text-gray-400` : `text-gray-500`} mt-4`}>
                     <div
                         className={`font-poppins text-[14px] ${

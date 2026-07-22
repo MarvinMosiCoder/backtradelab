@@ -11,8 +11,14 @@ class AdmPrivileges extends Model
 
     protected $guarded = [];
 
+    protected $casts = [
+        'is_admin' => 'boolean',
+        'is_superadmin' => 'boolean',
+    ];
+
     protected $filterable = [
         'name',
+        'is_admin',
         'is_superadmin',
         'theme_color',
         'created_at',
@@ -101,6 +107,7 @@ class AdmPrivileges extends Model
     public function scopeFilterData($query){
         return $query->select(
             'name AS name',
+            'is_admin AS is_admin',
             'is_superadmin AS is_superadmin',
             'theme_color AS theme_color',
             'created_at AS created_at',

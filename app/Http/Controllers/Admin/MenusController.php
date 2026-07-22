@@ -15,6 +15,14 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 class MenusController extends Controller{
+    public function __construct()
+    {
+        $this->middleware('admin.permission:menu_management,view')->only('getIndex');
+        $this->middleware('admin.permission:menu_management,create')->only('createMenu');
+        $this->middleware('admin.permission:menu_management,edit')->only(['updateMenu', 'autoUpdateMenu']);
+        $this->middleware('admin.permission:menu_management,read')->only('editMenu');
+        $this->middleware('admin.permission:menu_management,delete')->only('postStatusSave');
+    }
   
     public static function sidebarMenu(){
         return CommonHelpers::sidebarMenu();

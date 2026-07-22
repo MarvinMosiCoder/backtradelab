@@ -17,6 +17,9 @@ class SettingsController extends Controller{
     private $table_name;
     private $primary_key;
     public function __construct() {
+        $this->middleware('admin.permission:settings,view')->only('getIndex');
+        $this->middleware('admin.permission:settings,edit')->only('postSave');
+        $this->middleware('admin.permission:settings,delete')->only('postDelete');
         $this->table_name  =  'adm_settings';
         $this->primary_key = 'id';
     }

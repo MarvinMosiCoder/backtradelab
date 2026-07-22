@@ -165,6 +165,13 @@ const Privileges = ({ tableName, privileges, queryParams }) => {
                                 Name
                             </TableHeader>
                             <TableHeader
+                                name="is_admin"
+                                queryParams={queryParams}
+                                width="sm"
+                            >
+                                Account Type
+                            </TableHeader>
+                            <TableHeader
                                 name="is_superadmin"
                                 queryParams={queryParams}
                                 width="sm"
@@ -189,6 +196,9 @@ const Privileges = ({ tableName, privileges, queryParams }) => {
                                     </RowData>
                                     <RowData isLoading={loading}>
                                         {item.name}
+                                    </RowData>
+                                    <RowData isLoading={loading}>
+                                        {item.is_admin ? "Administrator" : "Trader"}
                                     </RowData>
                                     <RowData isLoading={loading}>
                                         {item.is_superadmin
