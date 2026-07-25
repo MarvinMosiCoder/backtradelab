@@ -217,7 +217,11 @@ export function estimateDrawingLogicalFromTime(candles, time, intervalSeconds = 
   const numericTime = Number(time);
   if (!Array.isArray(candles) || !candles.length || !Number.isFinite(numericTime)) return null;
 
-  if (intervalSeconds >= 1800) {
+  // Saved drawing anchors from a lower timeframe may fall between candle
+  // start times after switching to 15m or higher. Snap them to the candle
+  // that contains the original timestamp so Lightweight Charts receives a
+  // valid logical bar coordinate on the coarser series.
+  if (intervalSeconds >= 900) {
     const containingIndex = candles.findIndex((candle, index) => {
       const nextCandle = candles[index + 1];
       return (

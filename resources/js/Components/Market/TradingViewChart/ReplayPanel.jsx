@@ -117,7 +117,7 @@ function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }
   );
 }
 
-function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y-3', chartTheme }) {
+function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y-3', chartTheme, className = '' }) {
   const isDark = chartTheme?.mode === 'dark';
   const titleClass = isDark ? 'text-gray-300' : 'text-slate-700';
   const closeClass = isDark
@@ -128,10 +128,10 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
     <div
       className={`ml-2 w-[min(300px,calc(100vw-5.5rem))] rounded-lg border p-3 shadow-2xl backdrop-blur ${
         isDark ? 'text-white' : 'text-slate-800'
-      }`}
+      } ${className}`}
       style={{
         ...getPanelStyle(chartTheme),
-        maxWidth: 'var(--replay-panel-content-width, 300px)',
+        maxWidth: className.includes('max-w-none') ? 'none' : 'var(--replay-panel-content-width, 300px)',
       }}
     >
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -1507,18 +1507,11 @@ export default function ReplayPanel({
 
       {activeGroup === 'backtest' && (
         <>
-        {fullscreenDrawingOnly && (
-          <button
-            type="button"
-            className="pointer-events-auto fixed inset-0 z-[81] cursor-default bg-black/20"
-            onClick={() => {
-              setActiveGroup(null);
-              onFullscreenEntryPanelOpenChange?.(false);
-            }}
-            aria-label="Close Enter Position"
-          />
-        )}
-        <div className={`pointer-events-auto ${fullscreenDrawingOnly ? 'fixed right-2 top-14 z-[82]' : ''}`}>
+        <div className={`pointer-events-auto ${
+          fullscreenDrawingOnly
+            ? 'fixed bottom-9 right-[88px] top-14 z-[82] w-[min(340px,calc(100vw-10rem))]'
+            : ''
+        }`}>
           <Flyout
             title="Enter Position"
             icon={Wallet}
@@ -1526,8 +1519,11 @@ export default function ReplayPanel({
               setActiveGroup(null);
               onFullscreenEntryPanelOpenChange?.(false);
             }}
-            bodyClassName="max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1"
+            bodyClassName={fullscreenDrawingOnly
+              ? 'max-h-[calc(100dvh-8rem)] space-y-3 overflow-y-auto pr-1'
+              : 'max-h-[min(78vh,720px)] space-y-3 overflow-y-auto pr-1'}
             chartTheme={chartTheme}
+            className={fullscreenDrawingOnly ? 'ml-0 h-full w-full max-w-none overflow-hidden rounded-none' : ''}
           >
             <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
               <div className="mb-2 flex items-center justify-between gap-2">

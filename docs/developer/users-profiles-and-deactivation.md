@@ -4,6 +4,8 @@
 
 Authenticated users manage profile details, image, theme, and password under `/profile` and password pages. Administrators create/edit users and change status through user-management routes.
 
+`PATCH /profile/timezone` accepts one validated IANA timezone for the authenticated user. The chart footer uses this endpoint so changing the live clock timezone does not require resubmitting the rest of the profile.
+
 | File | Responsibility |
 |---|---|
 | `ProfilePageController.php` | Profile reads/updates and self-deactivation |
@@ -32,6 +34,7 @@ Deactivation is non-destructive: trading, drawings, replay, journal, feedback, a
 ## Verification
 
 - Update name/profile image/theme.
+- Update timezone from the profile and chart footer; reject invalid timezone identifiers.
 - Local-password and social-only deactivation.
 - Wrong password or missing `DEACTIVATE`.
 - Token revocation and second-browser blocking.

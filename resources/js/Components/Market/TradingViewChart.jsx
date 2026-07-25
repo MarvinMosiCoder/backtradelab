@@ -11,6 +11,7 @@ import {
   LineStyle,
 } from 'lightweight-charts';
 import { useTheme } from '../../Context/ThemeContext';
+import { useAuth } from '../../Context/AuthContext';
 import ChartHeader from './TradingViewChart/ChartHeader';
 import ChartStage from './TradingViewChart/ChartStage';
 import ReplayPanel from './TradingViewChart/ReplayPanel';
@@ -327,6 +328,65 @@ const PREFETCH_TIMEFRAME_MAP = {
 };
 
 const CANDLE_CACHE_LIMIT = 18;
+const PERSISTED_CANDLE_CACHE_LIMIT = 6;
+const PERSISTED_CANDLE_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+
+function persistedCandleCacheEntryKey(userId, cacheKey) {
+  return `market-candle-history:${userId}:${cacheKey}`;
+}
+
+function persistedCandleCacheIndexKey(userId) {
+  return `market-candle-history-index:${userId}`;
+}
+
+function readPersistedCandleCache(userId, cacheKey) {
+  if (typeof window === 'undefined') return null;
+
+  const storageKey = persistedCandleCacheEntryKey(userId, cacheKey);
+
+  try {
+    const cached = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null');
+    if (
+      !cached
+      || !Array.isArray(cached.candles)
+      || Date.now() - Number(cached.cachedAt ?? 0) > PERSISTED_CANDLE_CACHE_MAX_AGE_MS
+    ) {
+      sessionStorage.removeItem(storageKey);
+      return null;
+    }
+
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedCandleCache(userId, cacheKey, candles) {
+  if (typeof window === 'undefined') return;
+
+  const entryKey = persistedCandleCacheEntryKey(userId, cacheKey);
+  const indexKey = persistedCandleCacheIndexKey(userId);
+
+  try {
+    sessionStorage.setItem(entryKey, JSON.stringify({
+      candles,
+      cachedAt: Date.now(),
+    }));
+
+    const currentIndex = JSON.parse(sessionStorage.getItem(indexKey) ?? '[]');
+    const nextIndex = [
+      entryKey,
+      ...(Array.isArray(currentIndex) ? currentIndex : []).filter((item) => item !== entryKey),
+    ];
+
+    nextIndex.slice(PERSISTED_CANDLE_CACHE_LIMIT).forEach((item) => {
+      sessionStorage.removeItem(item);
+    });
+    sessionStorage.setItem(indexKey, JSON.stringify(nextIndex.slice(0, PERSISTED_CANDLE_CACHE_LIMIT)));
+  } catch {
+    // A full or unavailable browser store should never prevent chart loading.
+  }
+}
 
 function buildCandleCacheKey({ exchange, marketCategory, symbol, timeframe, end = 'latest' }) {
   return [
@@ -473,6 +533,112 @@ function formatLocalFeedTime(timestamp) {
   });
 }
 
+function ChartBottomBar({
+  chartTheme,
+  visibleLiveStatus,
+  browserOnline,
+  liveFeedInfo,
+  isLiveFeedDelayed,
+  liveFeedAgeSeconds,
+  latestCandleStartedAt,
+  exchange,
+  marketCategory,
+  timezone,
+  timezoneOptions,
+  timezoneSaving,
+  onTimezoneChange,
+}) {
+  const [clock, setClock] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const clockLabel = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        timeZone: timezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(clock);
+    } catch {
+      return new Date(clock).toLocaleTimeString();
+    }
+  }, [clock, timezone]);
+  const isDark = chartTheme.mode === 'dark';
+
+  return (
+    <div
+      data-chart-ui="chart-bottom-bar"
+      className="relative z-40 flex h-7 shrink-0 items-center justify-between gap-2 border-t px-2 text-[10px]"
+      style={{
+        borderColor: chartTheme.border,
+        backgroundColor: chartTheme.panel,
+        color: chartTheme.text,
+      }}
+    >
+      <div className="group relative flex min-w-0 items-center">
+        <button
+          type="button"
+          className={`flex h-5 items-center gap-1.5 rounded px-1.5 font-semibold outline-none transition ${
+            isDark ? 'hover:bg-white/10 focus:bg-white/10' : 'hover:bg-slate-100 focus:bg-slate-100'
+          }`}
+          aria-label={`${visibleLiveStatus.label}. Show market feed details.`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${
+            visibleLiveStatus.key === 'replay' ? 'bg-violet-500'
+              : visibleLiveStatus.key === 'offline' ? 'bg-red-500'
+                : visibleLiveStatus.key === 'live' ? 'bg-emerald-500'
+                  : visibleLiveStatus.key === 'polling' ? 'bg-sky-500'
+                    : 'animate-pulse bg-amber-400'
+          }`} />
+          <span className="whitespace-nowrap">Market feed: {visibleLiveStatus.label}</span>
+        </button>
+        <div
+          role="tooltip"
+          className={`pointer-events-none absolute bottom-full left-0 mb-2 w-72 translate-y-1 rounded-lg border p-3 text-xs opacity-0 shadow-2xl transition group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${
+            isDark ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800'
+          }`}
+        >
+          <div className="mb-2 flex items-center justify-between gap-3 border-b border-current/10 pb-2">
+            <span className="font-bold">Market feed</span>
+            <span className={`font-semibold ${isLiveFeedDelayed ? 'text-amber-500' : browserOnline ? 'text-emerald-500' : 'text-red-500'}`}>
+              {visibleLiveStatus.label}
+            </span>
+          </div>
+          <dl className="space-y-1.5">
+            <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Internet</dt><dd className="text-right font-semibold">{browserOnline ? 'Online' : 'Offline'}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Feed</dt><dd className="text-right font-semibold">{liveFeedInfo.source === 'websocket' ? 'WebSocket' : liveFeedInfo.source === 'rest' ? 'REST fallback' : 'Waiting for first update'}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Market</dt><dd className="text-right font-semibold">{exchange.toUpperCase()} · {marketCategory === 'spot' ? 'Spot' : 'Futures'}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Last update</dt><dd className="max-w-[165px] text-right font-semibold">{formatLocalFeedTime(liveFeedInfo.receivedAt)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Chart delay</dt><dd className={`text-right font-semibold ${isLiveFeedDelayed ? 'text-amber-500' : ''}`}>{formatFeedAge(liveFeedAgeSeconds)}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-[#787b86]">Candle started</dt><dd className="max-w-[165px] text-right font-semibold">{formatLocalFeedTime(latestCandleStartedAt)}</dd></div>
+          </dl>
+        </div>
+      </div>
+
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="hidden whitespace-nowrap tabular-nums sm:inline">{clockLabel}</span>
+        <select
+          value={timezone}
+          onChange={(event) => onTimezoneChange(event.target.value)}
+          disabled={timezoneSaving}
+          className={`h-5 max-w-[148px] rounded border px-1 text-[10px] outline-none disabled:opacity-60 ${
+            isDark ? 'border-[#363a45] bg-[#0f1115] text-[#d1d4dc]' : 'border-slate-300 bg-white text-slate-700'
+          }`}
+          aria-label="Chart timezone"
+          title="Chart timezone"
+        >
+          {timezoneOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
 function estimatePositionNetPnl(position, exitPrice, feeRate = 0.0004) {
   const entryPrice = Number(position?.entryPrice);
   const quantity = Number(position?.quantity);
@@ -578,7 +744,10 @@ export default function TradingViewReplayChart({
   onBacktestAccountChange = null,
 }) {
   const { theme: adminTheme } = useTheme();
-  const { auth } = usePage().props;
+  const { auth: pageAuth } = usePage().props;
+  const authContext = useAuth();
+  const auth = authContext?.auth ?? pageAuth;
+  const updateAuth = authContext?.updateAuth;
   const preferenceUserId = auth?.user?.id ?? 'guest';
   const toolSettingsStorageKey = `market-tool-settings:${preferenceUserId}`;
   const indicatorStorageKey = `market-chart-indicators:${preferenceUserId}`;
@@ -612,6 +781,7 @@ export default function TradingViewReplayChart({
   const fetchRequestIdRef = useRef(0);
   const candleCacheRef = useRef(new Map());
   const candleFetchAbortRef = useRef(null);
+  const timeframePrefetchCancelRef = useRef(null);
   const isSpacePressedRef = useRef(false);
   const toolRef = useRef(null);
   const drawingColorRef = useRef(DRAWING_COLOR);
@@ -723,6 +893,22 @@ export default function TradingViewReplayChart({
   const [liveFeedInfo, setLiveFeedInfo] = useState({ source: null, receivedAt: null });
   const [browserOnline, setBrowserOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
   const [feedStatusClock, setFeedStatusClock] = useState(() => Date.now());
+  const [timezone, setTimezone] = useState(() => (
+    auth?.user?.timezone
+    || Intl.DateTimeFormat().resolvedOptions().timeZone
+    || 'UTC'
+  ));
+  const [timezoneSaving, setTimezoneSaving] = useState(false);
+  const timezoneOptions = useMemo(() => {
+    let supported = [];
+    try {
+      supported = typeof Intl.supportedValuesOf === 'function'
+        ? Intl.supportedValuesOf('timeZone')
+        : [];
+    } catch {}
+
+    return Array.from(new Set([timezone, 'UTC', ...supported])).sort();
+  }, [timezone]);
   const replayAccessAllowedRef = useRef(false);
   const [tourStep, setTourStep] = useState(() => new URLSearchParams(window.location.search).get('tour') === '1' || !auth?.user?.chart_tour_completed_at ? 0 : -1);
   const tourSteps = [
@@ -734,6 +920,39 @@ export default function TradingViewReplayChart({
     {selector:'[data-tour="appearance"]',title:'Customize the chart',description:'Open Appearance for indicators, candle styling, and alerts.'},
   ];
   const finishTour = () => { setTourStep(-1); axios.post('/chart-tour/complete').catch(() => setTourStep(0)); };
+
+  useEffect(() => {
+    if (auth?.user?.timezone) {
+      setTimezone(auth.user.timezone);
+    }
+  }, [auth?.user?.timezone]);
+
+  const handleTimezoneChange = useCallback(async (nextTimezone) => {
+    if (!nextTimezone || nextTimezone === timezone || timezoneSaving) return;
+
+    const previousTimezone = timezone;
+    setTimezone(nextTimezone);
+    setTimezoneSaving(true);
+
+    try {
+      const response = await axios.patch('/profile/timezone', {
+        timezone: nextTimezone,
+      });
+      const savedTimezone = response.data?.timezone ?? nextTimezone;
+      setTimezone(savedTimezone);
+      updateAuth?.({
+        ...auth,
+        user: {
+          ...auth?.user,
+          timezone: savedTimezone,
+        },
+      });
+    } catch {
+      setTimezone(previousTimezone);
+    } finally {
+      setTimezoneSaving(false);
+    }
+  }, [auth, timezone, timezoneSaving, updateAuth]);
 
   const [tool, setTool] = useState(null);
   const [drawingColor, setDrawingColor] = useState(DRAWING_COLOR);
@@ -872,6 +1091,46 @@ export default function TradingViewReplayChart({
   const selectedDrawing = useMemo(() => {
     return drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
   }, [drawings, selectedDrawingId]);
+
+  useEffect(() => {
+    const livePrice = Number(executionPrice);
+    if (!Number.isFinite(livePrice)) return;
+
+    setBacktestAccount((currentAccount) => {
+      if (!currentAccount) return currentAccount;
+
+      let unrealizedPnl = 0;
+      const openPositions = (currentAccount.openPositions ?? []).map((position) => {
+        if (position.symbol !== symbol) {
+          return { ...position, unrealizedPnl: null };
+        }
+
+        const quantity = Number(position.quantity);
+        const entryPrice = Number(position.entryPrice);
+        const positionPnl = position.side === 'short'
+          ? (entryPrice - livePrice) * quantity
+          : (livePrice - entryPrice) * quantity;
+        unrealizedPnl += Number.isFinite(positionPnl) ? positionPnl : 0;
+
+        return {
+          ...position,
+          unrealizedPnl: Number.isFinite(positionPnl) ? positionPnl : null,
+        };
+      });
+      const lockedMargin = openPositions.reduce(
+        (total, position) => total + (Number(position.margin) || 0),
+        0
+      );
+
+      return {
+        ...currentAccount,
+        openPositions,
+        lockedMargin,
+        unrealizedPnl,
+        equity: (Number(currentAccount.cashBalance) || 0) + lockedMargin + unrealizedPnl,
+      };
+    });
+  }, [executionPrice, symbol]);
 
   useEffect(() => {
     if (backtestAccount && typeof onBacktestAccountChange === 'function') {
@@ -1252,16 +1511,8 @@ export default function TradingViewReplayChart({
   }, [exchange, marketCategory, symbol, timeframe]);
 
   useEffect(() => {
-    if (!replayMode && currentPrice != null) {
-      loadBacktestAccount(currentPrice);
-    }
-  }, [currentPrice, loadBacktestAccount, replayMode, symbol]);
-
-  useEffect(() => {
-    if (replayMode) {
-      loadBacktestAccount();
-    }
-  }, [loadBacktestAccount, replayMode, symbol]);
+    loadBacktestAccount();
+  }, [loadBacktestAccount]);
 
   useEffect(() => {
     loadMarketSymbols();
@@ -1590,6 +1841,16 @@ export default function TradingViewReplayChart({
   }, [buildToolSettingsFromDrawing, saveDrawings, saveToolSettingsForType]);
 
   const loadStoredDrawings = useCallback(async () => {
+    let localDrawings = [];
+    const storageKey = buildStorageKey(symbol, exchange, marketCategory, preferenceUserId);
+
+    try {
+      const parsed = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
+      if (Array.isArray(parsed)) {
+        localDrawings = parsed;
+      }
+    } catch {}
+
     try {
       const response = await axios.get('/market-drawings', {
         params: { symbol, exchange, category: marketCategory },
@@ -1602,14 +1863,31 @@ export default function TradingViewReplayChart({
       const nextDrawings = response.data?.exists ? serverDrawings : [];
 
       try {
-        localStorage.setItem(buildStorageKey(symbol, exchange, marketCategory, preferenceUserId), JSON.stringify(nextDrawings));
+        localStorage.setItem(storageKey, JSON.stringify(nextDrawings));
       } catch {}
 
       return nextDrawings;
     } catch {
-      return [];
+      return localDrawings;
     }
   }, [exchange, marketCategory, preferenceUserId, symbol]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadStoredDrawings().then((saved) => {
+      if (cancelled) return;
+      setDrawings(saved);
+      drawingsRef.current = saved;
+      setSelectedDrawingId((selectedId) => (
+        saved.some((drawing) => drawing.id === selectedId) ? selectedId : null
+      ));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadStoredDrawings]);
 
   const getDrawingTimes = useCallback((items) => {
     return items.flatMap((drawing) => {
@@ -2119,15 +2397,24 @@ export default function TradingViewReplayChart({
   const renderedTradeMarkers = useMemo(() => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
-    if (!chart || !series) return [];
+    if (!chart || !series || !allCandles.length) return [];
+    const intervalSeconds = TIMEFRAME_SECONDS[loadedTimeframe] ?? 60;
+
     return (backtestAccount?.trades ?? []).filter((trade) => trade.symbol === symbol).map((trade) => {
-      const x = chart.timeScale().timeToCoordinate(Number(trade.executedAtTime));
+      const logical = estimateDrawingLogicalFromTime(
+        allCandles,
+        Number(trade.executedAtTime),
+        intervalSeconds
+      );
+      const x = Number.isFinite(logical)
+        ? chart.timeScale().logicalToCoordinate(logical)
+        : chart.timeScale().timeToCoordinate(Number(trade.executedAtTime));
       const y = series.priceToCoordinate(Number(trade.price));
       if (x == null || y == null) return null;
       const isBuy = (trade.action === 'open' && trade.side === 'long') || (trade.action === 'close' && trade.side === 'short');
       return { id: trade.id, x, y, label: isBuy ? 'B' : 'S', color: isBuy ? '#16a34a' : '#dc2626' };
     }).filter(Boolean);
-  }, [backtestAccount?.trades, overlayRenderVersion, symbol]);
+  }, [allCandles, backtestAccount?.trades, loadedTimeframe, overlayRenderVersion, symbol]);
 
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
@@ -2316,7 +2603,7 @@ export default function TradingViewReplayChart({
       price: getPositiveNumber(executionPrice),
     };
 
-    if (dragState.kind === 'entry' && dragState.status === 'pending') {
+    if (dragState.kind === 'entry') {
       payload.entry_price = dragState.price;
     }
 
@@ -3310,14 +3597,7 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (
-        backtestOrderHit &&
-        (
-          backtestOrderHit.isDraft ||
-          backtestOrderHit.status === 'pending' ||
-          backtestOrderHit.kind !== 'entry'
-        )
-      ) {
+      if (backtestOrderHit) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -3416,9 +3696,7 @@ export default function TradingViewReplayChart({
         } else {
           const endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(currentTemp.type)
             ? { ...coords, price: currentTemp.start.price }
-            : currentTemp.type === 'price-range'
-              ? { ...coords, time: currentTemp.start.time, logical: currentTemp.start.logical }
-              : coords;
+            : coords;
 
           if (['fib-extension', 'parallel-channel'].includes(currentTemp.type) && !currentTemp.anchor) {
             setTempDrawing({
@@ -3531,9 +3809,7 @@ export default function TradingViewReplayChart({
           if (!prev) return prev;
           const endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(prev.type)
             ? { ...coords, price: prev.start.price }
-            : prev.type === 'price-range'
-              ? { ...coords, time: prev.start.time, logical: prev.start.logical }
-              : coords;
+            : coords;
 
           if (['fib-extension', 'parallel-channel'].includes(prev.type) && prev.anchor) {
             return { ...prev, anchor: coords };
@@ -3661,7 +3937,7 @@ export default function TradingViewReplayChart({
         }
 
         const updates = {};
-        if (dragState.kind === 'entry' && dragState.status === 'pending') {
+        if (dragState.kind === 'entry') {
           updates.entryPrice = coords.price;
         } else if (dragState.kind === 'sl') {
           updates.stopLoss = coords.price;
@@ -3743,6 +4019,8 @@ export default function TradingViewReplayChart({
   useEffect(() => {
     async function fetchKlines() {
       if (replayProgressLoadedKey !== replayProgressKey) return;
+      timeframePrefetchCancelRef.current?.();
+      timeframePrefetchCancelRef.current = null;
 
       const historyKey = `${exchange}:${marketCategory}:${symbol}:${timeframe}`;
       if (timeframeTransitionKeyRef.current && timeframeTransitionKeyRef.current !== historyKey) {
@@ -3817,6 +4095,8 @@ export default function TradingViewReplayChart({
             const oldestKey = cache.keys().next().value;
             cache.delete(oldestKey);
           }
+
+          writePersistedCandleCache(preferenceUserId, cacheKey, candles);
         };
 
         const fetchCandles = async (requestParams, signal = controller.signal) => {
@@ -3939,6 +4219,10 @@ export default function TradingViewReplayChart({
           timeframe,
           end: params.get('end') ?? 'latest',
         });
+        const persistedCache = readPersistedCandleCache(preferenceUserId, cacheKey);
+        if (!candleCacheRef.current.has(cacheKey) && persistedCache?.candles?.length) {
+          candleCacheRef.current.set(cacheKey, persistedCache);
+        }
         const cachedCandles = candleCacheRef.current.get(cacheKey)?.candles;
         const shouldBlockForCandles = !cachedCandles?.length && historyReadyKeyRef.current !== historyKey;
 
@@ -3948,18 +4232,6 @@ export default function TradingViewReplayChart({
           hasUsableCache = true;
           applyCandles(cachedCandles);
           setLoading(false);
-
-          loadStoredDrawings()
-            .then((saved) => {
-              if (fetchRequestIdRef.current !== requestId) return;
-              setDrawings(saved);
-              drawingsRef.current = saved;
-            })
-            .catch(() => {
-              if (fetchRequestIdRef.current !== requestId) return;
-              setDrawings([]);
-              drawingsRef.current = [];
-            });
         }
 
         const normalized = await fetchCandles(params);
@@ -3970,8 +4242,8 @@ export default function TradingViewReplayChart({
         applyCandles(normalized);
 
         if (!wasInReplay) {
-          const prefetchTimeframes = PREFETCH_TIMEFRAME_MAP[timeframe] ?? [];
-          prefetchTimeframes.forEach((prefetchTimeframe) => {
+          const prefetchTimeframe = (PREFETCH_TIMEFRAME_MAP[timeframe] ?? [])[0];
+          if (prefetchTimeframe) {
             const prefetchInterval = INTERVAL_MAP[prefetchTimeframe];
             if (!prefetchInterval) return;
 
@@ -3982,7 +4254,7 @@ export default function TradingViewReplayChart({
               timeframe: prefetchTimeframe,
             });
 
-            if (candleCacheRef.current.has(prefetchCacheKey)) return;
+            if (candleCacheRef.current.has(prefetchCacheKey) || readPersistedCandleCache(preferenceUserId, prefetchCacheKey)) return;
 
             const prefetchParams = new URLSearchParams({
               symbol,
@@ -3993,24 +4265,29 @@ export default function TradingViewReplayChart({
               max_candles: '5000',
             });
 
-            fetchCandles(prefetchParams, null)
-              .then((prefetchedCandles) => {
-                rememberCandles(prefetchCacheKey, prefetchedCandles);
-              })
-              .catch(() => {});
-          });
+            const prefetchController = new AbortController();
+            const runPrefetch = () => {
+              fetchCandles(prefetchParams, prefetchController.signal)
+                .then((prefetchedCandles) => {
+                  rememberCandles(prefetchCacheKey, prefetchedCandles);
+                })
+                .catch(() => {});
+            };
+            const idleId = typeof window.requestIdleCallback === 'function'
+              ? window.requestIdleCallback(runPrefetch, { timeout: 1500 })
+              : window.setTimeout(runPrefetch, 750);
+
+            timeframePrefetchCancelRef.current = () => {
+              prefetchController.abort();
+              if (typeof window.cancelIdleCallback === 'function') {
+                window.cancelIdleCallback(idleId);
+              } else {
+                window.clearTimeout(idleId);
+              }
+            };
+          }
         }
 
-        try {
-          const saved = await loadStoredDrawings();
-          if (fetchRequestIdRef.current !== requestId) return;
-          setDrawings(saved);
-          drawingsRef.current = saved;
-        } catch {
-          if (fetchRequestIdRef.current !== requestId) return;
-          setDrawings([]);
-          drawingsRef.current = [];
-        }
       } catch (err) {
         if (fetchRequestIdRef.current !== requestId) return;
         if (err?.name === 'AbortError') return;
@@ -4020,8 +4297,6 @@ export default function TradingViewReplayChart({
           setAllCandles([]);
           setReplayMode(false);
           setSelectedReplayPrice(null);
-          setDrawings([]);
-          drawingsRef.current = [];
         } else if (wasInReplay) {
           setReplayMode(true);
           setSelectedReplayPrice(previousSelectedReplayPrice ?? allCandles[replayIndex]?.close ?? null);
@@ -4043,8 +4318,10 @@ export default function TradingViewReplayChart({
 
     return () => {
       candleFetchAbortRef.current?.abort();
+      timeframePrefetchCancelRef.current?.();
+      timeframePrefetchCancelRef.current = null;
     };
-  }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, loadStoredDrawings, replayAccessAllowed, replayProgressKey, replayProgressLoadedKey, savedReplayProgress]);
+  }, [exchange, marketCategory, symbol, timeframe, getDrawingTimes, preferenceUserId, replayAccessAllowed, replayProgressKey, replayProgressLoadedKey, savedReplayProgress]);
 
   const startReplayMode = (startIndex = Math.max(0, Math.floor(allCandles.length * 0.3))) => {
     const nextIndex = Math.min(Math.max(0, startIndex), Math.max(0, allCandles.length - 1));
@@ -5271,7 +5548,7 @@ export default function TradingViewReplayChart({
       />
 
       <div className="ml-12 min-h-0 flex-1">
-        <div className={`relative min-w-0 ${isFullscreen ? 'h-full' : ''}`}>
+        <div className={`relative flex min-w-0 flex-col ${isFullscreen ? 'h-full' : ''}`}>
           <ChartStage
             wrapperRef={wrapperRef}
             containerRef={containerRef}
@@ -5295,6 +5572,22 @@ export default function TradingViewReplayChart({
             onSaveText={handleSaveText}
             onCancelText={handleCancelText}
             onToggleFullscreen={handleToggleFullscreen}
+          />
+
+          <ChartBottomBar
+            chartTheme={chartTheme}
+            visibleLiveStatus={visibleLiveStatus}
+            browserOnline={browserOnline}
+            liveFeedInfo={liveFeedInfo}
+            isLiveFeedDelayed={isLiveFeedDelayed}
+            liveFeedAgeSeconds={liveFeedAgeSeconds}
+            latestCandleStartedAt={latestCandleStartedAt}
+            exchange={exchange}
+            marketCategory={marketCategory}
+            timezone={timezone}
+            timezoneOptions={timezoneOptions}
+            timezoneSaving={timezoneSaving}
+            onTimezoneChange={handleTimezoneChange}
           />
 
           <ChartMarketLegend
@@ -5343,7 +5636,7 @@ export default function TradingViewReplayChart({
           })}
 
           {chartOrderAction && !loading && !error && <div className="pointer-events-none absolute left-0 right-0 z-10 border-t border-dashed border-[#787b86]" style={{ top: chartOrderAction.y }} />}
-          <div className="group absolute bottom-8 right-20 z-30">
+          <div className="hidden" aria-hidden="true">
             <button
               type="button"
               className={`flex items-center gap-1.5 rounded border px-2 py-1 text-[10px] font-semibold shadow outline-none transition focus:ring-2 focus:ring-[#2962ff]/60 ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722]/95 text-[#d1d4dc]' : 'border-slate-200 bg-white/95 text-slate-700'}`}
@@ -5440,7 +5733,7 @@ export default function TradingViewReplayChart({
           )}
 
           <ReplayPanel
-            className={isFullscreen ? 'fixed bottom-0 left-0 right-0 top-12 z-[70]' : 'absolute -left-12 bottom-0 right-0 top-0 z-50'}
+            className={isFullscreen ? 'fixed bottom-7 left-0 right-0 top-12 z-[70]' : 'absolute -left-12 bottom-7 right-0 top-0 z-50'}
             fullscreenDrawingOnly={isFullscreen}
             groupedWorkspaceRail={!isFullscreen}
             fullscreenEntryPanelOpen={isFullscreenEntryPanelOpen}

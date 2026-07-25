@@ -625,6 +625,12 @@ class MarketDataController extends Controller
         ?int $start
     ): array {
         try {
+            $cacheSeconds = $end !== null
+                ? (int) config('market-data.historical_request_cache_seconds', 86400)
+                : ($limit <= 2
+                    ? (int) config('market-data.latest_cache_seconds', 5)
+                    : (int) config('market-data.request_cache_seconds', 30));
+
             $response = match ($exchange) {
                 'binance' => $this->marketGateway->get($exchange, 'klines',
                     $category === 'spot'
@@ -636,14 +642,14 @@ class MarketDataController extends Controller
                         'limit' => min($limit, 1000),
                         ...($end ? ['endTime' => $end] : []),
                         ...($start ? ['startTime' => $start] : []),
-                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30
+                    ], $cacheSeconds
                 ),
                 'okx' => $this->marketGateway->get($exchange, 'klines', 'https://www.okx.com/api/v5/market/history-candles', [
                     'instId' => $exchangeSymbol,
                     'bar' => $this->mapInterval($exchange, $interval, $category),
                     'limit' => min($limit, 300),
                     ...($end ? ['after' => $end] : []),
-                ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30),
+                ], $cacheSeconds),
                 'bingx' => $this->marketGateway->get($exchange, 'klines',
                     $category === 'spot'
                         ? 'https://open-api.bingx.com/openApi/spot/v1/market/kline'
@@ -654,7 +660,7 @@ class MarketDataController extends Controller
                     'limit' => min($limit, 1000),
                     ...($end ? ['endTime' => $end] : []),
                     ...($start ? ['startTime' => $start] : []),
-                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30
+                    ], $cacheSeconds
                 ),
                 'mexc' => $category === 'spot'
                     ? $this->marketGateway->get($exchange, 'klines', 'https://api.mexc.com/api/v3/klines', [
@@ -663,12 +669,12 @@ class MarketDataController extends Controller
                         'limit' => min($limit, 1000),
                         ...($end ? ['endTime' => $end] : []),
                         ...($start ? ['startTime' => $start] : []),
-                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30)
+                    ], $cacheSeconds)
                     : $this->marketGateway->get($exchange, 'klines', 'https://contract.mexc.com/api/v1/contract/kline/' . $exchangeSymbol, [
                         'interval' => $this->mapInterval($exchange, $interval, $category),
                         ...($end ? ['end' => (int) floor($end / 1000)] : []),
                         ...($start ? ['start' => (int) floor($start / 1000)] : []),
-                    ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30),
+                    ], $cacheSeconds),
                 default => $this->marketGateway->get($exchange, 'klines', 'https://api.bybit.com/v5/market/kline', [
                     'category' => $category,
                     'symbol' => $symbol,
@@ -676,7 +682,7 @@ class MarketDataController extends Controller
                     'limit' => $limit,
                     ...($end ? ['end' => $end] : []),
                     ...($start ? ['start' => $start] : []),
-                ], $end === null && $limit <= 2 ? (int) config('market-data.latest_cache_seconds', 5) : 30),
+                ], $cacheSeconds),
             };
 
             if (!$response->successful()) {

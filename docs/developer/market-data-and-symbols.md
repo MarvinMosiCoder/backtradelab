@@ -49,6 +49,7 @@ Supported exchange-specific behavior is implemented in the controller and live-s
 
 - Normalize timestamps, numeric OHLCV values, ordering, and duplicates at the boundary.
 - Keep completed historical candles cacheable; `fresh=1` is used for live fallback.
+- Cache fixed-end historical exchange pages using `MARKET_DATA_HISTORICAL_REQUEST_CACHE_SECONDS`; keep the latest page short-lived.
 - Route exchange REST calls through `ExchangeMarketDataGateway`, which coalesces identical requests, enforces per-exchange budgets, serves stale successes during cooldowns, and honors 429/418 backoff.
 - Normal history is capped by `MARKET_DATA_NORMAL_MAX_PAGES`; Replay uses `MARKET_DATA_REPLAY_MAX_PAGES`, accepts partial valid history, and tries at most one compatible fallback exchange.
 - Validate saved-symbol ownership on delete.

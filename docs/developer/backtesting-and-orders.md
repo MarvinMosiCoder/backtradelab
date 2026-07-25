@@ -25,6 +25,8 @@ Backtesting maintains a simulated account, named sessions, pending/open/closed p
 
 All state-changing routes require `replay.access` and named throttles. Every route-model-bound session/position must be checked against the authenticated account.
 
+Chart position lines are draggable. Pending entries and every active SL/TP update use `PUT /market-backtest/positions/{position}/risk`. Repricing an open entry intentionally edits the simulated fill while preserving quantity: the server locks the account, position, and opening trade; recalculates notional, margin, entry fee, cash, fees, and PnL inputs; and rejects the complete transaction when funds or SL/TP ordering are invalid.
+
 ## Maintenance
 
 - Keep money/quantity calculations server authoritative.
@@ -38,6 +40,7 @@ All state-changing routes require `replay.access` and named throttles. Every rou
 - SL/TP drag updates and automatic triggers.
 - Insufficient balance, invalid leverage/quantity/price.
 - Concurrent tabs/double submission.
+- Pending/open line dragging, opening-trade synchronization, insufficient-cash rollback, and invalid SL/TP rollback.
 - Cancel pending, close open, end session, reset.
 - Cross-user record access returns not found/forbidden.
 

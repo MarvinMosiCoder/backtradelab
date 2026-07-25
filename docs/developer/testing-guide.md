@@ -57,6 +57,10 @@ After documentation changes:
 - Run `php artisan market-alerts:monitor --once --force` with test alerts and mocked exchange responses; verify trigger idempotency, cancellation, notification ownership, and failed-market backoff.
 - With a live chart open, cross rise and drop targets and verify the authenticated check creates one notification, removes the alert line, and shows one six-second toast even after the navbar poll runs.
 - Change only the timeframe and confirm the current chart stays visible; then change the symbol and confirm the full loading skeleton still appears.
+- Create drawings and buy/sell executions on 5m, switch through 1h and back, and confirm drawings, markers, Price Range handles, and long/short right-axis guides remain available.
+- Reprice an open simulated entry and verify quantity is fixed while margin, fee, cash, opening trade, and PnL inputs update atomically; verify invalid risk and insufficient cash roll back.
+- In fullscreen, open Enter Position and verify the visible chart remains interactive, the right price scale is unobstructed on desktop, and the responsive sheet remains non-modal.
+- Verify the bottom Market Feed details, live timezone clock, valid profile-timezone persistence, and invalid-timezone rejection.
 - Return from Replay to Live and confirm the last Replay price guide remains visible immediately without changing timeframe, live candles resume, and saved horizontal-line drawings remain intact.
 - Confirm Back to Live scrolls after the full live series is rendered, so the latest-price line and displayed candles align without changing timeframe.
 - Select a Replay candle above or below the pointer center and confirm the guide uses the candle close; verify ready-tool boxes align with Replay and each chevron sits directly beside its tool with zero gap and gray hover feedback.

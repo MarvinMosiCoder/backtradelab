@@ -145,6 +145,23 @@ class ProfilePageController extends Controller
         return response()->json(['status' => 'success', 'message' => 'Profile details updated.']);
     }
 
+    public function updateTimezone(Request $request)
+    {
+        $validated = $request->validate([
+            'timezone' => ['required', 'timezone'],
+        ]);
+
+        $request->user()->update([
+            'timezone' => $validated['timezone'],
+        ]);
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Timezone updated.',
+            'timezone' => $validated['timezone'],
+        ]);
+    }
+
     public function deactivate(Request $request, AccountDeactivationService $deactivationService)
     {
         $user = $request->user();

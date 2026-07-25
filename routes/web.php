@@ -183,6 +183,7 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/profiles', [ProfilePageController::class, 'getProfiles'])->name('get-profiles');
     Route::post('/update-profile', [ProfilePageController::class, 'updateProfile'])->name('update-profile');
     Route::put('/profile/details', [ProfilePageController::class, 'updateDetails'])->name('profile.details.update');
+    Route::patch('/profile/timezone', [ProfilePageController::class, 'updateTimezone'])->name('profile.timezone.update');
     Route::post('/profile/deactivate', [ProfilePageController::class, 'deactivate'])->middleware('throttle:market-write')->name('profile.deactivate');
     Route::post('/update-theme', [ProfilePageController::class, 'updateTheme'])->name('update-theme');
     //CHANGE PASSWORD

@@ -24,6 +24,8 @@ Users create chart annotations and save reusable tool defaults. Drawings are sco
 
 Browser mirrors use scoped keys such as `replay-drawings:{userId}:{exchange}:{category}:{symbol}`. They are recovery/cache aids, not authorization or the source of truth.
 
+Drawings are market-scoped rather than timeframe-scoped. Loading drawings is independent from candle loading, a failed refresh retains the last local/server copy, and absolute drawing times are projected onto the active timeframe. Price Range uses a rectangular two-axis shape with corner and edge handles. Long/short Entry, TP, and SL values render in a dedicated right-axis label layer.
+
 ## Maintenance
 
 - Add a new tool in constants/tool menus, creation state, rendering, hit testing, movement, resizing, serialization, and validation.
@@ -35,6 +37,9 @@ Browser mirrors use scoped keys such as `replay-drawings:{userId}:{exchange}:{ca
 
 - Every drawing type create/select/move/resize/delete.
 - Reload and market switching.
+- Create on 5m, switch to 1h and back to 5m, and confirm geometry and selection remain available.
+- Resize Price Range independently from every edge and corner.
+- Confirm long/short Entry, TP, and SL axis labels remain visible.
 - Two users in one browser remain isolated.
 - Rapid saves preserve the latest state.
 - Indicator panes do not receive drawing overlays.

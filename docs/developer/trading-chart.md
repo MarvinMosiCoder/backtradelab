@@ -28,6 +28,8 @@ The chart header's Market Info control fetches `/market-metadata` on demand and 
 
 In fullscreen mode, the left chart rail keeps Replay available alongside drawing tools. Its Replay flyout uses the same access checks and playback controls as the embedded chart, and an open Replay flyout is preserved when entering or leaving fullscreen. The drawing Tool Style and Presets editor floats at the top center of the usable chart pane in both embedded and fullscreen modes; other rail flyouts remain left-aligned.
 
+The fullscreen Enter Position panel is non-modal. On large screens it docks at the right and reduces the chart width so the price scale remains visible; on smaller screens it becomes a bounded bottom sheet. The exposed chart remains interactive in both layouts.
+
 The component deliberately coordinates several domains; put reusable pure logic in `utils.js`, constants in `constants.js`, and isolated UI in subcomponents rather than expanding the container unnecessarily.
 
 Superadmins open the same complete workspace at `/admin/workspace`; the route is authorization-protected and keeps browser preferences scoped to the authenticated administrator ID.
@@ -35,6 +37,8 @@ Superadmins open the same complete workspace at `/admin/workspace`; the route is
 Right-clicking a valid chart price opens a cursor-anchored action menu instead of immediately opening an order ticket. **Set Alarm** passes the selected price into the existing live-market alert dialog, while **Trigger Position** passes it into the existing Enter Position flyout. The menu is keyboard accessible, constrained to the viewport, and closes on selection, outside click, Escape, scrolling, resizing, or a market-context change. Existing hover shortcuts remain available.
 
 The full chart skeleton is reserved for initial navigation/reload and market identity changes. A timeframe change keeps the current chart visible until the replacement history is ready. The compact Replay control does not duplicate connection text; connection state remains in the bottom-right chart badge.
+
+The chart footer owns market-feed status/details and the user's live profile-timezone clock/selector. Candle histories remain full-size, are cached in a bounded per-session browser cache, and are revalidated in the background. Only one adjacent timeframe may be prefetched during browser idle time. Backtest account data is refreshed after identity/session/mutation changes rather than on every live tick; unrealized PnL is updated locally between server refreshes.
 
 Returning from Replay to Live keeps the last selected Replay price guide and axis label visible while live candles resume. The retained price participates in live-mode autoscaling. Back to Live waits until the complete live candle series has replaced the Replay slice before scrolling to real time and refreshing the scale; this keeps the latest price line aligned with the displayed live candles without requiring a timeframe change. The guide is replaced by the next Replay selection or cleared by the existing market-context reset. Saved chart drawings, including horizontal lines, are not cleared, and the replay checkpoint remains available when Replay is opened again.
 
@@ -55,6 +59,9 @@ Selecting a Replay candle anchors the guide to that candle's close price rather 
 - Add/configure/hide/remove each indicator.
 - Dark/light colors and per-user persistence.
 - Replay, drawing, alert, and position integrations.
+- Buy/sell execution markers remain mapped to the containing candle after timeframe changes.
+- Fullscreen Enter Position leaves the chart and right price scale usable.
+- Footer feed details and profile timezone save/reload correctly.
 - No cleanup errors after unmount or navigation.
 
 Related: [Drawings](chart-drawings-and-settings.md), [Streaming](live-market-streaming.md), [Replay](replay-and-progress.md).

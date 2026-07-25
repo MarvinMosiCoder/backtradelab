@@ -502,7 +502,7 @@ class MarketBacktestController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $entryPrice = $position->status === 'pending' && isset($validated['entry_price'])
+            $entryPrice = isset($validated['entry_price'])
                 ? (float) $validated['entry_price']
                 : (float) $position->entry_price;
             $stopLoss = array_key_exists('stop_loss', $validated)
@@ -549,8 +549,57 @@ class MarketBacktestController extends Controller
                 'take_profit' => $takeProfit,
             ];
 
-            if ($position->status === 'pending' && isset($validated['entry_price'])) {
+            if (isset($validated['entry_price'])) {
                 $updates['entry_price'] = $entryPrice;
+            }
+
+            if ($position->status === 'open' && isset($validated['entry_price'])) {
+                $quantity = (float) $position->quantity;
+                $leverage = $this->getPositionLeverage($position);
+                $newNotional = round($quantity * $entryPrice, 8);
+                $newMargin = round($newNotional / $leverage, 8);
+                $newEntryFee = round($newNotional * self::FEE_RATE, 8);
+                $oldCommitment = round((float) $position->margin + (float) $position->entry_fee, 8);
+                $newCommitment = round($newMargin + $newEntryFee, 8);
+                $commitmentIncrease = round($newCommitment - $oldCommitment, 8);
+                $newCashBalance = round((float) $account->cash_balance - $commitmentIncrease, 8);
+
+                if ($newCashBalance < 0) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => 'Insufficient paper balance to move the open entry to this price.',
+                    ], 422));
+                }
+
+                $openingTrade = MarketBacktestTrade::query()
+                    ->where('market_backtest_position_id', $position->id)
+                    ->where('market_backtest_account_id', $account->id)
+                    ->where('action', 'open')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$openingTrade) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => 'The opening trade record is unavailable for repricing.',
+                    ], 409));
+                }
+
+                $feeDifference = round($newEntryFee - (float) $position->entry_fee, 8);
+                $updates['margin'] = $newMargin;
+                $updates['entry_fee'] = $newEntryFee;
+
+                $openingTrade->update([
+                    'price' => $entryPrice,
+                    'quantity' => $quantity,
+                    'notional' => $newNotional,
+                    'fee' => $newEntryFee,
+                ]);
+
+                $account->update([
+                    'cash_balance' => $newCashBalance,
+                    'fees_paid' => round(max(0, (float) $account->fees_paid + $feeDifference), 8),
+                ]);
             }
 
             $position->update($updates);

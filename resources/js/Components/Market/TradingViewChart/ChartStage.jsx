@@ -76,6 +76,7 @@ function formatDuration(seconds) {
 }
 
 const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const BOX_TOOL_TYPES = ['rect', 'price-range', 'date-range', 'price-date-range'];
 const FIB_EXTENSION_LEVELS = [
   0,
   0.236,
@@ -449,26 +450,35 @@ function getBoxLabelPosition(rect, drawing) {
 }
 
 function PositionPriceBadge({ item, overlayWidth, overlayHeight, textWeight = '700', textStyle }) {
-  const labelWidth = Math.min(Math.max(item.label.length * 6.5 + 16, 72), 132);
-  const x = Math.max(overlayWidth - labelWidth / 2 - 6, 8);
+  const priceScaleWidth = Math.min(88, Math.max(64, overlayWidth * 0.18));
+  const labelWidth = Math.min(Math.max(item.label.length * 6.5 + 14, 62), priceScaleWidth - 4);
+  const x = Math.max(overlayWidth - labelWidth - 2, 0);
   const y = Math.min(Math.max(item.y - 11, 8), Math.max(overlayHeight - 30, 8));
 
   return (
-    <text
-      x={x}
-      y={y + 15}
-      textAnchor="middle"
-      fill={item.color}
-      fontSize="11"
-      fontWeight={textWeight}
-      fontStyle={textStyle}
-      paintOrder="stroke"
-      stroke="rgba(21, 22, 23, 0.95)"
-      strokeWidth="3"
-      strokeLinejoin="round"
-    >
-      {item.label}
-    </text>
+    <g>
+      <rect
+        x={x}
+        y={y}
+        width={labelWidth}
+        height={22}
+        rx={2}
+        fill="rgba(21, 22, 23, 0.96)"
+        stroke={item.color}
+        strokeWidth="1"
+      />
+      <text
+        x={x + labelWidth / 2}
+        y={y + 15}
+        textAnchor="middle"
+        fill={item.color}
+        fontSize="11"
+        fontWeight={textWeight}
+        fontStyle={textStyle}
+      >
+        {item.label}
+      </text>
+    </g>
   );
 }
 
@@ -598,7 +608,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
     resizeHandles.push(...(selectedDrawing.screen.points ?? []));
   }
 
-  if (selectedDrawing?.type === 'rect') {
+  if (BOX_TOOL_TYPES.includes(selectedDrawing?.type)) {
     const { p1, p2 } = selectedDrawing.screen;
     const midX = (p1.x + p2.x) / 2;
     const midY = (p1.y + p2.y) / 2;
@@ -975,16 +985,6 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                     >
                       {geometry.label}
                     </text>
-                    {geometry.priceLabels.map((item) => (
-                      <PositionPriceBadge
-                        key={`${d.id}-${item.key}`}
-                        item={item}
-                        overlayWidth={overlaySize.width}
-                        overlayHeight={overlaySize.height}
-                        textWeight={d.textBold ? '800' : '700'}
-                        textStyle={textStyle}
-                      />
-                    ))}
                   </>
                 )}
               </g>
@@ -1055,6 +1055,30 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
             rx={2}
           />
         ))}
+      </svg>
+
+      <svg
+        className="pointer-events-none absolute inset-0 z-20"
+        width={overlaySize.width}
+        height={overlaySize.height}
+        style={{ width: '100%', height: '100%' }}
+        aria-hidden="true"
+      >
+        {renderedDrawings
+          .filter((drawing) => isPositionDrawing(drawing) && !drawing.id.startsWith('temp-'))
+          .flatMap((drawing) => {
+            const geometry = getPositionGeometry(drawing);
+            return geometry.priceLabels.map((item) => (
+              <PositionPriceBadge
+                key={`${drawing.id}-${item.key}`}
+                item={item}
+                overlayWidth={overlaySize.width}
+                overlayHeight={overlaySize.height}
+                textWeight={drawing.textBold ? '800' : '700'}
+                textStyle={getDrawingTextStyle(drawing)}
+              />
+            ));
+          })}
       </svg>
 
       {renderedDrawings
