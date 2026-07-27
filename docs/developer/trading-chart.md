@@ -24,9 +24,11 @@ The workspace chart renders candlesticks and volume with Lightweight Charts, ind
 4. Header/rail state changes symbol, timeframe, indicators, replay, drawings, alerts, or positions.
 5. Authenticated preferences and domain records are persisted through their feature endpoints.
 
+Spot/Futures selection is presented as tabs inside the symbol picker rather than as a persistent header control, keeping the compact chart toolbar clear. The right price scale trims trailing zero decimals and does not use thousands separators. Buy/sell execution markers use compact 14-pixel badges.
+
 The chart header's Market Info control fetches `/market-metadata` on demand and displays normalized 24-hour exchange statistics plus optional CoinMarketCap fundamentals with CoinGecko fallback. The popover follows chart theme colors, omits missing values, and never participates in candle loading. Market Summary uses the batch metadata endpoint to add the same identity and headline statistics to saved-market cards.
 
-In fullscreen mode, the left chart rail keeps Replay available alongside drawing tools. Its Replay flyout uses the same access checks and playback controls as the embedded chart, and an open Replay flyout is preserved when entering or leaving fullscreen. The drawing Tool Style and Presets editor floats at the top center of the usable chart pane in both embedded and fullscreen modes; other rail flyouts remain left-aligned.
+In fullscreen mode, the left chart rail keeps Replay available alongside drawing tools. Its Replay flyout uses the same access checks and playback controls as the embedded chart, and an open Replay flyout is preserved when entering or leaving fullscreen. The drawing Tool Style and Templates editor floats at the top center of the usable chart pane in both embedded and fullscreen modes; other rail flyouts remain left-aligned.
 
 The fullscreen Enter Position panel is non-modal. On large screens it docks at the right and reduces the chart width so the price scale remains visible; on smaller screens it becomes a bounded bottom sheet. The exposed chart remains interactive in both layouts.
 
@@ -34,9 +36,9 @@ The component deliberately coordinates several domains; put reusable pure logic 
 
 Superadmins open the same complete workspace at `/admin/workspace`; the route is authorization-protected and keeps browser preferences scoped to the authenticated administrator ID.
 
-Right-clicking a valid chart price opens a cursor-anchored action menu instead of immediately opening an order ticket. **Set Alarm** passes the selected price into the existing live-market alert dialog, while **Trigger Position** passes it into the existing Enter Position flyout. The menu is keyboard accessible, constrained to the viewport, and closes on selection, outside click, Escape, scrolling, resizing, or a market-context change. Existing hover shortcuts remain available.
+Right-clicking a valid chart price opens a cursor-anchored action menu instead of immediately opening an order ticket. **Set Alarm** passes the selected price into the existing live-market alert dialog, while **Trigger Position** passes it into the existing Enter Position flyout. **Clear Tools** uses the existing confirmed, persisted, undoable drawing-clear action and is disabled when there are no drawings. The menu is keyboard accessible, constrained to the viewport, and closes on selection, outside click, Escape, scrolling, resizing, or a market-context change. Existing hover shortcuts remain available.
 
-The full chart skeleton is reserved for initial navigation/reload and market identity changes. A timeframe change keeps the current chart visible until the replacement history is ready. The compact Replay control does not duplicate connection text; connection state remains in the bottom-right chart badge.
+The full chart skeleton is reserved for initial navigation/reload and market identity changes. A timeframe change keeps the current chart visible beneath a light 25%-black interaction shield until the replacement history is ready. The shield has no spinner, text, or backdrop blur; chart interactions are blocked while header controls remain available. The compact Replay control does not duplicate connection text; connection state remains in the bottom-right chart badge.
 
 The chart footer owns market-feed status/details and the user's live profile-timezone clock/selector. Candle histories remain full-size, are cached in a bounded per-session browser cache, and are revalidated in the background. Only one adjacent timeframe may be prefetched during browser idle time. Backtest account data is refreshed after identity/session/mutation changes rather than on every live tick; unrealized PnL is updated locally between server refreshes.
 

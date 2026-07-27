@@ -563,11 +563,11 @@ function TopToolEditorBar({
         {canUsePresets && (
           <div className="relative">
             <TopMenuButton active={openMenu === 'presets'} onClick={() => toggleMenu('presets')} chartTheme={chartTheme}>
-              Presets
+              Templates
             </TopMenuButton>
             {openMenu === 'presets' && (
               <div className={menuPanelClass}>
-                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Presets</div>
+                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Templates</div>
                 <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
                   {presetItems.map((preset) => (
                     <div
@@ -599,18 +599,18 @@ function TopToolEditorBar({
                   ))}
 
                   {!presetItems.length && (
-                    <span className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>No saved presets</span>
+                    <span className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>No saved templates</span>
                   )}
                 </div>
 
                 {selectedDrawing && (
                   <div className={`mt-3 border-t pt-3 ${isDark ? 'border-gray-800' : 'border-slate-200'}`}>
-                    <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Save Preset</div>
+                    <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Save Template</div>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
                       <input
                         value={presetNameDraft}
                         onChange={(event) => setPresetNameDraft(event.target.value)}
-                        placeholder={`${editorLabel} preset name`}
+                        placeholder={`${editorLabel} template name`}
                         className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
                       />
                       <ControlButton
@@ -1058,7 +1058,7 @@ export default function ReplayPanel({
 
   const handleSavePreset = () => {
     const existing = presetItems.find(item => String(item.name).toLowerCase() === presetNameDraft.trim().toLowerCase());
-    if (existing && !window.confirm(`Overwrite the “${existing.name}” preset with the current tool settings?`)) return;
+    if (existing && !window.confirm(`Overwrite the “${existing.name}” template with the current tool settings?`)) return;
     onSaveSelectedToolPreset(presetNameDraft);
     setPresetNameDraft('');
   };
@@ -1283,7 +1283,7 @@ export default function ReplayPanel({
           icon={Palette}
           active={activeGroup === 'tool-editor'}
           disabled={!hasToolEditor}
-          title="Tool Style and Presets"
+          title="Tool Style and Templates"
           onClick={() => toggleGroup('tool-editor')}
           chartTheme={chartTheme}
         />

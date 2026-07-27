@@ -4,6 +4,46 @@ import { Bell, ChevronDown, CircleHelp, Info, LoaderCircle, Menu, Play, Search, 
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 
+function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, isDark }) {
+  return (
+    <div
+      className={`grid w-full grid-cols-2 overflow-hidden rounded-md border p-0.5 ${
+        isDark ? 'border-gray-700 bg-black-table-color/80' : 'border-slate-200 bg-slate-100'
+      }`}
+      role="tablist"
+      aria-label="Market type"
+    >
+      {[
+        ['spot', 'Spot'],
+        ['linear', 'Futures'],
+      ].map(([value, label]) => {
+        const active = marketCategory === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => {
+              if (!active) onCategoryChange(value);
+              onResetSearch();
+            }}
+            className={`h-7 rounded text-[11px] font-semibold transition-colors ${
+              active
+                ? 'bg-[#2962ff] text-white shadow-sm'
+                : isDark
+                  ? 'text-gray-300 hover:bg-white/10 hover:text-white'
+                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, candleColors, candleSize, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onCandleColorChange, onCandleSizeChange, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
@@ -102,6 +142,14 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             </button>
             {isAddOpen && (
               <div className={`absolute left-0 top-full z-[120] mt-2 w-80 max-w-[85vw] overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
+                <div className={`border-b p-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <MarketCategoryTabs
+                    marketCategory={marketCategory}
+                    onCategoryChange={onCategoryChange}
+                    onResetSearch={() => setSymbolSearch('')}
+                    isDark={isDark}
+                  />
+                </div>
                 <div className={`flex items-center gap-2 border-b p-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <Search size={14} className="text-gray-400" />
                   <input autoFocus value={symbolSearch} onChange={(e) => setSymbolSearch(e.target.value)} placeholder="Search all symbols" className="min-w-0 flex-1 bg-transparent text-xs uppercase outline-none placeholder:text-gray-500" />
@@ -137,19 +185,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
               <Trash2 size={14} />
             </button>
           )}
-
-          <select
-            value={marketCategory}
-            onChange={(e) => {
-              onCategoryChange(e.target.value);
-              setSymbolSearch('');
-            }}
-            className={`${compactFieldClass} w-24`}
-            title="Market"
-          >
-            <option value="linear">Futures / Perpetual</option>
-            <option value="spot">Spot</option>
-          </select>
 
           <select data-tour="timeframe" value={timeframe} onChange={(e) => onTimeframeChange(e.target.value)} className={`${compactFieldClass} w-28 min-w-28`} title="Timeframe">
             {timeframeOptions.map((tf) => (
@@ -266,7 +301,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
               <span className="truncate text-emerald-500">
                 {symbol}{' '}
                 <span className={`text-[9px] font-medium ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
-                  {String(exchange).toUpperCase()} · {marketCategoryLabel(marketCategory)}
+                  {String(exchange).toUpperCase()}
                 </span>
               </span>
               <ChevronDown size={14} className="shrink-0" />
@@ -279,6 +314,14 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           </div>
           {isAddOpen && (
             <div className={`absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border shadow-xl sm:right-auto sm:w-96 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
+              <div className={`border-b p-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                <MarketCategoryTabs
+                  marketCategory={marketCategory}
+                  onCategoryChange={onCategoryChange}
+                  onResetSearch={() => setSymbolSearch('')}
+                  isDark={isDark}
+                />
+              </div>
               <div className={`flex items-center gap-2 border-b px-2 py-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <Search size={14} className="text-gray-400" />
                 <input autoFocus value={symbolSearch} onChange={(event) => setSymbolSearch(event.target.value)} placeholder="Search all symbols" className={`min-w-0 flex-1 bg-transparent text-xs uppercase outline-none placeholder:text-gray-500 ${isDark ? 'text-white' : 'text-gray-800'}`} />
@@ -319,21 +362,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             </div>
           )}
           {symbolError && <div className="mt-1 text-[11px] text-red-400">{symbolError}</div>}
-        </div>
-
-        <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
-          <label className="sr-only">Market</label>
-          <select
-            value={marketCategory}
-            onChange={(e) => {
-              onCategoryChange(e.target.value);
-              setSymbolSearch('');
-            }}
-            className={`${fieldClass} w-full`}
-          >
-            <option value="linear">Futures / Perpetual</option>
-            <option value="spot">Spot</option>
-          </select>
         </div>
 
         <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">

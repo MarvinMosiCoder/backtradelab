@@ -497,8 +497,22 @@ function formatOverlayPrice(value) {
   if (!Number.isFinite(number)) return '---';
 
   return number.toLocaleString(undefined, {
-    minimumFractionDigits: number >= 100 ? 2 : 4,
+    minimumFractionDigits: 0,
     maximumFractionDigits: number >= 100 ? 2 : 6,
+  });
+}
+
+function formatPriceScaleValue(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+
+  const absolute = Math.abs(number);
+  const maximumFractionDigits = absolute >= 100 ? 2 : absolute >= 1 ? 6 : 8;
+
+  return number.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits,
+    useGrouping: false,
   });
 }
 
@@ -2660,6 +2674,9 @@ export default function TradingViewReplayChart({
       },
       handleScroll: true,
       handleScale: true,
+      localization: {
+        priceFormatter: formatPriceScaleValue,
+      },
     });
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
@@ -2672,6 +2689,11 @@ export default function TradingViewReplayChart({
       borderVisible: true,
       priceLineVisible: true,
       lastValueVisible: true,
+      priceFormat: {
+        type: 'custom',
+        minMove: 0.00000001,
+        formatter: formatPriceScaleValue,
+      },
       autoscaleInfoProvider: selectedPriceAutoscaleInfoProvider,
     });
 
@@ -5402,6 +5424,9 @@ export default function TradingViewReplayChart({
   const handleTimeframeChange = useCallback((nextTimeframe) => {
     if (nextTimeframe === timeframe) return;
 
+    setChartContextMenu(null);
+    setChartOrderAction(null);
+
     const timeScale = chartRef.current?.timeScale?.();
     const visibleRange = timeScale?.getVisibleRange?.();
     const logicalRange = timeScale?.getVisibleLogicalRange?.();
@@ -5519,6 +5544,22 @@ export default function TradingViewReplayChart({
           <Wallet size={15} className="text-[#5b8cff]" />
           Trigger Position
         </button>
+        <div className={`my-1 border-t ${chartTheme.mode === 'dark' ? 'border-[#363a45]' : 'border-slate-200'}`} />
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!drawings.length}
+          onClick={() => {
+            setChartContextMenu(null);
+            handleClearDrawings();
+          }}
+          className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-semibold text-red-500 outline-none disabled:cursor-not-allowed disabled:opacity-40 ${
+            chartTheme.mode === 'dark' ? 'hover:bg-white/10 focus:bg-white/10' : 'hover:bg-slate-100 focus:bg-slate-100'
+          }`}
+        >
+          <Trash2 size={15} />
+          Clear Tools
+        </button>
       </div>
     )}
     <div
@@ -5628,6 +5669,17 @@ export default function TradingViewReplayChart({
               setTool(null);
             }}
           />
+
+          {isTimeframeLoading && (
+            <div
+              data-chart-ui="timeframe-loading-shield"
+              role="status"
+              aria-live="polite"
+              aria-label={`Loading ${timeframe} candles`}
+              onContextMenu={(event) => event.preventDefault()}
+              className="absolute -left-12 bottom-0 right-0 top-0 z-[75] cursor-wait bg-black/25"
+            />
+          )}
 
           {priceAlerts.map(alert => {
             const y = candleSeriesRef.current?.priceToCoordinate?.(Number(alert.target_price));

@@ -1323,9 +1323,9 @@ export default function ChartStage({
 
       <svg className="pointer-events-none absolute inset-0 z-[12]" width={overlaySize.width} height={mainOverlaySize.height} aria-hidden="true">
         {(renderedTradeMarkers ?? []).map((marker) => (
-          <g key={marker.id} transform={`translate(${marker.x - 9} ${marker.y - 9})`}>
-            <rect width="18" height="18" rx="3" fill={marker.color} />
-            <text x="9" y="12.5" textAnchor="middle" fill="#ffffff" fontSize="10" fontWeight="800">{marker.label}</text>
+          <g key={marker.id} transform={`translate(${marker.x - 7} ${marker.y - 7})`}>
+            <rect width="14" height="14" rx="2.5" fill={marker.color} />
+            <text x="7" y="10" textAnchor="middle" fill="#ffffff" fontSize="8" fontWeight="800">{marker.label}</text>
           </g>
         ))}
       </svg>

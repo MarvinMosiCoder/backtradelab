@@ -48,7 +48,10 @@ After documentation changes:
 # Trading and alert regression checks
 
 - Confirm ready-tool selections persist across login/device reload and every new drawing can be selected, resized, moved, duplicated, saved, and restored.
-- Confirm preset name collisions require overwrite approval and range labels calculate correctly.
+- Confirm template name collisions require overwrite approval and range labels calculate correctly.
+- Open the symbol picker and verify its Spot/Futures tabs switch category without increasing the persistent chart-header height.
+- Confirm right-axis prices omit trailing `.00` and thousands separators while retaining meaningful fractional precision.
+- Right-click the chart and verify Clear Tools is disabled with no drawings, confirms before clearing drawings, and remains undoable.
 - Switch markets while a live update arrives and confirm the skeleton remains until the full history response.
 - Disconnect each exchange WebSocket and confirm one coalesced 10-second REST fallback refresh serves concurrent charts, hidden tabs stop polling, and visibility resumes immediately.
 - Mock exchange 429/418 responses and verify `Retry-After`, shared cooldown, stale success, bounded pagination, one compatible fallback, and recovery without a request storm.
@@ -56,7 +59,7 @@ After documentation changes:
 - Leave RSI/MACD open through live updates and fullscreen transitions and confirm pane heights remain stable.
 - Run `php artisan market-alerts:monitor --once --force` with test alerts and mocked exchange responses; verify trigger idempotency, cancellation, notification ownership, and failed-market backoff.
 - With a live chart open, cross rise and drop targets and verify the authenticated check creates one notification, removes the alert line, and shows one six-second toast even after the navbar poll runs.
-- Change only the timeframe and confirm the current chart stays visible; then change the symbol and confirm the full loading skeleton still appears.
+- Change only the timeframe and confirm the current chart stays visible beneath a light text-free, blur-free blocking shield while header controls remain available; then change the symbol and confirm the full loading skeleton still appears.
 - Create drawings and buy/sell executions on 5m, switch through 1h and back, and confirm drawings, markers, Price Range handles, and long/short right-axis guides remain available.
 - Reprice an open simulated entry and verify quantity is fixed while margin, fee, cash, opening trade, and PnL inputs update atomically; verify invalid risk and insufficient cash roll back.
 - In fullscreen, open Enter Position and verify the visible chart remains interactive, the right price scale is unobstructed on desktop, and the responsive sheet remains non-modal.

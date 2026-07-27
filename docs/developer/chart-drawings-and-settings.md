@@ -7,9 +7,9 @@ Users create chart annotations and save reusable tool defaults. Drawings are sco
 | Route/file | Responsibility |
 |---|---|
 | `GET/PUT /market-drawings` | Load/save drawing collection |
-| `GET/PUT /market-tool-settings` | Load/save tool presets |
+| `GET/PUT /market-tool-settings` | Load/save tool templates |
 | `MarketDrawingController.php` | Drawing validation and ownership |
-| `MarketToolSettingController.php` | Preset validation and ownership |
+| `MarketToolSettingController.php` | Template validation and ownership |
 | `MarketDrawing.php`, `MarketToolSetting.php` | Persistence |
 | `ChartStage.jsx`, `ReplayPanel.jsx`, `utils.js` | Editing UI and geometry |
 
@@ -20,7 +20,7 @@ Users create chart annotations and save reusable tool defaults. Drawings are sco
 3. Pointer actions create/select/move/resize drawing data.
 4. Saves are serialized so an older request cannot overwrite newer state.
 5. The server updates or creates the user-and-market record.
-6. Tool presets load once per user and are saved independently of drawings.
+6. Tool templates load once per user and are saved independently of drawings. The persisted settings key remains `presets` for backward compatibility.
 
 Browser mirrors use scoped keys such as `replay-drawings:{userId}:{exchange}:{category}:{symbol}`. They are recovery/cache aids, not authorization or the source of truth.
 
@@ -49,4 +49,6 @@ Related: [Trading chart](trading-chart.md), [Replay](replay-and-progress.md).
 
 Each left-rail drawing category has a ready-tool button and a separate list trigger. Choosing a tool updates that category's ready icon and saves `readyTools` through `/market-tool-settings`, with the existing per-user local fallback. The ready button activates the saved tool immediately.
 
-The chart supports lines, rays, arrows, horizontal/vertical lines, paths, Fibonacci tools, parallel channels, position/forecast tools, rectangles, annotations, and Price Range, Date Range, and Price & Date Range. Range labels show price/percentage movement, duration, and candle count as applicable. Saving a preset over an existing case-insensitive name requires confirmation.
+The chart supports lines, rays, arrows, horizontal/vertical lines, paths, Fibonacci tools, parallel channels, position/forecast tools, rectangles, annotations, and Price Range, Date Range, and Price & Date Range. Range labels show price/percentage movement, duration, and candle count as applicable. Saving a template over an existing case-insensitive name requires confirmation.
+
+The chart context menu's **Clear Tools** action clears drawings through the same confirmation, persistence, and undo path as the drawing rail. It is disabled when no drawings exist and does not remove indicators, alerts, positions, or templates.
