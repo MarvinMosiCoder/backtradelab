@@ -22,6 +22,8 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 4. Journal edits update setup/freeform tags, reason, mistake, emotion, and notes on the owned closed position.
 5. Snapshot links use authorized routes/storage rather than exposing private paths.
 
+The closed-trades journal table supports client-side full-text search across symbols and journal content, symbol/side/result/journal-status filters, selectable page sizes, and numbered pagination. Filtering resets to the first page and does not change the account-wide summary cards or export contents.
+
 ## Maintenance
 
 - Add a report field first to the authoritative query/serializer, then table/export/UI.
@@ -36,5 +38,6 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 - Timezone boundaries in calendar days.
 - CSV/JSON/server export contents.
 - Journal save/reload and cross-user denial.
+- Search and combined filters, empty filtered results, page-size changes, and pagination boundaries.
 
 Related: [Backtesting](backtesting-and-orders.md), [Testing](testing-guide.md).

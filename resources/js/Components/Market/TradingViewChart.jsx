@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
 import { Bell, HelpCircle, Trash2, Wallet, X } from 'lucide-react';
@@ -467,6 +468,18 @@ function resolvePositionProgressPoint(drawing, stop, candles) {
   }
 
   return latestProgressPoint;
+}
+
+function normalizePositionTarget(type, entry, target) {
+  if (!['long-position', 'short-position'].includes(type) || !entry || !target) return target;
+
+  const distance = Math.max(Math.abs(Number(target.price) - Number(entry.price)), Math.abs(Number(entry.price)) * 0.001, 0.00000001);
+  return {
+    ...target,
+    price: type === 'long-position'
+      ? Number(entry.price) + distance
+      : Number(entry.price) - distance,
+  };
 }
 
 function getRenderedFibonacciLevels(drawing, overlayWidth) {
@@ -974,6 +987,7 @@ export default function TradingViewReplayChart({
   const [drawingSaveStatus, setDrawingSaveStatus] = useState('saved');
   const [tempDrawing, setTempDrawing] = useState(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState(null);
+  const [hoveredPositionDrawingId, setHoveredPositionDrawingId] = useState(null);
   const [toolSettings, setToolSettings] = useState({});
   const [backtestAccount, setBacktestAccount] = useState(null);
   const [isBacktestLoading, setIsBacktestLoading] = useState(false);
@@ -2232,6 +2246,7 @@ export default function TradingViewReplayChart({
         return {
           ...drawing,
           stop,
+          currentPrice: progressPoint?.price ?? drawing.start.price,
           screen: {
             p1,
             p2,
@@ -2719,7 +2734,11 @@ export default function TradingViewReplayChart({
     });
 
     const handleVisibleRangeChange = () => {
-      scheduleOverlayRender();
+      if (overlayRenderFrameRef.current) {
+        cancelAnimationFrame(overlayRenderFrameRef.current);
+        overlayRenderFrameRef.current = null;
+      }
+      flushSync(() => setOverlayRenderVersion((version) => version + 1));
       if (isProgrammaticRangeChangeRef.current) return;
       setFollowReplay(false);
     };
@@ -3726,9 +3745,13 @@ export default function TradingViewReplayChart({
             textItalic: Boolean(savedToolSettings.textItalic),
           });
         } else {
-          const endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(currentTemp.type)
+          let endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(currentTemp.type)
             ? { ...coords, price: currentTemp.start.price }
             : coords;
+
+          if (isPositionDrawing(currentTemp)) {
+            endPoint = normalizePositionTarget(currentTemp.type, currentTemp.start, endPoint);
+          }
 
           if (['fib-extension', 'parallel-channel'].includes(currentTemp.type) && !currentTemp.anchor) {
             setTempDrawing({
@@ -3830,10 +3853,16 @@ export default function TradingViewReplayChart({
     };
 
     const handleMouseMove = (event) => {
-      if (isSpacePressedRef.current) return;
-
       const { x, y } = getRelativePoint(event);
-      if (!isInMainPricePane(y)) return;
+      const bounds = el.getBoundingClientRect();
+      const isInsideChart = x >= 0 && x <= bounds.width && y >= 0 && y <= bounds.height && isInMainPricePane(y);
+      const hoveredDrawingId = isInsideChart ? hitTestDrawing(x, y) : null;
+      const hoveredDrawing = hoveredDrawingId
+        ? drawingsRef.current.find((drawing) => drawing.id === hoveredDrawingId)
+        : null;
+      setHoveredPositionDrawingId(isPositionDrawing(hoveredDrawing) ? hoveredDrawingId : null);
+
+      if (isSpacePressedRef.current || !isInsideChart) return;
 
       if (TWO_POINT_TOOL_TYPES.includes(toolRef.current) && tempDrawingRef.current) {
         const coords = getChartCoordinates(x, y);
@@ -3844,9 +3873,13 @@ export default function TradingViewReplayChart({
 
         setTempDrawing((prev) => {
           if (!prev) return prev;
-          const endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(prev.type)
+          let endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(prev.type)
             ? { ...coords, price: prev.start.price }
             : coords;
+
+          if (isPositionDrawing(prev)) {
+            endPoint = normalizePositionTarget(prev.type, prev.start, endPoint);
+          }
 
           if (['fib-extension', 'parallel-channel'].includes(prev.type) && prev.anchor) {
             return { ...prev, anchor: coords };
@@ -3902,7 +3935,45 @@ export default function TradingViewReplayChart({
         }
 
         if (isPositionDrawing(resized)) {
-          resized[handle] = coords;
+          const isLongPosition = resized.type === 'long-position';
+
+          if (handle === 'start') {
+            const rewardDistance = Math.abs(Number(resized.end.price) - Number(resized.start.price));
+            const riskDistance = Math.abs(Number(resized.start.price) - Number(resized.stop.price));
+            resized.start = coords;
+            resized.end = {
+              ...resized.end,
+              price: isLongPosition ? coords.price + rewardDistance : coords.price - rewardDistance,
+            };
+            resized.stop = {
+              ...resized.stop,
+              price: isLongPosition ? coords.price - riskDistance : coords.price + riskDistance,
+            };
+          } else if (handle === 'end') {
+            resized.end = normalizePositionTarget(resized.type, resized.start, coords);
+            resized.stop = {
+              ...resized.stop,
+              time: coords.time,
+              logical: coords.logical,
+            };
+          } else if (handle === 'stop') {
+            const riskDistance = Math.max(
+              Math.abs(Number(coords.price) - Number(resized.start.price)),
+              Math.abs(Number(resized.start.price)) * 0.001,
+              0.00000001
+            );
+            resized.stop = {
+              ...coords,
+              price: isLongPosition
+                ? Number(resized.start.price) - riskDistance
+                : Number(resized.start.price) + riskDistance,
+            };
+            resized.end = {
+              ...resized.end,
+              time: coords.time,
+              logical: coords.logical,
+            };
+          }
         }
 
         if (BOX_TOOL_TYPES.includes(resized.type)) {
@@ -5622,6 +5693,7 @@ export default function TradingViewReplayChart({
             renderedBacktestOrders={renderedBacktestOrders}
             renderedTradeMarkers={renderedTradeMarkers}
             selectedDrawingId={selectedDrawingId}
+            hoveredPositionDrawingId={hoveredPositionDrawingId}
             textInput={textInput}
             textDraft={textDraft}
             onTextDraftChange={setTextDraft}

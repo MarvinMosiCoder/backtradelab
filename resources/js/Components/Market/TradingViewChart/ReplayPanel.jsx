@@ -504,11 +504,13 @@ function TopToolEditorBar({
 
   return (
     <div
-      className="pointer-events-auto absolute top-2 z-[60] w-max -translate-x-1/2 rounded-lg border shadow-2xl backdrop-blur"
+      className="pointer-events-auto absolute top-2 z-[60] w-max rounded-lg border shadow-2xl backdrop-blur"
       style={{
         ...getPanelStyle(chartTheme),
         left: 'calc(50% + 24px)',
         maxWidth: `${Math.max(Number(availableWidth) || 140, 140)}px`,
+        transform: 'translate3d(-50%, 0, 0)',
+        willChange: 'transform',
       }}
     >
       <div className="flex h-11 max-w-full flex-nowrap items-center overflow-visible">

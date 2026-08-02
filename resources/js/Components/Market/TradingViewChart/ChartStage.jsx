@@ -241,6 +241,10 @@ function getPositionGeometry(drawing) {
   const risk = Math.abs(entryPrice - stopPrice);
   const rewardPercent = entryPrice ? (reward / entryPrice) * 100 : 0;
   const riskPercent = entryPrice ? (risk / entryPrice) * 100 : 0;
+  const riskReward = reward / Math.max(risk, 0.0000001);
+  const currentPrice = Number(drawing.currentPrice ?? entryPrice);
+  const openPnl = isLong ? currentPrice - entryPrice : entryPrice - currentPrice;
+  const openPnlPercent = entryPrice ? (openPnl / entryPrice) * 100 : 0;
 
   return {
     isLong,
@@ -260,25 +264,30 @@ function getPositionGeometry(drawing) {
       : false,
     targetPoint: { x: p2.x, y: targetY },
     stopPoint: { x: pStop.x, y: stopY },
-    label: `${isLong ? 'Long' : 'Short'} R/R ${(reward / Math.max(risk, 0.0000001)).toFixed(2)} | Target ${formatSignedNumber(rewardPercent)}% | Stop -${riskPercent.toFixed(2)}% | ${formatDuration(drawing.end.time - drawing.start.time)}`,
+    riskReward,
+    openPnl,
+    targetLabel: `Target: ${formatPriceLabel(reward)} (${rewardPercent.toFixed(2)}%) · Price: ${formatPriceLabel(targetPrice)}`,
+    openPnlLabel: `Open P&L: ${formatSignedNumber(openPnl)} (${formatSignedNumber(openPnlPercent)}%)`,
+    riskRewardLabel: `Risk/Reward Ratio: ${riskReward.toFixed(2)}`,
+    stopLabel: `Stop: ${formatPriceLabel(risk)} (${riskPercent.toFixed(2)}%) · Price: ${formatPriceLabel(stopPrice)}`,
     priceLabels: [
       {
         key: 'entry',
-        label: formatPriceLabel(entryPrice),
+        label: `Entry ${formatPriceLabel(entryPrice)}`,
         y: p1.y,
-        color: '#e2e8f0',
+        color: '#5b8cff',
       },
       {
         key: 'tp',
-        label: formatPriceLabel(targetPrice),
+        label: `TP ${formatPriceLabel(targetPrice)}`,
         y: targetY,
-        color: '#4ade80',
+        color: '#22c55e',
       },
       {
         key: 'sl',
-        label: formatPriceLabel(stopPrice),
+        label: `SL ${formatPriceLabel(stopPrice)}`,
         y: stopY,
-        color: '#f87171',
+        color: '#ef4444',
       },
     ],
   };
@@ -451,7 +460,7 @@ function getBoxLabelPosition(rect, drawing) {
 
 function PositionPriceBadge({ item, overlayWidth, overlayHeight, textWeight = '700', textStyle }) {
   const priceScaleWidth = Math.min(88, Math.max(64, overlayWidth * 0.18));
-  const labelWidth = Math.min(Math.max(item.label.length * 6.5 + 14, 62), priceScaleWidth - 4);
+  const labelWidth = Math.min(Math.max(item.label.length * 5.4 + 12, 62), priceScaleWidth - 4);
   const x = Math.max(overlayWidth - labelWidth - 2, 0);
   const y = Math.min(Math.max(item.y - 11, 8), Math.max(overlayHeight - 30, 8));
 
@@ -472,12 +481,42 @@ function PositionPriceBadge({ item, overlayWidth, overlayHeight, textWeight = '7
         y={y + 15}
         textAnchor="middle"
         fill={item.color}
-        fontSize="11"
+        fontSize="9"
         fontWeight={textWeight}
         fontStyle={textStyle}
       >
         {item.label}
       </text>
+    </g>
+  );
+}
+
+function PositionInfoBadge({ x, y, lines, color, maxWidth = 300, centered = false, wrap = true }) {
+  const items = (Array.isArray(lines) ? lines : [lines]).flatMap((line) => (
+    String(line).split(' · ').map((part) => part.trim()).filter(Boolean)
+  ));
+  const displayItems = wrap ? items : [Array.isArray(lines) ? lines.join(' ') : String(lines)];
+  const longest = Math.max(...displayItems.map((line) => String(line).length), 1);
+  const width = Math.min(Math.max(longest * 5.8 + 18, 112), Math.max(maxWidth, 112));
+  const height = displayItems.length > 1 ? (displayItems.length * 15) + 8 : 24;
+  const left = centered ? x - width / 2 : x;
+
+  return (
+    <g transform={`translate(${left} ${y})`}>
+      <rect width={width} height={height} rx="5" fill={color} />
+      {displayItems.map((line, index) => (
+        <text
+          key={`${line}-${index}`}
+          x={width / 2}
+          y={displayItems.length > 1 ? 15 + (index * 15) : 16}
+          textAnchor="middle"
+          fill="#ffffff"
+          fontSize="11"
+          fontWeight="700"
+        >
+          {line}
+        </text>
+      ))}
     </g>
   );
 }
@@ -582,7 +621,7 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
   );
 }
 
-function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, chartTheme }) {
+function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDrawingId, overlaySize, chartTheme }) {
   const selectedDrawing = renderedDrawings.find((d) => d.id === selectedDrawingId);
 
   const resizeHandles = [];
@@ -880,16 +919,20 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
 
           if (isPositionDrawing(d)) {
             const geometry = getPositionGeometry(d);
-            const outline = 'rgba(226, 232, 240, 0.75)';
+            const outline = '#5b8cff';
             const baseProfitFill = chartTheme?.mode === 'light'
-              ? 'rgba(22, 101, 52, 0.08)'
-              : 'rgba(22, 101, 52, 0.08)';
+              ? 'rgba(34, 197, 94, 0.16)'
+              : 'rgba(34, 197, 94, 0.14)';
             const baseLossFill = chartTheme?.mode === 'light'
-              ? 'rgba(127, 29, 29, 0.08)'
-              : 'rgba(127, 29, 29, 0.08)';
+              ? 'rgba(239, 68, 68, 0.14)'
+              : 'rgba(239, 68, 68, 0.13)';
             const currentFill = geometry.currentIsProfit
-              ? 'rgba(34, 197, 94, 0.07)'
-              : 'rgba(239, 68, 68, 0.07)';
+              ? 'rgba(34, 197, 94, 0.12)'
+              : 'rgba(239, 68, 68, 0.11)';
+            const targetBadgeY = Math.min(Math.max(geometry.isLong ? geometry.targetY - 42 : geometry.targetY + 4, 2), Math.max(overlaySize.height - 42, 2));
+            const stopBadgeY = Math.min(Math.max(geometry.isLong ? geometry.stopY + 4 : geometry.stopY - 42, 2), Math.max(overlaySize.height - 42, 2));
+            const entryBadgeY = Math.min(Math.max(geometry.entryY - 19, 2), Math.max(overlaySize.height - 40, 2));
+            const openPnlColor = geometry.openPnl > 0 ? '#089981' : geometry.openPnl < 0 ? '#f23645' : '#2962ff';
 
             return (
               <g key={d.id}>
@@ -899,9 +942,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   width={geometry.profitRect.width}
                   height={geometry.profitRect.height}
                   fill={baseProfitFill}
-                  stroke="rgba(34, 197, 94, 0.85)"
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
+                  stroke="none"
                 />
                 <rect
                   x={geometry.lossRect.left}
@@ -909,9 +950,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   width={geometry.lossRect.width}
                   height={geometry.lossRect.height}
                   fill={baseLossFill}
-                  stroke="rgba(239, 68, 68, 0.85)"
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={d.id.startsWith('temp-') ? '5,5' : undefined}
+                  stroke="none"
                 />
                 {geometry.currentRect && (
                   <rect
@@ -929,23 +968,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                   x2={geometry.left + geometry.width}
                   y2={geometry.entryY}
                   stroke={outline}
-                  strokeWidth={Math.max(strokeWidth, 2)}
-                />
-                <line
-                  x1={geometry.left}
-                  y1={geometry.targetY}
-                  x2={geometry.left + geometry.width}
-                  y2={geometry.targetY}
-                  stroke="rgba(34, 197, 94, 0.95)"
-                  strokeWidth={Math.max(strokeWidth, 2)}
-                />
-                <line
-                  x1={geometry.left}
-                  y1={geometry.stopY}
-                  x2={geometry.left + geometry.width}
-                  y2={geometry.stopY}
-                  stroke="rgba(239, 68, 68, 0.95)"
-                  strokeWidth={Math.max(strokeWidth, 2)}
+                  strokeWidth="1"
                 />
                 {d.screen.pCurrent && (
                   <>
@@ -969,21 +992,49 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
                     />
                   </>
                 )}
-                {!d.id.startsWith('temp-') && (
+                {!d.id.startsWith('temp-') && (d.id === selectedDrawingId || d.id === hoveredPositionDrawingId) && (
                   <>
-                    <text
-                      x={geometry.left + 8}
-                      y={geometry.isLong ? geometry.targetY + 18 : geometry.targetY - 10}
-                      fill="#ffffff"
-                      fontSize="12"
-                      fontWeight={textWeight}
-                      fontStyle={textStyle}
-                      paintOrder="stroke"
-                      stroke="rgba(15, 23, 42, 0.95)"
-                      strokeWidth="4"
-                      strokeLinejoin="round"
+                    <PositionInfoBadge
+                      x={geometry.left + (geometry.width / 2)}
+                      y={targetBadgeY}
+                      lines={geometry.targetLabel}
+                      color="#089981"
+                      maxWidth={Math.max(geometry.width, 360)}
+                      centered
+                      wrap={false}
+                    />
+                    <PositionInfoBadge
+                      x={geometry.left + (geometry.width / 2)}
+                      y={stopBadgeY}
+                      lines={geometry.stopLabel}
+                      color="#f23645"
+                      maxWidth={Math.max(geometry.width, 360)}
+                      centered
+                      wrap={false}
+                    />
+                    <PositionInfoBadge
+                      x={geometry.left + (geometry.width / 2)}
+                      y={entryBadgeY}
+                      lines={[geometry.openPnlLabel, geometry.riskRewardLabel]}
+                      color={openPnlColor}
+                      maxWidth={Math.max(geometry.width * 0.8, 176)}
+                      centered
+                    />
+                    <g opacity="0" aria-hidden="true" transform={`translate(${geometry.left + 6} ${geometry.entryY - 10})`}>
+                      <rect width={geometry.isLong ? 132 : 138} height="20" rx="3" fill={geometry.isLong ? '#16a34a' : '#dc2626'} />
+                      <text x="7" y="14" fill="#ffffff" fontSize="10" fontWeight="800">
+                        {geometry.directionLabel} · {geometry.entryLabel}
+                      </text>
+                    </g>
+                    <text opacity="0" aria-hidden="true"
+                      x={geometry.left + geometry.width - 6}
+                      y={geometry.entryY - 6}
+                      textAnchor="end"
+                      fill="#cbd5e1"
+                      fontSize="9"
+                      fontWeight="700"
                     >
-                      {geometry.label}
+                      {geometry.durationLabel}
                     </text>
                   </>
                 )}
@@ -1215,6 +1266,7 @@ export default function ChartStage({
   renderedBacktestOrders,
   renderedTradeMarkers,
   selectedDrawingId,
+  hoveredPositionDrawingId,
   textInput,
   textDraft,
   onTextDraftChange,
@@ -1311,6 +1363,7 @@ export default function ChartStage({
       <DrawingOverlay
         renderedDrawings={renderedDrawings}
         selectedDrawingId={selectedDrawingId}
+        hoveredPositionDrawingId={hoveredPositionDrawingId}
         overlaySize={mainOverlaySize}
         chartTheme={chartTheme}
       />
