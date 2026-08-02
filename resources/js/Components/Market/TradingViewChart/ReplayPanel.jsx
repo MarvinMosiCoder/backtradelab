@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { usePage } from '@inertiajs/react';
 import {
   Bold,
@@ -9,16 +10,22 @@ import {
   Copy,
   Crosshair,
   Gauge,
+  GripVertical,
   Italic,
+  LayoutGrid,
   LocateFixed,
   LoaderCircle,
+  MoreHorizontal,
   MousePointer2,
   MoveRight,
+  PaintBucket,
   Palette,
   Pause,
+  Pencil,
   Play,
   RotateCcw,
   Save,
+  Settings,
   SkipBack,
   SkipForward,
   Slash,
@@ -153,23 +160,41 @@ function Flyout({ title, icon: Icon, onClose, children, bodyClassName = 'space-y
   );
 }
 
-function TopMenuButton({ icon: Icon, children, active, disabled, onClick, className = '', chartTheme }) {
-  const inactiveClass = chartTheme?.mode === 'light'
-    ? 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-    : 'bg-black-table-color text-white hover:bg-skin-black-light';
+function ToolEditorButton({
+  icon: Icon,
+  title,
+  active = false,
+  disabled = false,
+  onClick,
+  children,
+  className = '',
+  chartTheme,
+  showTooltip = false,
+}) {
+  const isDark = chartTheme?.mode !== 'light';
 
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
-        active ? (chartTheme?.mode === 'light' ? 'bg-skin-black text-white' : 'bg-white text-skin-black') : inactiveClass
+      aria-label={title}
+      title={title}
+      className={`group relative inline-flex h-11 shrink-0 items-center justify-center gap-1.5 px-3 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
+        active
+          ? isDark ? 'bg-[#2a2e39] text-white' : 'bg-slate-200 text-slate-950'
+          : isDark ? 'text-[#d1d4dc] hover:bg-white/[0.06] hover:text-white' : 'text-slate-700 hover:bg-slate-100 hover:text-slate-950'
       } ${className}`}
     >
-      {Icon && <Icon size={14} className="shrink-0" />}
-      <span className="truncate">{children}</span>
-      <ChevronDown size={13} className="shrink-0 opacity-70" />
+      {Icon && <Icon size={20} strokeWidth={1.65} className="shrink-0" />}
+      {children}
+      {showTooltip && (
+        <span className={`pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-[70] -translate-x-1/2 whitespace-nowrap rounded px-2 py-1 text-xs font-semibold opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 ${
+          isDark ? 'bg-[#363a45] text-[#f0f3fa]' : 'bg-slate-800 text-white'
+        }`}>
+          {title}
+        </span>
+      )}
     </button>
   );
 }
@@ -237,9 +262,172 @@ function getToolLabel(type) {
   );
 }
 
+function formatDrawingDateTime(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) return '';
+
+  const date = new Date(seconds * 1000);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function parseDrawingDateTime(value, fallback) {
+  const milliseconds = new Date(value).getTime();
+  return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1000) : fallback;
+}
+
+function DrawingSettingsDialog({
+  drawing,
+  editorLabel,
+  timeframe,
+  chartTheme,
+  onClose,
+  onApply,
+}) {
+  const isDark = chartTheme?.mode !== 'light';
+  const [activeTab, setActiveTab] = useState('style');
+  const [draft, setDraft] = useState(() => ({ ...drawing }));
+  const tabs = ['style', 'text', 'coordinates', 'visibility'];
+  const surfaceClass = isDark ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800';
+  const fieldClass = isDark
+    ? 'border-[#434651] bg-[#1e222d] text-[#d1d4dc] focus:border-[#2962ff]'
+    : 'border-slate-300 bg-white text-slate-800 focus:border-blue-600';
+  const mutedClass = isDark ? 'text-[#b2b5be]' : 'text-slate-600';
+  const dividerClass = isDark ? 'border-[#363a45]' : 'border-slate-200';
+  const startPoint = draft.start ?? draft.point ?? null;
+  const endPoint = draft.end ?? null;
+
+  useEffect(() => {
+    setDraft({ ...drawing });
+    setActiveTab('style');
+  }, [drawing?.id]);
+
+  const updatePoint = (key, field, value) => {
+    setDraft((current) => {
+      if (key === 'point') return { ...current, point: { ...current.point, [field]: value } };
+      return { ...current, [key]: { ...current[key], [field]: value } };
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10020] flex items-start justify-center bg-black/10 px-3 pt-[max(4.5rem,8vh)]" data-chart-ui>
+      <section className={`w-full max-w-[476px] overflow-hidden rounded-md border shadow-2xl ${surfaceClass}`} role="dialog" aria-modal="true" aria-label={`${editorLabel} settings`}>
+        <header className="flex items-center justify-between px-6 pb-4 pt-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <h2 className="truncate text-xl font-semibold">{editorLabel}</h2>
+            <Pencil size={19} strokeWidth={1.6} className={mutedClass} />
+          </div>
+          <button type="button" onClick={onClose} className={`flex h-9 w-9 items-center justify-center rounded transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`} aria-label="Close settings"><X size={27} strokeWidth={1.4} /></button>
+        </header>
+
+        <nav className="relative flex px-6" aria-label="Drawing setting sections">
+          {tabs.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`relative flex-1 pb-3 text-sm font-semibold capitalize transition ${activeTab === tab ? '' : mutedClass}`}
+            >
+              {tab}
+              {activeTab === tab && <span className={`absolute bottom-0 left-2 right-2 h-1 rounded-full ${isDark ? 'bg-[#d1d4dc]' : 'bg-slate-700'}`} />}
+            </button>
+          ))}
+          <span className={`absolute bottom-0 left-6 right-6 h-1 rounded-full ${isDark ? 'bg-[#434651]' : 'bg-slate-200'}`} style={{ zIndex: -1 }} />
+        </nav>
+
+        <div className="min-h-[278px] px-6 py-7">
+          {activeTab === 'style' && (
+            <div className="space-y-5">
+              <label className="flex items-center justify-between gap-4 text-sm font-medium">
+                Line color
+                <div className="flex items-center gap-2">
+                  <input type="color" value={normalizeHexColor(draft.color) ?? '#60a5fa'} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} className={`h-11 w-11 cursor-pointer rounded-lg border p-1 ${fieldClass}`} />
+                  <input value={draft.color ?? ''} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} className={`h-11 w-28 rounded-lg border px-3 font-mono text-sm outline-none ${fieldClass}`} aria-label="Line color value" />
+                </div>
+              </label>
+              <label className="flex items-center justify-between gap-4 text-sm font-medium">
+                Line width
+                <select value={draft.strokeWidth ?? 1} onChange={(event) => setDraft((current) => ({ ...current, strokeWidth: Number(event.target.value) }))} className={`h-11 w-44 rounded-lg border px-3 outline-none ${fieldClass}`}>
+                  {DRAWING_WIDTHS.map((width) => <option key={width} value={width}>{width}px</option>)}
+                </select>
+              </label>
+              <label className="flex items-center justify-between gap-4 text-sm font-medium">
+                Line style
+                <select value={draft.lineStyle ?? 'solid'} onChange={(event) => setDraft((current) => ({ ...current, lineStyle: event.target.value }))} className={`h-11 w-44 rounded-lg border px-3 outline-none ${fieldClass}`}>
+                  <option value="solid">Solid</option>
+                  <option value="dashed">Dashed</option>
+                </select>
+              </label>
+            </div>
+          )}
+
+          {activeTab === 'text' && (
+            <div className="space-y-5">
+              <label className="flex items-center gap-3 text-sm font-medium">
+                <input type="checkbox" checked={draft.showText !== false} onChange={(event) => setDraft((current) => ({ ...current, showText: event.target.checked }))} className="h-5 w-5 accent-emerald-400" />
+                Text
+              </label>
+              <div className="flex items-center gap-2">
+                <input type="color" value={normalizeHexColor(draft.color) ?? '#ffffff'} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} className={`h-11 w-11 cursor-pointer rounded-lg border p-1 ${fieldClass}`} aria-label="Text color" />
+                <button type="button" onClick={() => setDraft((current) => ({ ...current, textBold: !current.textBold }))} className={`h-11 w-11 rounded-lg border text-lg font-bold ${fieldClass} ${draft.textBold ? 'ring-1 ring-[#2962ff]' : ''}`}>B</button>
+                <button type="button" onClick={() => setDraft((current) => ({ ...current, textItalic: !current.textItalic }))} className={`h-11 w-11 rounded-lg border text-lg italic ${fieldClass} ${draft.textItalic ? 'ring-1 ring-[#2962ff]' : ''}`}>I</button>
+              </div>
+              <textarea value={draft.text ?? draft.labelText ?? ''} onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value, labelText: event.target.value }))} disabled={draft.showText === false} className={`h-28 w-full resize-none rounded-lg border p-3 text-sm outline-none ${fieldClass} disabled:opacity-40`} placeholder="Drawing text" />
+              <div className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2">
+                <span className="text-sm font-medium">Text alignment</span>
+                <select value={draft.labelVertical ?? 'top'} onChange={(event) => setDraft((current) => ({ ...current, labelVertical: event.target.value }))} className={`h-11 rounded-lg border px-3 outline-none ${fieldClass}`}><option value="top">Top</option><option value="middle">Inside</option><option value="bottom">Bottom</option></select>
+                <select value={draft.labelHorizontal ?? 'center'} onChange={(event) => setDraft((current) => ({ ...current, labelHorizontal: event.target.value }))} className={`h-11 rounded-lg border px-3 outline-none ${fieldClass}`}><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'coordinates' && (
+            <div className="space-y-5">
+              {startPoint && (
+                <div className="grid grid-cols-[72px_1fr_1fr] items-center gap-2">
+                  <span className="text-sm font-medium">Point 1</span>
+                  <input type="datetime-local" value={formatDrawingDateTime(startPoint.time)} onChange={(event) => updatePoint(draft.point ? 'point' : 'start', 'time', parseDrawingDateTime(event.target.value, startPoint.time))} className={`h-11 min-w-0 rounded-lg border px-2 text-xs outline-none ${fieldClass}`} />
+                  <input type="number" step="any" value={startPoint.price ?? ''} onChange={(event) => updatePoint(draft.point ? 'point' : 'start', 'price', Number(event.target.value))} className={`h-11 min-w-0 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} placeholder="Price" />
+                </div>
+              )}
+              {endPoint && (
+                <div className="grid grid-cols-[72px_1fr_1fr] items-center gap-2">
+                  <span className="text-sm font-medium">Point 2</span>
+                  <input type="datetime-local" value={formatDrawingDateTime(endPoint.time)} onChange={(event) => updatePoint('end', 'time', parseDrawingDateTime(event.target.value, endPoint.time))} className={`h-11 min-w-0 rounded-lg border px-2 text-xs outline-none ${fieldClass}`} />
+                  <input type="number" step="any" value={endPoint.price ?? ''} onChange={(event) => updatePoint('end', 'price', Number(event.target.value))} className={`h-11 min-w-0 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} placeholder="Price" />
+                </div>
+              )}
+              {!startPoint && <p className={`text-sm ${mutedClass}`}>This drawing does not expose editable coordinates.</p>}
+            </div>
+          )}
+
+          {activeTab === 'visibility' && (
+            <div className="space-y-4">
+              <label className={`flex cursor-pointer items-center justify-between rounded-lg border p-4 ${dividerClass}`}>
+                <div><div className="text-sm font-semibold">All timeframes</div><div className={`mt-1 text-xs ${mutedClass}`}>Show this drawing when changing timeframe.</div></div>
+                <input type="checkbox" checked={!draft.visibleTimeframe} onChange={(event) => setDraft((current) => ({ ...current, visibleTimeframe: event.target.checked ? null : timeframe }))} className="h-5 w-5 accent-[#2962ff]" />
+              </label>
+              <label className={`flex cursor-pointer items-center justify-between rounded-lg border p-4 ${dividerClass}`}>
+                <div><div className="text-sm font-semibold">Lock drawing</div><div className={`mt-1 text-xs ${mutedClass}`}>Prevent accidental moving and resizing.</div></div>
+                <input type="checkbox" checked={Boolean(draft.locked)} onChange={(event) => setDraft((current) => ({ ...current, locked: event.target.checked }))} className="h-5 w-5 accent-[#2962ff]" />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <footer className={`flex items-center justify-end gap-3 border-t px-6 py-5 ${dividerClass}`}>
+          <button type="button" onClick={onClose} className={`h-11 rounded-lg border px-5 text-sm font-semibold ${fieldClass}`}>Cancel</button>
+          <button type="button" onClick={() => onApply(draft)} className="h-11 rounded-lg bg-emerald-400 px-5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Ok</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function TopToolEditorBar({
   editorLabel,
   editorType,
+  timeframe,
   activeColor,
   activeStrokeWidth,
   activeLineStyle,
@@ -282,9 +470,6 @@ function TopToolEditorBar({
   const menuPanelClass = isDark
     ? 'absolute left-1/2 top-10 z-50 w-[min(300px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-gray-700 bg-skin-black/95 p-3 text-white shadow-2xl backdrop-blur'
     : 'absolute left-1/2 top-10 z-50 w-[min(300px,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-slate-200 bg-white p-3 text-slate-800 shadow-2xl backdrop-blur';
-  const editorBadgeClass = isDark
-    ? 'bg-black-table-color text-gray-200'
-    : 'border border-slate-200 bg-slate-50 text-slate-700';
   const editorLabelClass = isDark ? 'text-gray-400' : 'text-slate-600';
   const editorFieldClass = isDark
     ? 'border-gray-700 bg-black-table-color text-white placeholder:text-gray-500'
@@ -299,6 +484,7 @@ function TopToolEditorBar({
         : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
   );
   const displayColor = normalizeHexColor(activeColor) ?? activeColor ?? '#60a5fa';
+  const EditorToolIcon = TOOL_BUTTONS.find((item) => item.type === editorType)?.icon ?? MousePointer2;
 
   useEffect(() => {
     setHexColorDraft(normalizeHexColor(activeColor) ?? activeColor ?? '');
@@ -318,32 +504,115 @@ function TopToolEditorBar({
 
   return (
     <div
-      className="pointer-events-auto absolute top-2 z-[60] w-max -translate-x-1/2 rounded-lg border p-1.5 shadow-2xl backdrop-blur"
+      className="pointer-events-auto absolute top-2 z-[60] w-max -translate-x-1/2 rounded-lg border shadow-2xl backdrop-blur"
       style={{
         ...getPanelStyle(chartTheme),
         left: 'calc(50% + 24px)',
         maxWidth: `${Math.max(Number(availableWidth) || 140, 140)}px`,
       }}
     >
-      <div className="flex flex-wrap items-center gap-1.5">
-        <div className={`flex h-8 items-center gap-2 rounded-md px-2.5 text-xs font-semibold ${editorBadgeClass}`}>
-          <Palette size={14} />
-          <span>{editorLabel || 'Tool'}</span>
+      <div className="flex h-11 max-w-full flex-nowrap items-center overflow-visible">
+        <div
+          className={`flex h-11 w-7 shrink-0 cursor-grab items-center justify-center rounded-l-lg ${
+            isDark ? 'text-[#787b86]' : 'text-slate-400'
+          }`}
+          title="Tool settings"
+          aria-hidden="true"
+        >
+          <GripVertical size={17} strokeWidth={2} />
         </div>
 
-        <div className="relative">
-          <TopMenuButton
+        <div className="relative order-1">
+          <ToolEditorButton
+            icon={LayoutGrid}
+            title="Templates"
+            active={openMenu === 'presets'}
+            disabled={!canUsePresets}
+            onClick={() => toggleMenu('presets')}
+            className="rounded-sm"
+            chartTheme={chartTheme}
+            showTooltip={openMenu !== 'presets'}
+          />
+          {openMenu === 'presets' && (
+            <div className={menuPanelClass}>
+              <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Templates</div>
+              <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
+                {presetItems.map((preset) => (
+                  <div key={preset.id ?? preset.name} className="grid grid-cols-[minmax(0,1fr)_32px] gap-1.5">
+                    <ControlButton
+                      icon={MousePointer2}
+                      onClick={() => {
+                        onApplyToolPreset(editorType, preset);
+                        setOpenMenu(null);
+                      }}
+                      title={`Use ${preset.name}`}
+                      className="max-w-full justify-start"
+                      chartTheme={chartTheme}
+                    >
+                      {preset.name}
+                    </ControlButton>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteToolPreset(editorType, preset)}
+                      className="flex h-8 w-8 items-center justify-center rounded-md bg-red-950/70 text-red-200 hover:bg-red-900 hover:text-white"
+                      title={`Delete ${preset.name}`}
+                      aria-label={`Delete ${preset.name}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+
+                {!presetItems.length && (
+                  <span className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>No saved templates</span>
+                )}
+              </div>
+
+              {selectedDrawing && (
+                <div className={`mt-3 border-t pt-3 ${isDark ? 'border-gray-800' : 'border-slate-200'}`}>
+                  <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Save Template</div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <input
+                      value={presetNameDraft}
+                      onChange={(event) => setPresetNameDraft(event.target.value)}
+                      placeholder={`${editorLabel} template name`}
+                      className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
+                    />
+                    <ControlButton
+                      icon={Save}
+                      onClick={onSavePreset}
+                      variant="success"
+                      disabled={!presetNameDraft.trim()}
+                      chartTheme={chartTheme}
+                    >
+                      Save
+                    </ControlButton>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <ToolEditorButton
+          icon={EditorToolIcon}
+          title={editorLabel || 'Selected tool'}
+          className="order-2"
+          chartTheme={chartTheme}
+        >
+          <span className="absolute bottom-1 left-3 right-3 h-0.5 rounded-full" style={{ backgroundColor: displayColor }} />
+        </ToolEditorButton>
+
+        <div className="relative order-3">
+          <ToolEditorButton
+            icon={PaintBucket}
+            title="Color"
             active={openMenu === 'color'}
             onClick={() => toggleMenu('color')}
-            className="w-24 justify-start"
             chartTheme={chartTheme}
           >
-            <span
-              className="h-3.5 w-3.5 shrink-0 rounded-sm border border-white/50"
-              style={{ backgroundColor: displayColor }}
-            />
-            Color
-          </TopMenuButton>
+            <span className="absolute bottom-1 left-3 right-3 h-0.5 rounded-full" style={{ backgroundColor: displayColor }} />
+          </ToolEditorButton>
           {openMenu === 'color' && (
             <div className={menuPanelClass}>
               <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Color</div>
@@ -394,10 +663,11 @@ function TopToolEditorBar({
         </div>
 
         {canEditWidth && (
-          <div className="relative">
-            <TopMenuButton active={openMenu === 'width'} onClick={() => toggleMenu('width')} chartTheme={chartTheme}>
-              {activeStrokeWidth}px
-            </TopMenuButton>
+          <div className="relative order-5">
+            <ToolEditorButton title="Line width" active={openMenu === 'width'} onClick={() => toggleMenu('width')} chartTheme={chartTheme} className="px-2.5">
+              <span className="block h-px w-5 bg-current" />
+              <span className="text-sm font-semibold tabular-nums">{activeStrokeWidth}px</span>
+            </ToolEditorButton>
             {openMenu === 'width' && (
               <div className={menuPanelClass}>
                 <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Line Width</div>
@@ -426,10 +696,15 @@ function TopToolEditorBar({
         )}
 
         {canEditLineStyle && (
-          <div className="relative">
-            <TopMenuButton active={openMenu === 'style'} onClick={() => toggleMenu('style')} chartTheme={chartTheme}>
-              {activeLineStyle === 'dashed' ? 'Dashed' : 'Solid'}
-            </TopMenuButton>
+          <div className="relative order-4">
+            <ToolEditorButton icon={Slash} title="Line style" active={openMenu === 'style'} onClick={() => toggleMenu('style')} chartTheme={chartTheme}>
+              <span
+                className="absolute bottom-1 left-3 right-3 h-0.5"
+                style={activeLineStyle === 'dashed' ? {
+                  backgroundImage: `repeating-linear-gradient(to right, ${displayColor} 0 5px, transparent 5px 8px)`,
+                } : { backgroundColor: displayColor }}
+              />
+            </ToolEditorButton>
             {openMenu === 'style' && (
               <div className={menuPanelClass}>
                 <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Line Style</div>
@@ -464,10 +739,10 @@ function TopToolEditorBar({
           </div>
         )}
 
-        <div className="relative">
-          <TopMenuButton active={openMenu === 'text-style'} onClick={() => toggleMenu('text-style')} chartTheme={chartTheme}>
-            Style
-          </TopMenuButton>
+        <div className="relative order-6">
+          <ToolEditorButton icon={Type} title="Text style" active={openMenu === 'text-style'} onClick={() => toggleMenu('text-style')} chartTheme={chartTheme}>
+            <span className="absolute bottom-1 left-3 right-3 h-0.5 rounded-full" style={{ backgroundColor: displayColor }} />
+          </ToolEditorButton>
           {openMenu === 'text-style' && (
             <div className={menuPanelClass}>
               <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Text Style</div>
@@ -497,164 +772,79 @@ function TopToolEditorBar({
           )}
         </div>
 
-        {canEditLabel && (
-          <div className="relative">
-            <TopMenuButton active={openMenu === 'label'} onClick={() => toggleMenu('label')} chartTheme={chartTheme}>
-              Label
-            </TopMenuButton>
-            {openMenu === 'label' && (
-              <div className={menuPanelClass}>
-                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Label</div>
-                <input
-                  value={activeLabelText}
-                  onChange={(event) => onDrawingLabelChange({ labelText: event.target.value })}
-                  placeholder={editorType === 'rect' ? 'Box text' : 'Line text'}
-                  className={`mb-2 h-8 w-full rounded border px-2 text-xs outline-none ${editorFieldClass}`}
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={activeLabelVertical}
-                    onChange={(event) => onDrawingLabelChange({ labelVertical: event.target.value })}
-                    className={`h-8 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
-                    title="Vertical label position"
-                  >
-                    <option value="top">Top</option>
-                    <option value="middle">Middle</option>
-                    <option value="bottom">Bottom</option>
-                  </select>
-                  <select
-                    value={activeLabelHorizontal}
-                    onChange={(event) => onDrawingLabelChange({ labelHorizontal: event.target.value })}
-                    className={`h-8 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
-                    title="Horizontal label position"
-                  >
-                    <option value="left">Left</option>
-                    <option value="center">Center</option>
-                    <option value="right">Right</option>
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {canEditText && (
-          <div className="relative">
-            <TopMenuButton active={openMenu === 'text'} onClick={() => toggleMenu('text')} chartTheme={chartTheme}>
-              Text
-            </TopMenuButton>
-            {openMenu === 'text' && (
-              <div className={menuPanelClass}>
-                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Text</div>
-                <input
-                  value={activeText}
-                  onChange={(event) => onDrawingLabelChange({
-                    text: event.target.value,
-                    labelText: event.target.value,
-                  })}
-                  placeholder="Text note"
-                  className={`h-8 w-full rounded border px-2 text-xs outline-none ${editorFieldClass}`}
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        {canUsePresets && (
-          <div className="relative">
-            <TopMenuButton active={openMenu === 'presets'} onClick={() => toggleMenu('presets')} chartTheme={chartTheme}>
-              Templates
-            </TopMenuButton>
-            {openMenu === 'presets' && (
-              <div className={menuPanelClass}>
-                <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Templates</div>
-                <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
-                  {presetItems.map((preset) => (
-                    <div
-                      key={preset.id ?? preset.name}
-                      className="grid grid-cols-[minmax(0,1fr)_32px] gap-1.5"
-                    >
-                      <ControlButton
-                        icon={MousePointer2}
-                        onClick={() => {
-                          onApplyToolPreset(editorType, preset);
-                          setOpenMenu(null);
-                        }}
-                        title={`Use ${preset.name}`}
-                        className="max-w-full justify-start"
-                        chartTheme={chartTheme}
-                      >
-                        {preset.name}
-                      </ControlButton>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteToolPreset(editorType, preset)}
-                        className="flex h-8 w-8 items-center justify-center rounded-md bg-red-950/70 text-red-200 hover:bg-red-900 hover:text-white"
-                        title={`Delete ${preset.name}`}
-                        aria-label={`Delete ${preset.name}`}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-
-                  {!presetItems.length && (
-                    <span className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>No saved templates</span>
-                  )}
-                </div>
-
-                {selectedDrawing && (
-                  <div className={`mt-3 border-t pt-3 ${isDark ? 'border-gray-800' : 'border-slate-200'}`}>
-                    <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Save Template</div>
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                      <input
-                        value={presetNameDraft}
-                        onChange={(event) => setPresetNameDraft(event.target.value)}
-                        placeholder={`${editorLabel} template name`}
-                        className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
-                      />
-                      <ControlButton
-                        icon={Save}
-                        onClick={onSavePreset}
-                        variant="success"
-                        disabled={!presetNameDraft.trim()}
-                        chartTheme={chartTheme}
-                      >
-                        Save
-                      </ControlButton>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+        {selectedDrawing && (
+          <div className="relative order-7">
+            <ToolEditorButton icon={Settings} title="Drawing settings" active={openMenu === 'settings'} onClick={() => toggleMenu('settings')} chartTheme={chartTheme} />
           </div>
         )}
 
         {selectedDrawing && (
           <>
-            <button
-              type="button"
-              onClick={onDuplicateSelectedDrawing}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition ${
-                isDark ? 'bg-black-table-color text-slate-100 hover:bg-skin-black-light hover:text-white' : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
-              }`}
+            <ToolEditorButton
+              icon={Copy}
               title="Duplicate selected drawing"
-              aria-label="Duplicate selected drawing"
-            >
-              <Copy size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={onDeleteSelectedDrawing}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-red-950/80 text-red-200 transition hover:bg-red-900 hover:text-white"
+              onClick={onDuplicateSelectedDrawing}
+              className="order-8"
+              chartTheme={chartTheme}
+            />
+            <ToolEditorButton
+              icon={Trash2}
               title="Delete selected drawing"
-              aria-label="Delete selected drawing"
-            >
-              <Trash2 size={14} />
-            </button>
+              onClick={onDeleteSelectedDrawing}
+              className="order-9 hover:!bg-red-500/15 hover:!text-red-400"
+              chartTheme={chartTheme}
+            />
+            <div className="relative order-10">
+              <ToolEditorButton
+                icon={MoreHorizontal}
+                title="More drawing actions"
+                active={openMenu === 'actions'}
+                onClick={() => toggleMenu('actions')}
+                className="rounded-r-lg"
+                chartTheme={chartTheme}
+              />
+              {openMenu === 'actions' && (
+                <div className={`${menuPanelClass} !left-auto !right-0 !w-44 !translate-x-0`}>
+                  <button type="button" onClick={() => { onDuplicateSelectedDrawing(); setOpenMenu(null); }} className={`flex h-9 w-full items-center gap-2 rounded px-2 text-left text-xs ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}><Copy size={15} />Duplicate drawing</button>
+                  <button type="button" onClick={() => { onDeleteSelectedDrawing(); setOpenMenu(null); }} className="flex h-9 w-full items-center gap-2 rounded px-2 text-left text-xs text-red-400 hover:bg-red-500/10"><Trash2 size={15} />Delete drawing</button>
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>
+
+      {openMenu === 'settings' && selectedDrawing && typeof document !== 'undefined' && createPortal(
+        <DrawingSettingsDialog
+          drawing={selectedDrawing}
+          editorLabel={editorLabel}
+          timeframe={timeframe}
+          chartTheme={chartTheme}
+          onClose={() => setOpenMenu(null)}
+          onApply={(nextDrawing) => {
+            if (nextDrawing.color !== activeColor) onDrawingColorChange(nextDrawing.color);
+            if (canEditWidth && nextDrawing.strokeWidth !== activeStrokeWidth) onDrawingWidthChange(nextDrawing.strokeWidth);
+            if (canEditLineStyle && nextDrawing.lineStyle !== activeLineStyle) onDrawingLineStyleChange(nextDrawing.lineStyle);
+            onDrawingLabelChange({
+              labelText: nextDrawing.labelText ?? '',
+              ...(nextDrawing.type === 'text' ? { text: nextDrawing.text ?? nextDrawing.labelText ?? '' } : {}),
+              labelVertical: nextDrawing.labelVertical ?? 'top',
+              labelHorizontal: nextDrawing.labelHorizontal ?? 'center',
+              textBold: Boolean(nextDrawing.textBold),
+              textItalic: Boolean(nextDrawing.textItalic),
+              showText: nextDrawing.showText !== false,
+              locked: Boolean(nextDrawing.locked),
+              visibleTimeframe: nextDrawing.visibleTimeframe ?? null,
+              ...(nextDrawing.start ? { start: nextDrawing.start } : {}),
+              ...(nextDrawing.end ? { end: nextDrawing.end } : {}),
+              ...(nextDrawing.point ? { point: nextDrawing.point } : {}),
+              ...(nextDrawing.points ? { points: nextDrawing.points } : {}),
+            });
+            setOpenMenu(null);
+          }}
+        />,
+        document.body
+      )}
     </div>
   );
 }
@@ -876,6 +1066,7 @@ export default function ReplayPanel({
   onStartBacktestSession,
   onEndBacktestSession,
   symbol,
+  timeframe,
   executionPrice,
   backtestAccount,
   backtestError,
@@ -1859,6 +2050,7 @@ export default function ReplayPanel({
         <TopToolEditorBar
           editorLabel={editorLabel}
           editorType={editorType}
+          timeframe={timeframe}
           activeColor={activeColor}
           activeStrokeWidth={activeStrokeWidth}
           activeLineStyle={activeLineStyle}

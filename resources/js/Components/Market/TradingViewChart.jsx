@@ -2180,7 +2180,8 @@ export default function TradingViewReplayChart({
   }, []);
 
   const renderedDrawings = useMemo(() => {
-    const all = [...drawings, ...(tempDrawing ? [tempDrawing] : [])];
+    const all = [...drawings, ...(tempDrawing ? [tempDrawing] : [])]
+      .filter((drawing) => !drawing.visibleTimeframe || drawing.visibleTimeframe === loadedTimeframe);
 
     return all.map((drawing) => {
       if (isLineLikeDrawing(drawing)) {
@@ -2261,7 +2262,7 @@ export default function TradingViewReplayChart({
 
       return null;
     }).filter(Boolean);
-  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop, visibleCandles]);
+  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop, loadedTimeframe, visibleCandles]);
 
   const renderedBacktestOrders = useMemo(() => {
     const series = candleSeriesRef.current;
@@ -3643,6 +3644,15 @@ export default function TradingViewReplayChart({
         const drawing = drawingsRef.current.find((d) => d.id === resizeHit.drawingId);
         if (!drawing) return;
 
+        if (drawing.locked) {
+          event.preventDefault();
+          event.stopPropagation();
+          setSelectedDrawingId(resizeHit.drawingId);
+          resizeDrawingRef.current = null;
+          dragDrawingRef.current = null;
+          return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
         setChartMouseInteractions(false);
@@ -3788,6 +3798,11 @@ export default function TradingViewReplayChart({
 
         const coords = getChartCoordinates(x, y);
         const drawing = drawingsRef.current.find((d) => d.id === hitId);
+        if (drawing?.locked) {
+          dragDrawingRef.current = null;
+          restoreChartMouseInteractions();
+          return;
+        }
         if (coords && drawing) {
           let anchor;
           if (isTwoPointDrawing(drawing)) {
@@ -5808,6 +5823,7 @@ export default function TradingViewReplayChart({
             selectedDrawing={selectedDrawing}
             toolSettings={toolSettings}
             symbol={symbol}
+            timeframe={timeframe}
             executionPrice={executionPrice}
             backtestAccount={backtestAccount}
             backtestError={backtestError}

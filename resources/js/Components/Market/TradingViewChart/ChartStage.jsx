@@ -648,7 +648,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
               ...(d.screen.previewPoint ? [d.screen.previewPoint] : []),
             ];
             const pathData = buildPathData(pathPoints);
-            const labelText = d.labelText?.trim();
+            const labelText = d.showText === false ? '' : d.labelText?.trim();
             const labelPosition = labelText ? getPathLabelPosition(d) : null;
             const pathDashArray = d.id.startsWith('temp-')
               ? '5,5'
@@ -709,7 +709,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
             const lineEnd = d.screen.rayEnd ?? d.screen.p2;
             const isUtilityTool = d.type === 'measure' || d.type === 'forecast';
             const isDashedLine = d.lineStyle === 'dashed';
-            const labelText = d.labelText?.trim();
+            const labelText = d.showText === false ? '' : d.labelText?.trim();
             const labelPosition = labelText ? getLineLabelPosition(d) : null;
             const lineGapSegments = getLineLabelGapSegments(d.screen.p1, lineEnd, labelText, d);
             const lineDashArray = d.id.startsWith('temp-')
@@ -993,7 +993,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
 
           if (['rect', 'price-range', 'date-range', 'price-date-range'].includes(d.type)) {
             const rect = normalizeVisibleRect(d.screen.p1, d.screen.p2);
-            const labelText = d.labelText?.trim();
+            const labelText = d.showText === false ? '' : d.labelText?.trim();
             const labelPosition = labelText ? getBoxLabelPosition(rect, d) : null;
             const rectDashArray = d.id.startsWith('temp-')
               ? '5,5'
@@ -1082,7 +1082,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, overlaySize, char
       </svg>
 
       {renderedDrawings
-        .filter((d) => d.type === 'text')
+        .filter((d) => d.type === 'text' && d.showText !== false)
         .map((d) => {
           return (
             <div

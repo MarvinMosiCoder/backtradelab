@@ -52,3 +52,5 @@ Each left-rail drawing category has a ready-tool button and a separate list trig
 The chart supports lines, rays, arrows, horizontal/vertical lines, paths, Fibonacci tools, parallel channels, position/forecast tools, rectangles, annotations, and Price Range, Date Range, and Price & Date Range. Range labels show price/percentage movement, duration, and candle count as applicable. Saving a template over an existing case-insensitive name requires confirmation.
 
 The chart context menu's **Clear Tools** action clears drawings through the same confirmation, persistence, and undo path as the drawing rail. It is disabled when no drawings exist and does not remove indicators, alerts, positions, or templates.
+
+Selecting the toolbar settings action opens a staged drawing editor with Style, Text, Coordinates, and Visibility tabs. **Ok** persists the edited drawing while **Cancel** discards the draft. Coordinate fields update supported point-based drawings, visibility can be limited to the active timeframe, and locked drawings remain selectable but cannot be moved or resized.
