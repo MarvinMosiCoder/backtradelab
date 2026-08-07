@@ -34,8 +34,10 @@ class RouteServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('market-klines', function (Request $request) {
-            $limit = $request->boolean('fresh') ? 30 : 10;
-            return Limit::perMinute($limit)->by(optional($request->user())->id ?: $request->ip());
+            $fresh = $request->boolean('fresh');
+            $limit = $fresh ? 30 : 10;
+            $identity = optional($request->user())->id ?: $request->ip();
+            return Limit::perMinute($limit)->by($identity.($fresh ? ':fresh' : ':history'));
         });
 
         RateLimiter::for('featured-coins', function (Request $request) {

@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessPayMongoWebhookEvent;
 use App\Models\PayMongoWebhookEvent;
-use App\Services\Payments\PayMongoCheckoutService;
 use App\Services\Payments\PayMongoSignatureVerifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,10 +12,15 @@ use Throwable;
 
 class PayMongoWebhookController extends Controller
 {
+    private const SUPPORTED_EVENT_TYPES = [
+        'checkout_session.payment.paid',
+        'payment.refunded',
+        'dispute.updated',
+    ];
+
     public function __invoke(
         Request $request,
         PayMongoSignatureVerifier $signatures,
-        PayMongoCheckoutService $checkouts,
     ): JsonResponse {
         try {
             $payload = $signatures->verify($request->getContent(), $request->header('Paymongo-Signature'));
@@ -37,30 +42,41 @@ class PayMongoWebhookController extends Controller
                 'event_type' => $eventType,
                 'livemode' => $livemode,
                 'resource_id' => $resource['id'] ?? null,
+                'resource' => $resource,
                 'status' => 'received',
             ]
         );
 
-        if (!$event->wasRecentlyCreated && in_array($event->status, ['processed', 'ignored'], true)) {
+        if (!$event->wasRecentlyCreated && in_array($event->status, ['processed', 'ignored', 'unhandled'], true)) {
             return response()->json(['received' => true, 'duplicate' => true]);
         }
 
-        if ($eventType !== 'checkout_session.payment.paid') {
-            $event->update(['status' => 'ignored', 'result_message' => 'Unsupported event type.', 'processed_at' => now()]);
-            return response()->json(['received' => true, 'ignored' => true]);
+        if (!in_array($eventType, self::SUPPORTED_EVENT_TYPES, true)) {
+            $looksRelevant = (bool) preg_match('/refund|dispute|chargeback/i', $eventType);
+            $event->update([
+                'status' => $looksRelevant ? 'unhandled' : 'ignored',
+                'result_message' => $looksRelevant
+                    ? 'Refund/dispute-shaped event type has no coded handler yet: '.$eventType
+                    : 'Unsupported event type.',
+                'processed_at' => now(),
+            ]);
+            if ($looksRelevant) {
+                report(new RuntimeException('Unhandled PayMongo refund/dispute-like webhook event: '.$eventType.' (event id '.$eventId.'). Verify against PayMongo docs and add explicit handling.'));
+            }
+            return response()->json(['received' => true, 'ignored' => !$looksRelevant, 'unhandled' => $looksRelevant]);
+        }
+
+        if ($livemode !== (config('services.paymongo.mode') === 'live')) {
+            $event->update([
+                'status' => 'failed',
+                'result_message' => 'Webhook mode does not match the configured PayMongo mode.',
+                'processed_at' => now(),
+            ]);
+            return response()->json(['message' => 'PayMongo event processing failed.'], 500);
         }
 
         try {
-            if ($livemode !== (config('services.paymongo.mode') === 'live')) {
-                throw new RuntimeException('Webhook mode does not match the configured PayMongo mode.');
-            }
-            $payment = $checkouts->processPaidResource($resource);
-            $event->update([
-                'status' => 'processed',
-                'result_message' => 'Payment '.$payment->id.' processed.',
-                'processed_at' => now(),
-            ]);
-            return response()->json(['received' => true]);
+            ProcessPayMongoWebhookEvent::dispatch($event->id);
         } catch (Throwable $exception) {
             $event->update([
                 'status' => 'failed',
@@ -70,5 +86,7 @@ class PayMongoWebhookController extends Controller
             report($exception);
             return response()->json(['message' => 'PayMongo event processing failed.'], 500);
         }
+
+        return response()->json(['received' => true, 'queued' => true]);
     }
 }

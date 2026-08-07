@@ -34,6 +34,8 @@ Route::post('login-save', [LoginController::class, 'authenticate'])
 
 `adm_users` stores identity, provider fields, password-login state, status, privilege, onboarding, trial, and paid-access fields. Password history is stored in `adm_password_histories`.
 
+`Login.jsx` shares the homepage's no-dependency motion style (see [Public and legal pages](public-and-legal-pages.md)): mount-in `animate-fadeInUp` on the header/aside/form, ambient `animate-floatY` glow blobs behind the page, a two-step progress indicator (Email/Password) above the form, and `focus-within` rings on the input wrappers. The step content is wrapped in a `<div key={step}>` so switching steps replays the entrance animation.
+
 ## Security and maintenance
 
 - Keep OAuth secrets in `.env`; expose only callback URLs publicly.
@@ -60,6 +62,8 @@ Related: [Users, profiles, and deactivation](users-profiles-and-deactivation.md)
 
 Email login first collects a syntactically valid email and checks `/login/check-email` for an existing account before showing the password step. The lookup has dedicated identity/IP rate limits. Password submission remains protected by the existing login rate limits.
 
-After the email step, the login form retains the email internally and displays only the password field. Returning to or reloading the login page starts again at the email step.
+After the email step, the login form retains the email internally and displays only the password field. A "Change email" link on the password step returns to the email step without a reload (email value kept, password/errors cleared). Reloading the login page always starts again at the email step.
+
+`Login.jsx`'s email/password fields are plain `<div>` wrappers with a `<span>` caption, not `<label>` elements — a `<label>` wrapping more than one labelable element (inputs, buttons) makes the browser treat the first one as the label's implicit associated control, so clicking any other control inside it (e.g. the show/hide-password toggle) also synthetically clicks that first control. Keep new controls inside the password/email field blocks out of any shared `<label>`.
 
 Known Google/Facebook users sign in directly. Unknown identities are kept in the server session for up to 15 minutes and sent to `/social-registration/confirm`. No user is created until the visitor accepts the Terms and Privacy Policy and selects **Create account**. Acceptance timestamps and the configured legal effective date are stored. Cancel or expiry clears the pending identity.

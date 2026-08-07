@@ -16,6 +16,7 @@ class Kernel extends ConsoleKernel
         $schedule->call('\App\Http\Controllers\PullErpController@getListOfOrdersFromErpv1')->everyMinute();
         $schedule->command('mysql:backup')->daily()->at('06:00');
         $schedule->command('payments:reconcile-paymongo --limit=50')->everyFiveMinutes()->withoutOverlapping();
+        $schedule->command('subscriptions:send-renewal-reminders')->dailyAt('09:00')->withoutOverlapping();
     }
 
     /**

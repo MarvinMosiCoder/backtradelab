@@ -22,6 +22,8 @@ export default function TraderNavbar() {
     const [assetsError, setAssetsError] = useState('');
     const [startingBalance, setStartingBalance] = useState('10000');
     const [unreadNotifications, setUnreadNotifications] = useState(0);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [notifications, setNotifications] = useState([]);
     const [alertToast, setAlertToast] = useState(null);
     const alertSoundEnabledRef = useRef(true);
     const [activeSymbol, setActiveSymbol] = useState(() => {
@@ -62,6 +64,7 @@ export default function TraderNavbar() {
                 const { data } = await axios.get('/notifications/feed');
                 if (stopped) return;
                 setUnreadNotifications(Number(data.unread_notifications) || 0);
+                setNotifications(data.notifications ?? []);
                 alertSoundEnabledRef.current = data.alert_sound_enabled !== false;
                 const alerts = (data.notifications ?? []).filter(item => item.type === 'price alert');
                 const newestAlert = alerts.reduce((newest, item) => Number(item.id) > Number(newest?.id ?? 0) ? item : newest, null);
@@ -152,6 +155,16 @@ export default function TraderNavbar() {
         }
     };
 
+    const markNotificationRead = async (item) => {
+        setShowNotifications(false);
+        if (item.is_read) return;
+        try {
+            await axios.post('/notifications/read', { notification_id: item.id, source_type: 'notification' });
+            setNotifications((current) => current.map((value) => value.id === item.id ? { ...value, is_read: true } : value));
+            setUnreadNotifications((count) => Math.max(count - 1, 0));
+        } catch {}
+    };
+
     const toggleAssets = () => {
         setShowAssets((current) => {
             const next = !current;
@@ -220,10 +233,52 @@ export default function TraderNavbar() {
             <div className="ml-auto" />
 
             <div className={`ml-2 flex items-center gap-1 border-l pl-2 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
-                <Link href="/notifications/view-all-notifications" className="relative rounded-md p-2 hover:bg-white/10" title="Notifications" aria-label="Notifications">
-                    <Bell size={17} />
-                    {unreadNotifications > 0 && <span className="absolute right-0 top-0 flex min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span>}
-                </Link>
+                <div className="relative">
+                    <button
+                        type="button"
+                        onClick={() => setShowNotifications((current) => !current)}
+                        className={`relative rounded-md p-2 transition ${showNotifications ? 'bg-[#2962ff]/15 text-[#5b8cff]' : 'hover:bg-white/10'}`}
+                        title="Notifications"
+                        aria-label="Notifications"
+                        aria-expanded={showNotifications}
+                    >
+                        <Bell size={17} />
+                        {unreadNotifications > 0 && <span className="absolute right-0 top-0 flex min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unreadNotifications > 99 ? '99+' : unreadNotifications}</span>}
+                    </button>
+
+                    {showNotifications && (
+                        <div className={`absolute right-0 top-11 z-[230] w-[min(92vw,380px)] overflow-hidden rounded-xl border shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
+                            <div className={`flex items-center justify-between border-b px-4 py-3 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                                <div className="flex items-center gap-3">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400"><Bell size={18} /></span>
+                                    <div><div className="text-sm font-bold">Notifications</div><div className="text-[10px] uppercase tracking-wider text-[#787b86]">{unreadNotifications} unread</div></div>
+                                </div>
+                                <button type="button" onClick={() => setShowNotifications(false)} className="rounded-md p-2 text-[#787b86] hover:bg-white/10 hover:text-current" aria-label="Close notifications"><X size={16} /></button>
+                            </div>
+
+                            <div className="max-h-[min(72vh,480px)] overflow-y-auto">
+                                {notifications.length ? notifications.map((item) => {
+                                    const rowClass = `flex w-full items-start gap-3 border-b px-4 py-3 text-left transition last:border-0 ${isDark ? 'border-[#2a2e39] hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50'} ${item.is_read ? 'opacity-70' : 'bg-[#2962ff]/5'}`;
+                                    const rowContent = <>
+                                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-400"><Bell size={14} /></span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block text-[10px] font-bold uppercase tracking-wider text-[#787b86]">{item.type}</span>
+                                            <span className={`mt-0.5 block text-xs leading-5 ${isDark ? 'text-[#d1d4dc]' : 'text-slate-700'}`}>{item.content}</span>
+                                            <span className="mt-1 block text-[10px] text-[#787b86]">{new Date(item.created_at).toLocaleString()}</span>
+                                        </span>
+                                    </>;
+                                    return item.url
+                                        ? <a key={item.id} href={item.url} onClick={() => markNotificationRead(item)} className={rowClass}>{rowContent}</a>
+                                        : <button key={item.id} type="button" onClick={() => markNotificationRead(item)} className={rowClass}>{rowContent}</button>;
+                                }) : <div className="p-8 text-center text-xs text-[#787b86]">No notifications yet.</div>}
+                            </div>
+
+                            <Link href="/notifications/view-all-notifications" onClick={() => setShowNotifications(false)} className={`block border-t px-4 py-3 text-center text-xs font-semibold text-[#5b8cff] hover:bg-white/5 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                                View all notifications
+                            </Link>
+                        </div>
+                    )}
+                </div>
                 <div className="relative">
                     <button
                         type="button"

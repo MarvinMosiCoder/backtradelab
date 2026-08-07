@@ -5,14 +5,6 @@ import { ArrowRight, BookOpen, CandlestickChart, CircleDollarSign, CreditCard, F
 import { useTheme } from '../../Context/ThemeContext';
 import { marketCategoryLabel } from '../../utils/marketLabels';
 
-const TOUR_STEPS = [
-    ['Your free backtesting week is ready', 'Your seven-day countdown starts only when you activate it from Replay or Subscription.'],
-    ['Choose your market', 'Browse your saved Spot and Futures markets here, then open one in Workspace.'],
-    ['Analyze the chart', 'In Workspace, use Appearance for Volume, SMA, EMA, RSI, candle colors, size, and price alerts.'],
-    ['Replay history', 'Start Replay and click the historical candle where your practice session should begin.'],
-    ['Execute and review', 'Use Enter Position for paper orders, Assets for demo balances, and Trade journal for review.'],
-];
-
 const marketKey = item => `${String(item.exchange).toLowerCase()}:${String(item.category).toLowerCase()}:${String(item.symbol).toUpperCase()}`;
 
 export default function MarketSummary() {
@@ -28,7 +20,6 @@ export default function MarketSummary() {
     const [metadataLoading, setMetadataLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [expandedAnnouncement, setExpandedAnnouncement] = useState(null);
-    const [tourStep, setTourStep] = useState(auth?.user?.chart_tour_completed_at ? -1 : 0);
 
     useEffect(() => {
         let cancelled = false;
@@ -101,14 +92,6 @@ export default function MarketSummary() {
         }
     };
 
-    const finishTour = async (openWorkspace = false) => {
-        setTourStep(-1);
-        try {
-            await axios.post('/chart-tour/complete');
-            if (openWorkspace) router.visit('/workspace');
-        } catch { setTourStep(0); }
-    };
-
     const panel = dark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white';
     const soft = dark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50';
     const muted = dark ? 'text-[#a6a9b2]' : 'text-slate-600';
@@ -141,8 +124,6 @@ export default function MarketSummary() {
                 {!symbolsLoaded ? <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{[0,1,2].map(item => <SkeletonCard key={item} panel={panel}/>)}</div> : filtered.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{filtered.map(item => <SavedMarket key={marketKey(item)} item={item} info={metadata[marketKey(item)]} panel={panel} onOpen={open}/>)}</div> : symbols.length ? <div className={`mt-3 rounded-xl border p-8 text-center ${panel}`}><Search size={22} className="mx-auto text-[#787b86]"/><p className={`mt-2 text-sm ${muted}`}>No saved markets match “{search}”.</p></div> : <div className={`mt-3 flex flex-col items-center rounded-xl border p-8 text-center ${panel}`}><CircleDollarSign size={28} className="text-[#5b8cff]"/><h3 className="mt-3 font-bold">Build your first watchlist</h3><p className={`mt-1 max-w-md text-sm ${muted}`}>Open Workspace, browse supported exchanges, and save the markets you want to follow.</p><Link href="/workspace" className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-[#2962ff] px-4 text-xs font-bold text-white">Open Workspace<ArrowRight size={14}/></Link></div>}
             </section>
         </div>
-
-        {tourStep >= 0 && <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-black/55 p-4 sm:items-center"><div className="w-full max-w-md rounded-xl border border-[#2a2e39] bg-[#131722] p-5 text-white shadow-2xl"><div className="text-xs font-semibold uppercase tracking-wider text-[#5b8cff]">Getting started · {tourStep + 1}/{TOUR_STEPS.length}</div><h2 className="mt-2 text-lg font-bold">{TOUR_STEPS[tourStep][0]}</h2><p className="mt-2 text-sm leading-6 text-[#b2b5be]">{TOUR_STEPS[tourStep][1]}</p><div className="mt-5 flex justify-between"><button type="button" onClick={() => finishTour(false)} className="text-sm text-[#787b86] hover:text-white">Skip</button><button type="button" onClick={() => tourStep === TOUR_STEPS.length - 1 ? finishTour(true) : setTourStep(tourStep + 1)} className="rounded bg-[#2962ff] px-4 py-2 text-sm font-semibold">{tourStep === TOUR_STEPS.length - 1 ? 'Open Workspace' : 'Next'}</button></div></div></div>}
     </>;
 }
 

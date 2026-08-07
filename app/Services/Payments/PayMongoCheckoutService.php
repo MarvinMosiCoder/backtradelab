@@ -6,6 +6,7 @@ use App\Models\AdmUser;
 use App\Models\SubscriptionPlan;
 use App\Models\SubscriptionRequest;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
 
@@ -118,6 +119,67 @@ class PayMongoCheckoutService
         return $this->applyCheckoutResource($payment->fresh(), $resource, true);
     }
 
+    public function refund(SubscriptionRequest $payment, string $reasonCode, string $reasonNote, AdmUser $admin): SubscriptionRequest
+    {
+        if ($payment->provider !== 'paymongo') throw new RuntimeException('This is not a PayMongo transaction.');
+        if (!$payment->provider_payment_id) throw new RuntimeException('This payment has no PayMongo payment id to refund.');
+
+        $locked = DB::transaction(function () use ($payment) {
+            $row = SubscriptionRequest::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            if ($row->status !== 'paid') throw new RuntimeException('Only a successfully paid transaction can be refunded.');
+            $row->update(['status' => 'refunding']);
+            return $row;
+        });
+
+        try {
+            $resource = $this->client->refundPayment($locked->provider_payment_id, PayMongoClient::toCentavos($locked->amount), $reasonCode);
+            $attributes = $resource['attributes'] ?? [];
+            $status = strtolower((string) ($attributes['status'] ?? ''));
+            if (!in_array($status, ['pending', 'succeeded'], true)) {
+                throw new RuntimeException('PayMongo did not accept the refund request (status: '.($status ?: 'unknown').').');
+            }
+
+            $locked->update([
+                'provider_refund_id' => $resource['id'] ?? null,
+                'refund_status' => $status,
+                'refund_amount' => isset($attributes['amount']) ? PayMongoClient::fromCentavos((int) $attributes['amount']) : $locked->amount,
+            ]);
+
+            return $this->entitlements->revoke($locked->fresh(), $reasonNote, ['id' => $resource['id'] ?? null, 'triggered_by' => 'admin:'.$admin->id]);
+        } catch (Throwable $exception) {
+            $locked->update(['status' => 'paid', 'provider_status_message' => mb_substr('Refund attempt failed: '.$exception->getMessage(), 0, 500)]);
+            throw $exception;
+        }
+    }
+
+    public function processRefundResource(array $resource): SubscriptionRequest
+    {
+        $paymentId = $this->extractPaymentId($resource);
+        if (!$paymentId) throw new RuntimeException('Refund webhook resource did not contain a recognizable payment id.');
+        $payment = SubscriptionRequest::where('provider', 'paymongo')->where('provider_payment_id', $paymentId)->first();
+        if (!$payment) throw new RuntimeException('No local payment matches PayMongo payment id '.$paymentId.' from refund webhook.');
+
+        $status = strtolower((string) data_get($resource, 'attributes.status', 'succeeded'));
+        if ($status === 'failed') {
+            $payment->update(['refund_status' => 'failed', 'provider_status_message' => 'PayMongo reported a failed refund attempt via webhook.']);
+            return $payment->fresh();
+        }
+        if ($payment->status !== 'paid') return $payment->fresh();
+
+        return $this->entitlements->revoke($payment, 'PayMongo refund webhook ('.$status.').', ['id' => $resource['id'] ?? null]);
+    }
+
+    public function processDisputeResource(array $resource): SubscriptionRequest
+    {
+        $paymentId = $this->extractPaymentId($resource);
+        if (!$paymentId) throw new RuntimeException('Dispute webhook resource did not contain a recognizable payment id.');
+        $payment = SubscriptionRequest::where('provider', 'paymongo')->where('provider_payment_id', $paymentId)->first();
+        if (!$payment) throw new RuntimeException('No local payment matches PayMongo payment id '.$paymentId.' from dispute webhook.');
+        if ($payment->status !== 'paid') return $payment->fresh();
+
+        return $this->entitlements->revoke($payment, 'PayMongo dispute/chargeback webhook.', ['id' => $resource['id'] ?? null]);
+    }
+
     public function availability(): array
     {
         return $this->client->availability();
@@ -174,5 +236,11 @@ class PayMongoCheckoutService
     private function safeMessage(Throwable $exception): string
     {
         return mb_substr($exception->getMessage() ?: 'PayMongo checkout failed.', 0, 500);
+    }
+
+    private function extractPaymentId(array $resource): ?string
+    {
+        if (($resource['type'] ?? null) === 'payment') return $resource['id'] ?? null;
+        return data_get($resource, 'attributes.payment_id') ?: null;
     }
 }

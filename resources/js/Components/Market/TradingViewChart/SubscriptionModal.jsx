@@ -49,7 +49,7 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
       const response = await axios.post('/subscription-checkouts', { plan: selected.code, submission_token: submissionToken });
       if (!response.data?.checkout_url) throw new Error('Checkout URL missing');
       window.location.assign(response.data.checkout_url);
-    } catch (error) { setStatus(error.response?.data?.message ?? 'Unable to start secure PayMongo checkout.'); setSaving(false); }
+    } catch (error) { setStatus(error.response?.data?.message ?? 'Unable to start secure checkout.'); setSaving(false); }
   };
   const shell = dark ? 'border-[#2a2e39] bg-[#0b0e14] text-white' : 'border-slate-200 bg-white text-slate-900';
   const surface = dark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-slate-50';
@@ -57,7 +57,7 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
   return <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-2 backdrop-blur-sm sm:p-3">
     <section className={`flex max-h-[calc(100dvh-1rem)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border shadow-2xl sm:max-h-[calc(100dvh-1.5rem)] ${shell}`}>
       <header className={`flex shrink-0 items-start justify-between border-b px-4 py-3 sm:px-5 ${surface}`}>
-        <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={13}/>Replay access</div><h2 className="mt-0.5 text-xl font-bold">Build your trading practice</h2><p className="mt-0.5 text-xs text-[#787b86]">Activate your free week or purchase one-time access through PayMongo.</p></div>
+        <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={13}/>Replay access</div><h2 className="mt-0.5 text-xl font-bold">Build your trading practice</h2><p className="mt-0.5 text-xs text-[#787b86]">Activate your free week or purchase one-time access through our secure payment provider.</p></div>
         <button type="button" onClick={onClose} aria-label="Close"><X size={19}/></button>
       </header>
       {(trialAvailable || activeAccess?.kind === 'trial') && <div className="mx-4 mt-3 flex shrink-0 flex-col justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 sm:mx-5 sm:flex-row sm:items-center">
@@ -77,7 +77,7 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
         {readOnly && <div className="mt-2.5 rounded-lg bg-emerald-500/10 p-2 text-xs text-emerald-500">Your {activeAccess.kind} access is active until {new Date(activeAccess.endsAt).toLocaleString()}. You can choose another plan after it expires.</div>}
         {status && <div className="mt-2.5 rounded-lg bg-red-500/10 p-2 text-xs text-red-500">{status}</div>}
         {!readOnly && <div className="mt-2.5 flex flex-col gap-2 rounded-xl border p-3 text-xs text-[#787b86] sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1"><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Secure PayMongo checkout</div><p className="mt-0.5 truncate">Methods: <span className="capitalize">{checkout.payment_methods?.join(' · ') || 'None'}</span></p></div>
+          <div className="min-w-0 flex-1"><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Secure checkout</div><p className="mt-0.5 truncate">Methods: <span className="capitalize">{checkout.payment_methods?.join(' · ') || 'None'}</span></p></div>
           <button disabled={!selected?.price || !checkout.enabled || saving} onClick={startCheckout} className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-4 font-bold text-white disabled:opacity-50">{saving ? 'Opening checkout…' : `Continue with ${selected?.name ?? 'plan'}`}<ExternalLink size={14}/></button>
         </div>}
       </div>

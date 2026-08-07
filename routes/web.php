@@ -19,6 +19,7 @@ use App\Http\Controllers\MarketDataController;
 use App\Http\Controllers\MarketOverviewController;
 use App\Http\Controllers\MarketReplayProgressController;
 use App\Http\Controllers\MarketToolSettingController;
+use App\Http\Controllers\MarketWatchlistController;
 use App\Http\Controllers\MarketPriceAlertController;
 use App\Http\Controllers\ReplayAccessController;
 use App\Http\Controllers\UserFeedbackController;
@@ -127,6 +128,8 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::put('/market-drawings', [MarketDrawingController::class, 'update'])->name('market-drawings.update');
     Route::get('/market-tool-settings', [MarketToolSettingController::class, 'show'])->name('market-tool-settings.show');
     Route::put('/market-tool-settings', [MarketToolSettingController::class, 'update'])->name('market-tool-settings.update');
+    Route::get('/market-watchlists', [MarketWatchlistController::class, 'show'])->name('market-watchlists.show');
+    Route::put('/market-watchlists', [MarketWatchlistController::class, 'update'])->name('market-watchlists.update');
     Route::get('/market-price-alerts', [MarketPriceAlertController::class, 'index']);
     Route::post('/market-price-alerts', [MarketPriceAlertController::class, 'store'])->middleware('throttle:price-alert-write');
     Route::post('/market-price-alerts/check', [MarketPriceAlertController::class, 'check'])->middleware('throttle:price-alert-check');
@@ -147,6 +150,7 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/admin/subscriptions', [ReplayAccessController::class, 'adminPage'])->middleware('superadmin');
     Route::get('/admin/subscriptions/items', [ReplayAccessController::class, 'adminIndex'])->middleware('superadmin');
     Route::post('/admin/subscriptions/{subscriptionRequest}/reconcile', [ReplayAccessController::class, 'adminReconcile'])->middleware(['superadmin', 'throttle:market-write']);
+    Route::post('/admin/subscriptions/{subscriptionRequest}/refund', [ReplayAccessController::class, 'adminRefund'])->middleware(['superadmin', 'throttle:market-write']);
     Route::get('/feedback', [UserFeedbackController::class, 'userPage'])->name('feedback.index');
     Route::get('/feedback/items', [UserFeedbackController::class, 'index'])->name('feedback.items');
     Route::post('/feedback/items', [UserFeedbackController::class, 'store'])->middleware('throttle:feedback-write')->name('feedback.store');
@@ -159,7 +163,8 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::put('/market-replay-progress', [MarketReplayProgressController::class, 'update'])->middleware('replay.access')->name('market-replay-progress.update');
     Route::get('/market-backtest/account', [MarketBacktestController::class, 'show'])->middleware(['replay.access', 'throttle:backtest-read'])->name('market-backtest.show');
     Route::get('/market-backtest/report', [MarketBacktestController::class, 'report'])->middleware('throttle:backtest-read')->name('market-backtest.report');
-    Route::get('/market-backtest/report/export', [MarketBacktestController::class, 'exportReport'])->middleware('throttle:backtest-heavy')->name('market-backtest.report.export');
+    Route::post('/market-backtest/report/export', [MarketBacktestController::class, 'requestReportExport'])->middleware('throttle:backtest-heavy')->name('market-backtest.report.export');
+    Route::get('/market-backtest/report/export/{export}/download', [MarketBacktestController::class, 'downloadReportExport'])->middleware('throttle:backtest-read')->name('market-backtest.report.export.download');
     Route::post('/market-backtest/reset', [MarketBacktestController::class, 'reset'])->middleware(['replay.access', 'throttle:backtest-heavy'])->name('market-backtest.reset');
     Route::post('/market-backtest/sessions', [MarketBacktestController::class, 'startSession'])->middleware(['replay.access', 'throttle:backtest-write'])->name('market-backtest.sessions.start');
     Route::post('/market-backtest/sessions/{session}/end', [MarketBacktestController::class, 'endSession'])->middleware(['replay.access', 'throttle:backtest-write'])->name('market-backtest.sessions.end');

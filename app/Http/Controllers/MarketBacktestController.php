@@ -2,19 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\GenerateBacktestReportExport;
 use App\Models\MarketBacktestAccount;
+use App\Models\MarketBacktestExport;
 use App\Models\MarketBacktestPosition;
 use App\Models\MarketBacktestSession;
 use App\Models\MarketBacktestSnapshot;
 use App\Models\MarketBacktestTrade;
+use App\Services\MarketBacktestReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 
 class MarketBacktestController extends Controller
 {
     private const DEFAULT_BALANCE = 10000;
     private const FEE_RATE = 0.0004;
+
+    public function __construct(private MarketBacktestReportService $reportService)
+    {
+    }
 
     public function show(Request $request)
     {
@@ -136,7 +144,7 @@ class MarketBacktestController extends Controller
         $sessionId = $validated['session_id'] ?? null;
         $limit = (int) ($validated['limit'] ?? 500);
 
-        $positions = $this->getReportPositions($account, $symbol, $sessionId, $limit);
+        $positions = $this->reportService->getReportPositions($account, $symbol, $sessionId, $limit);
 
         $totalTrades = $positions->count();
         $wins = $positions->filter(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl > 0);
@@ -171,11 +179,11 @@ class MarketBacktestController extends Controller
                 'largestWin' => $wins->count() ? round($wins->max(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8) : 0,
                 'largestLoss' => $losses->count() ? round($losses->min(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8) : 0,
             ],
-            'trades' => $positions->map(fn (MarketBacktestPosition $position) => $this->serializeReportPosition($position))->values(),
+            'trades' => $positions->map(fn (MarketBacktestPosition $position) => $this->reportService->serializeReportPosition($position))->values(),
         ]);
     }
 
-    public function exportReport(Request $request)
+    public function requestReportExport(Request $request)
     {
         $validated = $request->validate([
             'format' => ['nullable', Rule::in(['csv', 'json'])],
@@ -185,87 +193,31 @@ class MarketBacktestController extends Controller
         ]);
 
         $account = $this->getOrCreateAccount($request);
-        $format = $validated['format'] ?? 'csv';
-        $symbol = isset($validated['symbol']) ? strtoupper($validated['symbol']) : null;
-        $positions = $this->getReportPositions(
-            $account,
-            $symbol,
-            $validated['session_id'] ?? null,
-            (int) ($validated['limit'] ?? 5000)
-        );
-        $rows = $positions->map(fn (MarketBacktestPosition $position) => $this->serializeReportPosition($position))->values();
-        $filename = 'backtest-trades-' . now()->format('Ymd-His') . '.' . $format;
 
-        if ($format === 'json') {
-            return response()->streamDownload(function () use ($rows) {
-                echo json_encode($rows, JSON_PRETTY_PRINT);
-            }, $filename, [
-                'Content-Type' => 'application/json',
-            ]);
-        }
-
-        return response()->streamDownload(function () use ($rows) {
-            $handle = fopen('php://output', 'w');
-            fputcsv($handle, [
-                'id',
-                'session_id',
-                'symbol',
-                'side',
-                'entry_price',
-                'exit_price',
-                'leverage',
-                'margin',
-                'notional',
-                'fee',
-                'pnl',
-                'pnl_percent',
-                'result',
-                'setup_tag',
-                'tags',
-                'emotion',
-                'entry_reason',
-                'exit_reason',
-                'mistake',
-                'journal_notes',
-                'entry_snapshot',
-                'exit_snapshot',
-                'opened_at_time',
-                'closed_at_time',
-            ]);
-
-            foreach ($rows as $row) {
-                fputcsv($handle, [
-                    $row['id'],
-                    $row['sessionId'],
-                    $row['symbol'],
-                    $row['side'],
-                    $row['entryPrice'],
-                    $row['exitPrice'],
-                    $row['leverage'],
-                    $row['margin'],
-                    $row['notional'],
-                    $row['fee'],
-                    $row['pnl'],
-                    $row['pnlPercent'],
-                    $row['result'],
-                    $row['setupTag'],
-                    implode('|', $row['tags'] ?? []),
-                    $row['emotion'],
-                    $row['entryReason'],
-                    $row['exitReason'],
-                    $row['mistake'],
-                    $row['journalNotes'],
-                    $row['entrySnapshotUrl'],
-                    $row['exitSnapshotUrl'],
-                    $row['openedAtTime'],
-                    $row['closedAtTime'],
-                ]);
-            }
-
-            fclose($handle);
-        }, $filename, [
-            'Content-Type' => 'text/csv',
+        $export = MarketBacktestExport::create([
+            'adm_user_id' => $request->user()->id,
+            'market_backtest_account_id' => $account->id,
+            'format' => $validated['format'] ?? 'csv',
+            'symbol' => isset($validated['symbol']) ? strtoupper($validated['symbol']) : null,
+            'session_id' => $validated['session_id'] ?? null,
+            'row_limit' => (int) ($validated['limit'] ?? 5000),
+            'status' => 'pending',
         ]);
+
+        GenerateBacktestReportExport::dispatch($export->id);
+
+        return response()->json([
+            'success' => true,
+            'export_id' => $export->id,
+        ]);
+    }
+
+    public function downloadReportExport(Request $request, MarketBacktestExport $export)
+    {
+        abort_if($export->adm_user_id !== $request->user()->id, 403);
+        abort_if($export->status !== 'ready' || !$export->file_path, 404);
+
+        return Storage::disk('public')->download($export->file_path, $export->filename);
     }
 
     public function updateTradeJournal(Request $request, MarketBacktestPosition $position)
@@ -309,7 +261,7 @@ class MarketBacktestController extends Controller
 
         return response()->json([
             'success' => true,
-            'trade' => $this->serializeReportPosition($position->fresh()),
+            'trade' => $this->reportService->serializeReportPosition($position->fresh()),
         ]);
     }
 
@@ -853,67 +805,6 @@ class MarketBacktestController extends Controller
         $trimmed = trim((string) $value);
 
         return $trimmed === '' ? null : $trimmed;
-    }
-
-    private function serializeReportPosition(MarketBacktestPosition $position): array
-    {
-        $pnl = (float) $position->realized_pnl;
-        $margin = (float) $position->margin;
-        $leverage = $this->getPositionLeverage($position);
-        $snapshots = $position->relationLoaded('snapshots')
-            ? $position->snapshots
-            : $position->snapshots()->get();
-        $entrySnapshot = $snapshots->where('type', 'entry')->sortByDesc('created_at')->first();
-        $exitSnapshot = $snapshots->where('type', 'exit')->sortByDesc('created_at')->first();
-
-        return [
-            'id' => $position->id,
-            'sessionId' => $position->market_backtest_session_id,
-            'symbol' => $position->symbol,
-            'side' => $position->side,
-            'quantity' => (float) $position->quantity,
-            'margin' => $margin,
-            'leverage' => $leverage,
-            'notional' => $this->getPositionNotional($position),
-            'entryPrice' => (float) $position->entry_price,
-            'exitPrice' => $position->exit_price !== null ? (float) $position->exit_price : null,
-            'entryFee' => (float) $position->entry_fee,
-            'exitFee' => (float) $position->exit_fee,
-            'fee' => round((float) $position->entry_fee + (float) $position->exit_fee, 8),
-            'pnl' => $pnl,
-            'pnlPercent' => $margin > 0 ? round(($pnl / $margin) * 100, 4) : 0,
-            'result' => $pnl > 0 ? 'win' : ($pnl < 0 ? 'loss' : 'breakeven'),
-            'setupTag' => $position->setup_tag,
-            'tags' => array_values($position->tags ?? []),
-            'entryReason' => $position->entry_reason,
-            'exitReason' => $position->exit_reason,
-            'mistake' => $position->mistake,
-            'emotion' => $position->emotion,
-            'journalNotes' => $position->journal_notes,
-            'entrySnapshotUrl' => $this->getSnapshotUrl($entrySnapshot),
-            'exitSnapshotUrl' => $this->getSnapshotUrl($exitSnapshot),
-            'openedAtTime' => $position->opened_at_time,
-            'closedAtTime' => $position->closed_at_time,
-            'createdAt' => optional($position->created_at)->toIso8601String(),
-            'updatedAt' => optional($position->updated_at)->toIso8601String(),
-        ];
-    }
-
-    private function getReportPositions(
-        MarketBacktestAccount $account,
-        ?string $symbol = null,
-        ?int $sessionId = null,
-        int $limit = 500
-    ) {
-        return $account->positions()
-            ->with('snapshots')
-            ->where('status', 'closed')
-            ->when($symbol, fn ($query) => $query->where('symbol', $symbol))
-            ->when($sessionId, fn ($query) => $query->where('market_backtest_session_id', $sessionId))
-            ->orderByDesc('closed_at_time')
-            ->orderByDesc('updated_at')
-            ->limit($limit)
-            ->get();
     }
 
     private function getSnapshotUrl(?MarketBacktestSnapshot $snapshot): ?string

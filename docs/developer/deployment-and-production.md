@@ -21,6 +21,10 @@ php artisan optimize
 
 Run the scheduler every minute and supervise queue workers. Test database restores, not only backups.
 
+A queue worker is required, not optional: the trade-report export ([Trade reports and journals](trade-reports-and-journals.md)) dispatches a `GenerateBacktestReportExport` job and nothing processes it without `php artisan queue:work` running (supervised, same pattern as the market alert worker below). `QUEUE_CONNECTION=database` needs no extra infrastructure; switch to `redis` if queue volume grows, since Redis is already required for cache/sessions/rate limits.
+
+Subscription renewal reminders ([Subscriptions](subscriptions-trials-and-paymongo.md)) do not need a separate supervised process — `subscriptions:send-renewal-reminders` runs off the same Laravel scheduler as `payments:reconcile-paymongo`, so it only needs the standard cron-triggered `php artisan schedule:run` every minute already required above.
+
 ## Security and operations
 
 - Set `APP_ENV=production`, `APP_DEBUG=false`, HTTPS cookies, trusted proxies, and shared rate-limit storage.

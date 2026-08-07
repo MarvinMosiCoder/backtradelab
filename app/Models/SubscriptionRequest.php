@@ -10,8 +10,10 @@ class SubscriptionRequest extends Model
         'reviewed_at' => 'datetime',
         'paid_at' => 'datetime',
         'failed_at' => 'datetime',
+        'refunded_at' => 'datetime',
         'livemode' => 'boolean',
         'amount' => 'decimal:2',
+        'refund_amount' => 'decimal:2',
     ];
     public function user() { return $this->belongsTo(AdmUser::class, 'adm_user_id'); }
     public function messages() { return $this->hasMany(SubscriptionMessage::class); }

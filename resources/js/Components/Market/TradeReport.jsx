@@ -167,6 +167,8 @@ export default function TradeReport({ refreshKey = 0 }) {
   const [journalSaving, setJournalSaving] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [exportingFormat, setExportingFormat] = useState(null);
+  const [exportNotice, setExportNotice] = useState('');
   const [symbolFilter, setSymbolFilter] = useState('all');
   const [sideFilter, setSideFilter] = useState('all');
   const [resultFilter, setResultFilter] = useState('all');
@@ -365,13 +367,17 @@ export default function TradeReport({ refreshKey = 0 }) {
     cancelJournalEdit();
   };
 
-  const exportReport = (format) => {
-    const params = new URLSearchParams({
-      format,
-      limit: '5000',
-    });
-
-    window.location.href = `/market-backtest/report/export?${params.toString()}`;
+  const exportReport = async (format) => {
+    setExportingFormat(format);
+    setExportNotice('');
+    try {
+      await axios.post('/market-backtest/report/export', { format, limit: 5000 });
+      setExportNotice("Export started — you'll get a notification with a download link when it's ready.");
+    } catch (err) {
+      setError(err.response?.data?.message ?? err.message ?? 'Failed to start export');
+    } finally {
+      setExportingFormat(null);
+    }
   };
 
   const shellClass = isDark
@@ -416,17 +422,19 @@ export default function TradeReport({ refreshKey = 0 }) {
           <button
             type="button"
             onClick={() => exportReport('csv')}
-            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${buttonClass}`}
+            disabled={exportingFormat !== null}
+            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${buttonClass}`}
           >
-            <Download size={14} />
+            <Download size={14} className={exportingFormat === 'csv' ? 'animate-pulse' : ''} />
             CSV
           </button>
           <button
             type="button"
             onClick={() => exportReport('json')}
-            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${buttonClass}`}
+            disabled={exportingFormat !== null}
+            className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${buttonClass}`}
           >
-            <Download size={14} />
+            <Download size={14} className={exportingFormat === 'json' ? 'animate-pulse' : ''} />
             JSON
           </button>
           <button
@@ -467,6 +475,12 @@ export default function TradeReport({ refreshKey = 0 }) {
       {error && (
         <div className="mx-4 mt-4 rounded-md border border-red-900 bg-red-950/60 px-3 py-2 text-xs text-red-200">
           {error}
+        </div>
+      )}
+
+      {exportNotice && (
+        <div className="mx-4 mt-4 rounded-md border border-blue-900 bg-blue-950/60 px-3 py-2 text-xs text-blue-200">
+          {exportNotice}
         </div>
       )}
 

@@ -134,6 +134,19 @@ class PayMongoClient
         return $response->json('data') ?? [];
     }
 
+    public function refundPayment(string $paymentId, int $amountCentavos, string $reasonCode): array
+    {
+        $this->assertAvailable();
+        $response = $this->request()->post('refunds', ['data' => ['attributes' => [
+            'amount' => $amountCentavos,
+            'payment_id' => $paymentId,
+            'reason' => $reasonCode,
+        ]]]);
+        $this->throwForFailure($response->successful(), $response->json());
+
+        return $response->json('data') ?? [];
+    }
+
     public function mode(): string
     {
         return strtolower((string) config('services.paymongo.mode', 'test'));
@@ -147,6 +160,11 @@ class PayMongoClient
     public static function toCentavos(mixed $amount): int
     {
         return (int) round(((float) $amount) * 100);
+    }
+
+    public static function fromCentavos(int $centavos): float
+    {
+        return round($centavos / 100, 2);
     }
 
     private function configuredMethods(): array

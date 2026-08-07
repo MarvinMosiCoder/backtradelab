@@ -113,4 +113,41 @@ class PayMongoClientTest extends TestCase
         $this->expectExceptionMessage('locked until compliance approval');
         app(PayMongoClient::class)->assertAvailable();
     }
+
+    public function test_it_converts_centavos_back_to_php_amounts(): void
+    {
+        $this->assertSame(123.45, PayMongoClient::fromCentavos(12345));
+        $this->assertSame(0.01, PayMongoClient::fromCentavos(1));
+    }
+
+    public function test_refund_payment_posts_the_expected_request_body(): void
+    {
+        Http::fake([
+            'https://api.paymongo.test/v1/refunds' => Http::response([
+                'data' => ['id' => 're_test', 'attributes' => ['status' => 'pending', 'amount' => 19900]],
+            ], 201),
+        ]);
+
+        $resource = app(PayMongoClient::class)->refundPayment('pay_test', 19900, 'requested_by_customer');
+
+        $this->assertSame('re_test', $resource['id']);
+        Http::assertSent(fn ($request) =>
+            $request->url() === 'https://api.paymongo.test/v1/refunds'
+            && $request['data']['attributes']['payment_id'] === 'pay_test'
+            && $request['data']['attributes']['amount'] === 19900
+            && $request['data']['attributes']['reason'] === 'requested_by_customer'
+        );
+    }
+
+    public function test_refund_payment_throws_on_a_failed_response(): void
+    {
+        Http::fake([
+            'https://api.paymongo.test/v1/refunds' => Http::response([
+                'errors' => [['detail' => 'The payment has already been refunded.']],
+            ], 422),
+        ]);
+
+        $this->expectExceptionMessage('The payment has already been refunded.');
+        app(PayMongoClient::class)->refundPayment('pay_test', 19900, 'duplicate');
+    }
 }

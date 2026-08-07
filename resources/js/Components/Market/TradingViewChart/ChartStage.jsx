@@ -1068,6 +1068,21 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                   strokeWidth={strokeWidth}
                   strokeDasharray={rectDashArray}
                 />
+                {d.type === 'price-range' && !d.id.startsWith('temp-') && d.end.price !== d.start.price && (() => {
+                  const isUp = d.end.price > d.start.price;
+                  const arrowColor = isUp ? '#22c55e' : '#ef4444';
+                  const centerX = rect.left + rect.width / 2;
+                  const top = { x: centerX, y: rect.top };
+                  const bottom = { x: centerX, y: rect.top + rect.height };
+                  const shaftStart = isUp ? bottom : top;
+                  const shaftEnd = isUp ? top : bottom;
+                  return (
+                    <g>
+                      <line x1={shaftStart.x} y1={shaftStart.y} x2={shaftEnd.x} y2={shaftEnd.y} stroke={arrowColor} strokeWidth="2" />
+                      <polygon points={getArrowHeadPoints(shaftStart, shaftEnd, 8)} fill={arrowColor} />
+                    </g>
+                  );
+                })()}
                 {d.type !== 'rect' && !d.id.startsWith('temp-') && <text x={rect.left + 8} y={rect.top + 18} fill="#ffffff" fontSize="12" fontWeight="700" paintOrder="stroke" stroke="rgba(15,23,42,.95)" strokeWidth="4">{getRangeLabel(d)}</text>}
                 {labelText && !d.id.startsWith('temp-') && (
                   <text
@@ -1265,6 +1280,7 @@ export default function ChartStage({
   renderedDrawings,
   renderedBacktestOrders,
   renderedTradeMarkers,
+  swingPointMarkers,
   selectedDrawingId,
   hoveredPositionDrawingId,
   textInput,
@@ -1380,6 +1396,9 @@ export default function ChartStage({
             <rect width="14" height="14" rx="2.5" fill={marker.color} />
             <text x="7" y="10" textAnchor="middle" fill="#ffffff" fontSize="8" fontWeight="800">{marker.label}</text>
           </g>
+        ))}
+        {(swingPointMarkers ?? []).map((marker) => (
+          <circle key={marker.id} cx={marker.x} cy={marker.y} r="4" fill="none" stroke="#2962ff" strokeWidth="1.5" />
         ))}
       </svg>
 

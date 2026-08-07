@@ -71,10 +71,24 @@ module.exports = {
                   '0%': { transform: 'translateX(-100%)' },
                   '100%': { transform: 'translateX(0)' },
                 },
+                floatY: {
+                  '0%, 100%': { transform: 'translateY(0)' },
+                  '50%': { transform: 'translateY(-10px)' },
+                },
+                fadeInUp: {
+                  '0%': { opacity: '0', transform: 'translateY(16px)' },
+                  '100%': { opacity: '1', transform: 'translateY(0)' },
+                },
+                shimmer: {
+                  '100%': { transform: 'translateX(100%)' },
+                },
               },
               animation: {
                 slideLeft: 'slideLeft 0.5s ease-in-out',
                 slideInFromLeft: 'slideInFromLeft 0.5s ease-in-out',
+                floatY: 'floatY 6s ease-in-out infinite',
+                fadeInUp: 'fadeInUp 0.7s ease-out both',
+                shimmer: 'shimmer 1.6s infinite',
             },
             zIndex: {
                 '100': '100',

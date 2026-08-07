@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { flushSync } from 'react-dom';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
-import { Bell, HelpCircle, Trash2, Wallet, X } from 'lucide-react';
+import { Bell, HelpCircle, MoreHorizontal, Trash2, Wallet, X } from 'lucide-react';
 import {
   createChart,
   CandlestickSeries,
@@ -10,10 +10,12 @@ import {
   LineSeries,
   CrosshairMode,
   LineStyle,
+  PriceScaleMode,
 } from 'lightweight-charts';
 import { useTheme } from '../../Context/ThemeContext';
 import { useAuth } from '../../Context/AuthContext';
 import ChartHeader from './TradingViewChart/ChartHeader';
+import ChartSettingsModal from './TradingViewChart/ChartSettingsModal';
 import ChartStage from './TradingViewChart/ChartStage';
 import ReplayPanel from './TradingViewChart/ReplayPanel';
 import SubscriptionModal from './TradingViewChart/SubscriptionModal';
@@ -142,6 +144,14 @@ function resolveChartTheme(adminTheme) {
   return adminTheme === 'bg-skin-black' ? CHART_THEMES.dark : CHART_THEMES.light;
 }
 
+const DEFAULT_CHART_DISPLAY = {
+  candles: { borderEnabled: true, borderUp: null, borderDown: null, wickEnabled: true, wickUp: null, wickDown: null },
+  priceLines: { last: true, previousClose: false, highLow: false },
+  statusLine: { symbol: true, exchange: true, ohlc: true, change: true },
+  scales: { precision: 'default', autoScale: true, logScale: false },
+  canvas: { background: null, gridColor: null },
+};
+
 function ChartDotsLoader({ isDark }) {
   return (
     <div className="w-full max-w-3xl px-8" aria-label="Loading chart workspace" role="status">
@@ -194,7 +204,7 @@ function ChartSkeletonLoader({ isDark }) {
   );
 }
 
-function ChartMarketLegend({ symbol, exchange, timeframe, candle, isTimeframeLoading, chartTheme }) {
+function ChartMarketLegend({ symbol, exchange, timeframe, candle, isTimeframeLoading, chartTheme, showSymbol = true, showExchange = true, showOhlc = true, showChange = true, isActive = false, onOpenSettings }) {
   const open = Number(candle?.open);
   const high = Number(candle?.high);
   const low = Number(candle?.low);
@@ -223,17 +233,19 @@ function ChartMarketLegend({ symbol, exchange, timeframe, candle, isTimeframeLoa
       className="pointer-events-none absolute left-2 top-1.5 z-30 select-none text-[11px] font-semibold leading-5 sm:left-3 sm:top-2 sm:text-xs"
       style={{ color: chartTheme.text, maxWidth: 'calc(100% - 4.5rem)' }}
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-x-1 whitespace-nowrap">
-        <span className="font-bold">{symbol}</span>
-        <span className="text-[#787b86]">·</span>
+      <div
+        className={`pointer-events-auto -mx-1.5 -my-0.5 flex min-w-0 flex-wrap items-center gap-x-1 whitespace-nowrap rounded border px-1.5 py-0.5 transition-colors ${isActive ? (chartTheme.mode === 'dark' ? 'border-[#2962ff]/50 bg-black/30' : 'border-[#2962ff]/50 bg-white/70') : 'border-transparent'}`}
+      >
+        {showSymbol && <span className="font-bold">{symbol}</span>}
+        {showSymbol && <span className="text-[#787b86]">·</span>}
         <span>{timeframeLabel}</span>
-        <span className="text-[#787b86]">·</span>
-        <span className="text-[#787b86]">Last price {exchangeLabel}</span>
-        <span className="ml-0.5" style={{ color: valueColor }}><span className="text-[#787b86]">O</span> {hasCandle ? formatOverlayPrice(open) : '---'}</span>
-        <span style={{ color: valueColor }}><span className="text-[#787b86]">H</span> {hasCandle ? formatOverlayPrice(high) : '---'}</span>
-        <span style={{ color: valueColor }}><span className="text-[#787b86]">L</span> {hasCandle ? formatOverlayPrice(low) : '---'}</span>
-        <span style={{ color: valueColor }}><span className="text-[#787b86]">C</span> {hasCandle ? formatOverlayPrice(close) : '---'}</span>
-        <span style={{ color: valueColor }}>{signedChange} ({signedPercent})</span>
+        {showExchange && <span className="text-[#787b86]">·</span>}
+        {showExchange && <span className="text-[#787b86]">Last price {exchangeLabel}</span>}
+        {showOhlc && <span className="ml-0.5" style={{ color: valueColor }}><span className="text-[#787b86]">O</span> {hasCandle ? formatOverlayPrice(open) : '---'}</span>}
+        {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">H</span> {hasCandle ? formatOverlayPrice(high) : '---'}</span>}
+        {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">L</span> {hasCandle ? formatOverlayPrice(low) : '---'}</span>}
+        {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">C</span> {hasCandle ? formatOverlayPrice(close) : '---'}</span>}
+        {showChange && <span style={{ color: valueColor }}>{signedChange} ({signedPercent})</span>}
         {isTimeframeLoading && (
           <span className="ml-1 inline-flex h-4 items-center gap-0.5" role="status" aria-label={`Loading ${timeframe} candles`}>
             {[0, 1, 2].map((dot) => (
@@ -246,6 +258,16 @@ function ChartMarketLegend({ symbol, exchange, timeframe, candle, isTimeframeLoa
             ))}
           </span>
         )}
+        <button
+          type="button"
+          data-tour="appearance"
+          onClick={onOpenSettings}
+          className={`ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded transition-opacity hover:bg-white/10 ${isActive ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
+          title="Chart settings"
+          aria-label="Chart settings"
+        >
+          <MoreHorizontal size={13} />
+        </button>
       </div>
     </div>
   );
@@ -769,6 +791,8 @@ export default function TradingViewReplayChart({
   initialMarketCategory = 'linear',
   initialTimeframe = '15m',
   onBacktestAccountChange = null,
+  tourCompleted = false,
+  onTourComplete = null,
 }) {
   const { theme: adminTheme } = useTheme();
   const { auth: pageAuth } = usePage().props;
@@ -801,6 +825,9 @@ export default function TradingViewReplayChart({
   const replayTimerRef = useRef(null);
   const isProgrammaticRangeChangeRef = useRef(false);
   const selectedPriceLineRef = useRef(null);
+  const previousClosePriceLineRef = useRef(null);
+  const highPriceLineRef = useRef(null);
+  const lowPriceLineRef = useRef(null);
   const selectedReplayPriceRef = useRef(null);
   const replayModeRef = useRef(false);
   const symbolRef = useRef(initialSymbol);
@@ -937,16 +964,16 @@ export default function TradingViewReplayChart({
     return Array.from(new Set([timezone, 'UTC', ...supported])).sort();
   }, [timezone]);
   const replayAccessAllowedRef = useRef(false);
-  const [tourStep, setTourStep] = useState(() => new URLSearchParams(window.location.search).get('tour') === '1' || !auth?.user?.chart_tour_completed_at ? 0 : -1);
+  const [tourStep, setTourStep] = useState(() => new URLSearchParams(window.location.search).get('tour') === '1' || !tourCompleted ? 0 : -1);
   const tourSteps = [
     {selector:'[data-tour="market"]',title:'Choose your market',description:'Select a symbol and choose Spot or Futures.'},
     {selector:'[data-tour="timeframe"]',title:'Set the timeframe',description:'Choose the candle interval for your analysis.'},
     {selector:'[data-tour="drawings"]',title:'Draw on the chart',description:'Open the drawing rail for lines, positions, notes, and other tools.'},
     {selector:'[data-tour="replay"]',title:'Replay history',description:'Start Replay, then choose a historical candle.'},
     {selector:'[data-tour="position"]',title:'Practice execution',description:'Enter Position opens the simulated-order controls.'},
-    {selector:'[data-tour="appearance"]',title:'Customize the chart',description:'Open Appearance for indicators, candle styling, and alerts.'},
+    {selector:'[data-tour="appearance"]',title:'Customize the chart',description:'Open the chart settings menu for candle colors, price lines, and more.'},
   ];
-  const finishTour = () => { setTourStep(-1); axios.post('/chart-tour/complete').catch(() => setTourStep(0)); };
+  const finishTour = () => { setTourStep(-1); onTourComplete?.(); axios.post('/chart-tour/complete').catch(() => setTourStep(0)); };
 
   useEffect(() => {
     if (auth?.user?.timezone) {
@@ -1663,6 +1690,40 @@ export default function TradingViewReplayChart({
   const getToolSettingsForType = useCallback((type) => {
     return toolSettings[type] ?? {};
   }, [toolSettings]);
+
+  const chartDisplay = useMemo(() => {
+    const saved = toolSettings.chartDisplay ?? {};
+    return {
+      candles: { ...DEFAULT_CHART_DISPLAY.candles, ...(saved.candles ?? {}) },
+      priceLines: { ...DEFAULT_CHART_DISPLAY.priceLines, ...(saved.priceLines ?? {}) },
+      statusLine: { ...DEFAULT_CHART_DISPLAY.statusLine, ...(saved.statusLine ?? {}) },
+      scales: { ...DEFAULT_CHART_DISPLAY.scales, ...(saved.scales ?? {}) },
+      canvas: { ...DEFAULT_CHART_DISPLAY.canvas, ...(saved.canvas ?? {}) },
+    };
+  }, [toolSettings.chartDisplay]);
+
+  const updateChartDisplay = useCallback((patch) => {
+    saveToolSettingsForType('chartDisplay', {
+      candles: { ...chartDisplay.candles, ...(patch.candles ?? {}) },
+      priceLines: { ...chartDisplay.priceLines, ...(patch.priceLines ?? {}) },
+      statusLine: { ...chartDisplay.statusLine, ...(patch.statusLine ?? {}) },
+      scales: { ...chartDisplay.scales, ...(patch.scales ?? {}) },
+      canvas: { ...chartDisplay.canvas, ...(patch.canvas ?? {}) },
+    });
+  }, [chartDisplay, saveToolSettingsForType]);
+
+  const [isChartSettingsOpen, setIsChartSettingsOpen] = useState(false);
+  const [isLegendActive, setIsLegendActive] = useState(false);
+
+  useEffect(() => {
+    if (!isLegendActive) return undefined;
+    const handleOutsideClick = (event) => {
+      if (event.target?.closest?.('[data-chart-ui="market-legend"]')) return;
+      setIsLegendActive(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isLegendActive]);
 
   const getToolPresetsForType = useCallback((type) => {
     return Array.isArray(toolSettings.presets?.[type])
@@ -2446,6 +2507,73 @@ export default function TradingViewReplayChart({
     }).filter(Boolean);
   }, [allCandles, backtestAccount?.trades, loadedTimeframe, overlayRenderVersion, symbol]);
 
+  const swingPointMarkers = useMemo(() => {
+    if (!isLegendActive) return [];
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series || allCandles.length < 5) return [];
+
+    const visibleRange = chart.timeScale().getVisibleRange();
+    if (!visibleRange) return [];
+
+    const fromTime = Number(visibleRange.from);
+    const toTime = Number(visibleRange.to);
+    const candles = allCandles.filter((c) => Number(c.time) >= fromTime && Number(c.time) <= toTime);
+    if (candles.length < 5) return [];
+
+    const highs = candles.map((c) => Number(c.high));
+    const lows = candles.map((c) => Number(c.low));
+
+    // Reversal must be at least 5% of the *current price level* (the standard ZigZag
+    // definition), not a fraction of the visible span — a span-based threshold shrinks
+    // to near-nothing in choppy/sideways stretches (price wanders without the span
+    // growing much) and marks a pivot on almost every candle there.
+    const reversalPct = 0.05;
+    const pivots = [];
+    let direction = 0; // 0 = undetermined, 1 = tracking a high, -1 = tracking a low
+    let extremeHighIndex = 0;
+    let extremeHigh = highs[0];
+    let extremeLowIndex = 0;
+    let extremeLow = lows[0];
+
+    for (let i = 1; i < candles.length; i += 1) {
+      if (direction <= 0) {
+        if (lows[i] <= extremeLow) {
+          extremeLow = lows[i];
+          extremeLowIndex = i;
+        }
+        if (extremeLow > 0 && (highs[i] - extremeLow) / extremeLow >= reversalPct) {
+          pivots.push({ index: extremeLowIndex, price: extremeLow, type: 'low' });
+          direction = 1;
+          extremeHigh = highs[i];
+          extremeHighIndex = i;
+          continue; // this candle just confirmed the low pivot — don't also test it as the high pivot below using the single-candle range that was just seeded
+        }
+      }
+      if (direction >= 0) {
+        if (highs[i] >= extremeHigh) {
+          extremeHigh = highs[i];
+          extremeHighIndex = i;
+        }
+        if (extremeHigh > 0 && (extremeHigh - lows[i]) / extremeHigh >= reversalPct) {
+          pivots.push({ index: extremeHighIndex, price: extremeHigh, type: 'high' });
+          direction = -1;
+          extremeLow = lows[i];
+          extremeLowIndex = i;
+        }
+      }
+    }
+
+    return pivots.reduce((points, pivot) => {
+      const candle = candles[pivot.index];
+      const x = chart.timeScale().timeToCoordinate(Number(candle.time));
+      const y = series.priceToCoordinate(pivot.price);
+      if (x == null || y == null) return points;
+      points.push({ id: `${pivot.type}-${candle.time}`, x, y: pivot.type === 'low' ? y + 8 : y - 8 });
+      return points;
+    }, []);
+  }, [allCandles, isLegendActive, overlayRenderVersion]);
+
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
 
@@ -2744,6 +2872,21 @@ export default function TradingViewReplayChart({
     };
 
     const handleChartClick = (param) => {
+      const clickedCandle = param?.time != null ? param?.seriesData?.get(candleSeries) : null;
+      const clickedHigh = Number(clickedCandle?.high);
+      const clickedLow = Number(clickedCandle?.low);
+      const clickedHighY = Number.isFinite(clickedHigh) ? candleSeries.priceToCoordinate(clickedHigh) : null;
+      const clickedLowY = Number.isFinite(clickedLow) ? candleSeries.priceToCoordinate(clickedLow) : null;
+      const pointY = Number(param?.point?.y);
+      const isClickOnCandle = clickedCandle
+        && Number.isFinite(clickedHighY)
+        && Number.isFinite(clickedLowY)
+        && Number.isFinite(pointY)
+        && pointY >= Math.min(clickedHighY, clickedLowY) - 3
+        && pointY <= Math.max(clickedHighY, clickedLowY) + 3;
+
+      setIsLegendActive(isClickOnCandle);
+
       if (!isReplayPricePickActiveRef.current) {
         const hoveredSeries = param?.hoveredSeries;
         let indicatorType = hoveredSeries === volumeSeriesRef.current
@@ -3148,15 +3291,147 @@ export default function TradingViewReplayChart({
     const candleSeries = candleSeriesRef.current;
     if (!candleSeries) return;
 
+    const { borderEnabled, borderUp, borderDown, wickEnabled, wickUp, wickDown } = chartDisplay.candles;
+
     candleSeries.applyOptions({
       upColor: candleColors.up,
       downColor: candleColors.down,
-      borderUpColor: candleColors.up,
-      borderDownColor: candleColors.down,
-      wickUpColor: candleColors.up,
-      wickDownColor: candleColors.down,
+      borderVisible: borderEnabled,
+      borderUpColor: borderUp || candleColors.up,
+      borderDownColor: borderDown || candleColors.down,
+      wickVisible: wickEnabled,
+      wickUpColor: wickUp || candleColors.up,
+      wickDownColor: wickDown || candleColors.down,
     });
-  }, [candleColors.down, candleColors.up]);
+  }, [candleColors.down, candleColors.up, chartDisplay.candles]);
+
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (!candleSeries) return;
+
+    candleSeries.applyOptions({ priceLineVisible: chartDisplay.priceLines.last });
+  }, [chartDisplay.priceLines.last]);
+
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (!candleSeries) return undefined;
+
+    if (previousClosePriceLineRef.current) {
+      candleSeries.removePriceLine(previousClosePriceLineRef.current);
+      previousClosePriceLineRef.current = null;
+    }
+
+    if (chartDisplay.priceLines.previousClose && allCandles.length > 1) {
+      const previousClose = Number(allCandles[allCandles.length - 2]?.close);
+      if (Number.isFinite(previousClose)) {
+        previousClosePriceLineRef.current = candleSeries.createPriceLine({
+          price: previousClose,
+          color: chartTheme.text,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: 'Prev close',
+        });
+      }
+    }
+
+    return () => {
+      if (previousClosePriceLineRef.current && candleSeriesRef.current) {
+        candleSeriesRef.current.removePriceLine(previousClosePriceLineRef.current);
+        previousClosePriceLineRef.current = null;
+      }
+    };
+  }, [chartDisplay.priceLines.previousClose, allCandles, chartTheme.text]);
+
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (!candleSeries) return undefined;
+
+    [highPriceLineRef, lowPriceLineRef].forEach((ref) => {
+      if (ref.current) {
+        candleSeries.removePriceLine(ref.current);
+        ref.current = null;
+      }
+    });
+
+    if (chartDisplay.priceLines.highLow && visibleCandles.length) {
+      const highs = visibleCandles.map((c) => Number(c.high)).filter(Number.isFinite);
+      const lows = visibleCandles.map((c) => Number(c.low)).filter(Number.isFinite);
+      if (highs.length && lows.length) {
+        highPriceLineRef.current = candleSeries.createPriceLine({
+          price: Math.max(...highs),
+          color: '#22c55e',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: 'High',
+        });
+        lowPriceLineRef.current = candleSeries.createPriceLine({
+          price: Math.min(...lows),
+          color: '#ef4444',
+          lineWidth: 1,
+          lineStyle: LineStyle.Dotted,
+          axisLabelVisible: true,
+          title: 'Low',
+        });
+      }
+    }
+
+    return () => {
+      const series = candleSeriesRef.current;
+      if (!series) return;
+      [highPriceLineRef, lowPriceLineRef].forEach((ref) => {
+        if (ref.current) {
+          series.removePriceLine(ref.current);
+          ref.current = null;
+        }
+      });
+    };
+  }, [chartDisplay.priceLines.highLow, visibleCandles]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    if (!chart || !candleSeries) return;
+
+    chart.priceScale('right').applyOptions({
+      mode: chartDisplay.scales.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    });
+
+    candleSeries.applyOptions({
+      priceFormat: {
+        type: 'custom',
+        minMove: 0.00000001,
+        formatter: chartDisplay.scales.precision === 'default'
+          ? formatPriceScaleValue
+          : (value) => Number(value).toFixed(Number(chartDisplay.scales.precision)),
+      },
+    });
+  }, [chartDisplay.scales.logScale, chartDisplay.scales.precision]);
+
+  useEffect(() => {
+    const candleSeries = candleSeriesRef.current;
+    if (!candleSeries) return;
+    // Independent of the one-off `autoScale: true` re-enable on Replay -> Live
+    // transitions elsewhere in this effect (that reset is intentional and left
+    // as-is); this only reflects the user's Scales preference otherwise.
+    candleSeries.priceScale().applyOptions({ autoScale: chartDisplay.scales.autoScale });
+  }, [chartDisplay.scales.autoScale]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    chart.applyOptions({
+      layout: {
+        background: { color: chartDisplay.canvas.background || chartTheme.background },
+      },
+      grid: {
+        vertLines: { color: chartDisplay.canvas.gridColor || chartTheme.grid },
+        horzLines: { color: chartDisplay.canvas.gridColor || chartTheme.grid },
+      },
+    });
+  }, [chartDisplay.canvas.background, chartDisplay.canvas.gridColor, chartTheme.background, chartTheme.grid]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -4207,7 +4482,7 @@ export default function TradingViewReplayChart({
           writePersistedCandleCache(preferenceUserId, cacheKey, candles);
         };
 
-        const fetchCandles = async (requestParams, signal = controller.signal) => {
+        const fetchCandles = async (requestParams, signal = controller.signal, attempt = 0) => {
           const fetchOptions = {
             headers: { Accept: 'application/json' },
           };
@@ -4217,10 +4492,19 @@ export default function TradingViewReplayChart({
           }
 
           const response = await fetch(`/api/klines?${requestParams.toString()}`, fetchOptions);
+
+          if (response.status === 429 && attempt === 0) {
+            const retryAfterSeconds = Number(response.headers.get('Retry-After')) || 3;
+            await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
+            return fetchCandles(requestParams, signal, attempt + 1);
+          }
+
           const result = await response.json().catch(() => null);
 
           if (!response.ok) {
-            throw new Error(result?.message || `HTTP ${response.status}`);
+            const httpError = new Error(result?.message || `HTTP ${response.status}`);
+            httpError.status = response.status;
+            throw httpError;
           }
 
           if (!result?.success) {
@@ -4399,7 +4683,7 @@ export default function TradingViewReplayChart({
       } catch (err) {
         if (fetchRequestIdRef.current !== requestId) return;
         if (err?.name === 'AbortError') return;
-        setError(err.message || 'Failed to load chart');
+        setError(err?.status === 429 ? 'Chart data is temporarily rate-limited. Please wait a moment and try again.' : (err.message || 'Failed to load chart'));
 
         if (!hasUsableCache && !allCandles.length) {
           setAllCandles([]);
@@ -5555,8 +5839,6 @@ export default function TradingViewReplayChart({
     liveConnectionStatus,
     currentPrice,
     selectedReplayPrice,
-    candleColors,
-    candleSize,
     indicators,
     onSymbolChange: handleSymbolChange,
     onCategoryChange: setMarketCategory,
@@ -5564,8 +5846,6 @@ export default function TradingViewReplayChart({
     onRemoveSymbol: handleRemoveSymbol,
     onTimeframeChange: handleTimeframeChange,
     onToggleReplayMode: toggleReplayMode,
-    onCandleColorChange: setCandleColors,
-    onCandleSizeChange: setCandleSize,
     onIndicatorsChange: setIndicators,
     onOpenIndicatorSettings: (indicator) => {
       setSelectedIndicator(indicator);
@@ -5589,6 +5869,17 @@ export default function TradingViewReplayChart({
     {alertNotice && <div className="fixed right-4 top-4 z-[10003] flex max-w-sm items-start gap-3 rounded-lg border border-amber-400/40 bg-[#131722] p-4 text-sm text-white shadow-2xl"><Bell size={18} className="mt-0.5 shrink-0 text-amber-400"/><span>{alertNotice}</span><button onClick={()=>setAlertNotice('')} aria-label="Dismiss alert"><X size={16}/></button></div>}
     {alertModalOpen && <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 p-4 sm:items-center" onMouseDown={(e)=>e.target===e.currentTarget&&setAlertModalOpen(false)}><div className={`w-full max-w-sm rounded-xl border p-5 shadow-2xl ${chartTheme.mode==='dark'?'border-[#2a2e39] bg-[#131722] text-white':'border-slate-200 bg-white text-slate-900'}`} role="dialog" aria-modal="true"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-bold"><Bell size={17}/>Set {symbol} alert</h2><button onClick={()=>setAlertModalOpen(false)} aria-label="Close"><X size={18}/></button></div><label className="mt-4 block text-xs font-semibold">Price<input autoFocus type="number" min="0" step="any" value={alertDraft.price} onChange={(e)=>setAlertDraft((d)=>({...d,price:e.target.value}))} className="mt-1 h-10 w-full rounded-md border border-gray-600 bg-transparent px-3 outline-none focus:border-[#2962ff]"/></label><div className="mt-3 grid grid-cols-2 gap-2">{[['rise','Rise to price'],['drop','Drop to price']].map(([value,label])=><button key={value} onClick={()=>setAlertDraft((d)=>({...d,type:value}))} className={`h-10 rounded-md border text-xs font-semibold ${alertDraft.type===value?'border-[#2962ff] bg-[#2962ff] text-white':'border-gray-600'}`}>{label}</button>)}</div>{alertError&&<p className="mt-2 text-xs text-red-400">{alertError}</p>}<button onClick={savePriceAlert} className="mt-4 h-10 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white">Create alert</button></div></div>}
     {tourStep >= 0 && <WorkspaceTour step={tourStep} steps={tourSteps} onStep={setTourStep} onFinish={finishTour} dark={chartTheme.mode==='dark'}/>}
+    <ChartSettingsModal
+      open={isChartSettingsOpen}
+      onClose={() => setIsChartSettingsOpen(false)}
+      isDark={chartTheme.mode === 'dark'}
+      candleColors={candleColors}
+      candleSize={candleSize}
+      chartDisplay={chartDisplay}
+      onCandleColorChange={setCandleColors}
+      onCandleSizeChange={setCandleSize}
+      onChartDisplayChange={updateChartDisplay}
+    />
     {alertModalOpen && <aside className={`fixed bottom-4 right-4 z-[10003] w-[min(92vw,320px)] rounded-xl border p-4 shadow-2xl sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Alert settings</h3><button onClick={toggleAlertSound} className="rounded-md border px-2 py-1 text-xs font-semibold">Sound {alertSoundEnabled ? 'on' : 'off'}</button></div><p className="mt-2 text-[11px] text-[#787b86]">Alerts monitor live markets in the background. Replay alerts are disabled.</p><div className="mt-3 max-h-44 space-y-2 overflow-y-auto">{priceAlerts.map(alert => <div key={alert.id} className="flex items-center justify-between rounded-md border p-2 text-xs"><span>{alert.direction} {formatOverlayPrice(Number(alert.target_price))}</span><button onClick={() => cancelPriceAlert(alert.id)} className="text-red-400" aria-label="Cancel alert"><Trash2 size={14}/></button></div>)}{!priceAlerts.length && <div className="text-xs text-[#787b86]">No active alerts for this market.</div>}</div></aside>}
     {chartContextMenu && (
       <div
@@ -5692,6 +5983,7 @@ export default function TradingViewReplayChart({
             renderedDrawings={renderedDrawings}
             renderedBacktestOrders={renderedBacktestOrders}
             renderedTradeMarkers={renderedTradeMarkers}
+            swingPointMarkers={swingPointMarkers}
             selectedDrawingId={selectedDrawingId}
             hoveredPositionDrawingId={hoveredPositionDrawingId}
             textInput={textInput}
@@ -5725,6 +6017,12 @@ export default function TradingViewReplayChart({
             candle={legendCandle}
             isTimeframeLoading={isTimeframeLoading}
             chartTheme={chartTheme}
+            showSymbol={chartDisplay.statusLine.symbol}
+            showExchange={chartDisplay.statusLine.exchange}
+            showOhlc={chartDisplay.statusLine.ohlc}
+            showChange={chartDisplay.statusLine.change}
+            isActive={isLegendActive || tourSteps[tourStep]?.selector === '[data-tour="appearance"]'}
+            onOpenSettings={() => setIsChartSettingsOpen(true)}
           />
 
           <IndicatorSettingsPanel

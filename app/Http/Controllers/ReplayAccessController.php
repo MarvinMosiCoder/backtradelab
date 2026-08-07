@@ -222,6 +222,22 @@ class ReplayAccessController extends Controller
         }
     }
 
+    public function adminRefund(Request $request, SubscriptionRequest $subscriptionRequest)
+    {
+        $this->requireAdmin($request);
+        $data = $request->validate([
+            'reason_code' => 'required|string|in:duplicate,fraudulent,requested_by_customer,others',
+            'reason' => 'required|string|min:10|max:500',
+        ]);
+        try {
+            $payment = $this->checkouts->refund($subscriptionRequest, $data['reason_code'], $data['reason'], $request->user());
+            return response()->json(['success' => true, 'payment' => $this->paymentPayload($payment, true)]);
+        } catch (Throwable $exception) {
+            report($exception);
+            return response()->json(['message' => $exception->getMessage() ?: 'Unable to refund this payment.'], 422);
+        }
+    }
+
     public function messages(Request $request, SubscriptionRequest $subscriptionRequest)
     {
         $this->authorizePayment($request, $subscriptionRequest);
@@ -284,13 +300,19 @@ class ReplayAccessController extends Controller
             'admin_notes' => $payment->admin_notes,
             'paid_at' => optional($payment->paid_at)->toIso8601String(),
             'failed_at' => optional($payment->failed_at)->toIso8601String(),
+            'refunded_at' => optional($payment->refunded_at)->toIso8601String(),
+            'refund_amount' => $payment->refund_amount,
+            'refund_status' => $payment->refund_status,
             'reviewed_at' => optional($payment->reviewed_at)->toIso8601String(),
             'created_at' => optional($payment->created_at)->toIso8601String(),
             'messages_count' => $payment->messages_count ?? $payment->messages()->count(),
             'payment_proof_url' => $payment->payment_proof_path ? route('subscription.proof', $payment) : null,
             'legacy' => $payment->provider === 'manual',
         ];
-        if ($includeUser) $payload['user'] = $payment->user;
+        if ($includeUser) {
+            $payload['user'] = $payment->user;
+            $payload['refund_reason'] = $payment->refund_reason;
+        }
         return $payload;
     }
 

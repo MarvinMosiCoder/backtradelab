@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
-import { Bell, Megaphone, Trash2, Volume2, VolumeX } from 'lucide-react';
+import { Bell, Download, ExternalLink, Megaphone, Trash2, Volume2, VolumeX, X } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
 
 const playPreview = () => {
@@ -13,6 +13,7 @@ export default function NotificationsViewAll({ notifications: initial = [], acti
     const isDark = theme === 'bg-skin-black';
     const [items, setItems] = useState(initial), [alerts, setAlerts] = useState(initialAlerts);
     const [filter, setFilter] = useState('all'), [sound, setSound] = useState(alertSoundEnabled);
+    const [selected, setSelected] = useState(null);
     const visible = useMemo(() => items.filter(item => filter === 'all' || (filter === 'alerts' ? item.type === 'price alert' : item.type === 'announcement')), [filter, items]);
     const markRead = async item => {
         if (item.is_read) return;
@@ -31,6 +32,23 @@ export default function NotificationsViewAll({ notifications: initial = [], acti
         <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Notifications</h1><p className="text-sm text-[#787b86]">Price-alert history and BacktradeLab announcements.</p></div><div className="flex flex-wrap gap-2"><button onClick={toggleSound} className={`flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${secondary}`}>{sound ? <Volume2 size={16}/> : <VolumeX size={16}/>} Alert sound {sound ? 'on' : 'off'}</button><button onClick={markAll} className="h-10 rounded-lg bg-[#2962ff] px-4 text-sm font-semibold text-white hover:bg-[#1e53e5]">Mark all read</button></div></header>
         {alerts.length > 0 && <section className={`rounded-xl border border-amber-500/30 p-4 ${isDark ? 'bg-amber-500/5' : 'bg-amber-50'}`}><h2 className={isDark ? 'font-bold text-white' : 'font-bold text-slate-900'}>Active live-market alerts</h2><div className="mt-3 grid gap-2 sm:grid-cols-2">{alerts.map(alert => <div key={alert.id} className={`flex items-center justify-between rounded-lg border p-3 text-sm ${secondary}`}><span><b>{alert.symbol}</b> {alert.direction} {Number(alert.target_price).toLocaleString()}</span><button onClick={() => removeAlert(alert.id)} className="rounded-md p-1.5 text-red-400 hover:bg-red-500/10" aria-label="Cancel alert"><Trash2 size={15}/></button></div>)}</div></section>}
         <div className="flex flex-wrap gap-2">{[['all','All'],['alerts','Alerts'],['announcements','Announcements']].map(([key,label]) => <button key={key} onClick={() => setFilter(key)} className={`rounded-full border px-4 py-2 text-xs font-bold transition ${filter === key ? 'border-[#2962ff] bg-[#2962ff] text-white' : secondary}`}>{label}</button>)}</div>
-        <section className={`overflow-hidden rounded-xl border ${panel}`}>{visible.length ? visible.map(item => <button key={item.key} onClick={() => markRead(item)} className={`flex w-full gap-3 border-b p-4 text-left transition last:border-0 ${isDark ? 'border-[#2a2e39] hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50'} ${item.is_read ? 'opacity-70' : 'bg-[#2962ff]/5'}`}><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${item.type === 'announcement' ? 'bg-violet-500/15 text-violet-400' : 'bg-amber-500/15 text-amber-400'}`}>{item.type === 'announcement' ? <Megaphone size={18}/> : <Bell size={18}/>}</span><span><span className="block text-xs font-bold uppercase text-[#787b86]">{item.type}</span><span className={`mt-1 block text-sm ${isDark ? 'text-[#d1d4dc]' : 'text-slate-800'}`}>{item.content}</span><span className="mt-1 block text-xs text-[#787b86]">{new Date(item.created_at).toLocaleString()}</span></span></button>) : <div className="p-12 text-center text-sm text-[#787b86]">No notifications in this category.</div>}</section>
+        <section className={`overflow-hidden rounded-xl border ${panel}`}>{visible.length ? visible.map(item => <button key={item.key} type="button" onClick={() => { markRead(item); setSelected(item); }} className={`flex w-full gap-3 border-b p-4 text-left transition last:border-0 ${isDark ? 'border-[#2a2e39] hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50'} ${item.is_read ? 'opacity-70' : 'bg-[#2962ff]/5'}`}><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${item.type === 'announcement' ? 'bg-violet-500/15 text-violet-400' : 'bg-amber-500/15 text-amber-400'}`}>{item.type === 'announcement' ? <Megaphone size={18}/> : <Bell size={18}/>}</span><span><span className="block text-xs font-bold uppercase text-[#787b86]">{item.type}</span><span className={`mt-1 block text-sm ${isDark ? 'text-[#d1d4dc]' : 'text-slate-800'}`}>{item.content}</span><span className="mt-1 block text-xs text-[#787b86]">{new Date(item.created_at).toLocaleString()}</span></span></button>) : <div className="p-12 text-center text-sm text-[#787b86]">No notifications in this category.</div>}</section>
+
+        {selected && <div className="fixed inset-0 z-[10020] flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" onMouseDown={(event) => event.target === event.currentTarget && setSelected(null)}>
+            <div className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}>
+                <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${selected.type === 'announcement' ? 'bg-violet-500/15 text-violet-400' : 'bg-amber-500/15 text-amber-400'}`}>{selected.type === 'announcement' ? <Megaphone size={18}/> : <Bell size={18}/>}</span>
+                        <div><div className="text-[10px] font-bold uppercase tracking-wider text-[#787b86]">{selected.type}</div><div className="text-xs text-[#787b86]">{new Date(selected.created_at).toLocaleString()}</div></div>
+                    </div>
+                    <button type="button" onClick={() => setSelected(null)} className={`rounded-lg p-2 text-[#787b86] ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`} aria-label="Close"><X size={17}/></button>
+                </div>
+                <p className="mt-4 text-sm leading-6">{selected.content}</p>
+                <div className="mt-5 flex justify-end gap-2">
+                    <button type="button" onClick={() => setSelected(null)} className={`h-10 rounded-lg border px-4 text-xs font-semibold ${isDark ? 'border-[#2a2e39] hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50'}`}>Close</button>
+                    {selected.url && <a href={selected.url} onClick={() => setSelected(null)} className="flex h-10 items-center gap-2 rounded-lg bg-[#2962ff] px-4 text-xs font-bold text-white hover:bg-blue-600">{selected.url.includes('/download') ? <><Download size={14}/>Download file</> : <><ExternalLink size={14}/>Open</>}</a>}
+                </div>
+            </div>
+        </div>}
     </div>;
 }

@@ -127,10 +127,15 @@ const LoginPage = () => {
     return (
         <>
             {loading && <LoginLoaderOverlay isDark={isDark} applogo={applogo} />}
-            <div className={`min-h-screen px-4 py-6 ${isDark ? 'bg-black-screen-color text-white' : 'bg-slate-50 text-slate-950'}`}>
-                <div className="mx-auto flex max-w-6xl items-center justify-between">
-                    <Link href="/" className={`inline-flex items-center gap-2 text-sm font-semibold ${isDark ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-950'}`}>
-                        <ArrowLeft size={16} />
+            <div className={`relative min-h-screen overflow-hidden px-4 py-6 ${isDark ? 'bg-black-screen-color text-white' : 'bg-slate-50 text-slate-950'}`}>
+                <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+                    <div className="absolute -left-24 top-0 h-72 w-72 animate-floatY rounded-full bg-[#2962ff]/10 blur-3xl [animation-duration:10s]" />
+                    <div className="absolute -right-24 bottom-0 h-72 w-72 animate-floatY rounded-full bg-emerald-400/10 blur-3xl [animation-duration:12s]" />
+                </div>
+
+                <div className="mx-auto flex max-w-6xl animate-fadeInUp items-center justify-between">
+                    <Link href="/" className={`group inline-flex items-center gap-2 text-sm font-semibold transition-colors ${isDark ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-950'}`}>
+                        <ArrowLeft size={16} className="transition-transform duration-200 group-hover:-translate-x-1" />
                         Back to home
                     </Link>
                     <div className="flex items-center gap-3">
@@ -146,33 +151,46 @@ const LoginPage = () => {
                 </div>
 
                 <main className="mx-auto grid min-h-[calc(100vh-84px)] max-w-5xl items-center gap-10 py-8 lg:grid-cols-[1fr_440px]">
-                    <aside className="hidden lg:block">
+                    <aside className="hidden animate-fadeInUp lg:block" style={{ animationDelay: '80ms' }}>
                         <div className="text-xs font-bold uppercase tracking-[0.22em] text-[#2962ff]">Your practice desk</div>
                         <h1 className="mt-4 max-w-lg text-4xl font-bold leading-tight">Return to the chart with a process.</h1>
                         <p className={`mt-4 max-w-md text-sm leading-7 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Replay markets, execute planned risk, and keep every decision connected to your journal.</p>
                         <div className="mt-8 grid max-w-lg gap-3">
                             {[[BarChart3, 'Chart-first workspace', 'Market context stays visible while you practice.'], [ShieldCheck, 'Paper execution', 'Plan margin, leverage, stop, and target before entry.'], [BookOpen, 'Review loop', 'Snapshots and journal notes turn sessions into feedback.']].map(([Icon, title, copy]) => (
-                                <div key={title} className={`flex items-center gap-4 rounded-lg border p-4 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
-                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2962ff]/15 text-[#5b8cff]"><Icon size={18} /></div>
+                                <div key={title} className={`group flex items-center gap-4 rounded-lg border p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#2962ff]/40 hover:shadow-lg ${isDark ? 'border-[#2a2e39] bg-[#131722] hover:shadow-blue-950/20' : 'border-slate-200 bg-white hover:shadow-blue-100'}`}>
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2962ff]/15 text-[#5b8cff] transition-transform duration-300 group-hover:scale-110"><Icon size={18} /></div>
                                     <div><div className="text-sm font-bold">{title}</div><div className="mt-1 text-xs text-slate-500">{copy}</div></div>
                                 </div>
                             ))}
                         </div>
                     </aside>
-                    <section className={`w-full rounded-xl border p-6 shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
+                    <section className={`w-full animate-fadeInUp rounded-xl border p-6 shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722] shadow-blue-950/10' : 'border-slate-200 bg-white shadow-slate-200/60'}`} style={{ animationDelay: '140ms' }}>
                         <div className="mb-6">
-                            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Workspace online</div>
+                            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> Workspace online</div>
                             <h1 className={`font-poppins text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-950'}`}>Welcome back</h1>
                             <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                                 Access your replay charts, paper trades, snapshots, and reports.
                             </p>
                         </div>
 
+                        <div className="mb-5 flex items-center gap-2" aria-hidden="true">
+                            <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${step === 'email' ? 'text-[#5b8cff]' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                <span className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] transition-colors ${step === 'email' ? 'border-[#2962ff] bg-[#2962ff]/10' : isDark ? 'border-gray-700' : 'border-slate-300'}`}>1</span>
+                                Email
+                            </div>
+                            <div className={`h-px w-8 transition-colors ${step === 'password' ? 'bg-[#2962ff]' : isDark ? 'bg-gray-700' : 'bg-slate-300'}`} />
+                            <div className={`flex items-center gap-1.5 text-xs font-bold transition-colors ${step === 'password' ? 'text-[#5b8cff]' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                <span className={`flex h-5 w-5 items-center justify-center rounded-full border text-[10px] transition-colors ${step === 'password' ? 'border-[#2962ff] bg-[#2962ff]/10' : isDark ? 'border-gray-700' : 'border-slate-300'}`}>2</span>
+                                Password
+                            </div>
+                        </div>
+
                         <form onSubmit={handleSubmit}>
-                            {step === 'email' && <label className="mb-4 block">
+                            <div key={step} className="animate-fadeInUp">
+                            {step === 'email' && <div className="mb-4 block">
                                 <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email</span>
-                                <div className={`flex h-11 items-center rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
-                                    <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
+                                <div className={`group flex h-11 items-center rounded-md border transition-colors focus-within:border-[#2962ff] focus-within:ring-1 focus-within:ring-[#2962ff]/30 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                                    <div className={`flex h-full w-11 items-center justify-center border-r transition-colors group-focus-within:border-[#2962ff]/40 group-focus-within:text-[#2962ff] ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
                                         <Mail size={17} />
                                     </div>
                                     <input
@@ -180,18 +198,28 @@ const LoginPage = () => {
                                         type="email"
                                         value={email}
                                         placeholder="Enter email"
+                                        autoFocus
                                         onChange={(event) => setEmail(event.target.value)}
                                     />
                                 </div>
                                 {errors.email && (
                                     <span className="mt-1 block text-sm text-red-400">{errors.email}</span>
                                 )}
-                            </label>}
+                            </div>}
 
-                            {step === 'password' && <label className="mb-2 block">
-                                <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</span>
-                                <div className={`flex h-11 items-center rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
-                                    <div className={`flex h-full w-11 items-center justify-center border-r ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
+                            {step === 'password' && <div className="mb-2 block">
+                                <div className="mb-1 flex items-center justify-between">
+                                    <span className={`block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setStep('email'); setPassword(''); setErrors({}); }}
+                                        className="text-xs font-semibold text-[#5b8cff] transition-colors hover:text-[#2962ff] hover:underline"
+                                    >
+                                        Change email
+                                    </button>
+                                </div>
+                                <div className={`group flex h-11 items-center rounded-md border transition-colors focus-within:border-[#2962ff] focus-within:ring-1 focus-within:ring-[#2962ff]/30 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                                    <div className={`flex h-full w-11 items-center justify-center border-r transition-colors group-focus-within:border-[#2962ff]/40 group-focus-within:text-[#2962ff] ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
                                         <Lock size={17} />
                                     </div>
                                     <input
@@ -199,12 +227,13 @@ const LoginPage = () => {
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         placeholder="Enter password"
+                                        autoFocus
                                         onChange={(event) => setPassword(event.target.value)}
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword((current) => !current)}
-                                        className={`flex h-full w-11 items-center justify-center ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-950'}`}
+                                        className={`flex h-full w-11 items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-950'}`}
                                         title={showPassword ? 'Hide password' : 'Show password'}
                                         aria-label={showPassword ? 'Hide password' : 'Show password'}
                                     >
@@ -217,12 +246,13 @@ const LoginPage = () => {
                                 {errors.message && (
                                     <span className="mt-1 block text-sm text-red-400">{errors.message}</span>
                                 )}
-                            </label>}
+                            </div>}
+                            </div>
 
                             <button
                                 type="submit"
                                 disabled={loading || checkingEmail}
-                                className={`mt-5 h-11 w-full rounded-md px-4 font-poppins text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${isDark ? 'bg-white text-skin-black hover:bg-gray-200' : 'bg-skin-black text-white hover:bg-skin-black-light'}`}
+                                className={`mt-5 h-11 w-full rounded-md px-4 font-poppins text-sm font-bold transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-950/30 disabled:pointer-events-none disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none ${isDark ? 'bg-white text-skin-black hover:bg-gray-200' : 'bg-skin-black text-white hover:bg-skin-black-light'}`}
                             >
                                 {checkingEmail ? 'Checking email...' : step === 'email' ? 'Continue' : 'Sign in'}
                             </button>
@@ -239,7 +269,7 @@ const LoginPage = () => {
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                             <a
                                 href="/auth/google/redirect"
-                                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#dadce0] bg-white px-3 text-sm font-semibold text-[#3c4043] shadow-sm transition hover:bg-[#f8fafd]"
+                                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#dadce0] bg-white px-3 text-sm font-semibold text-[#3c4043] shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#f8fafd] hover:shadow-md"
                             >
                                 <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden="true">
                                     <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.58c2.08-1.92 3.27-4.74 3.27-8.09z" />
@@ -251,7 +281,7 @@ const LoginPage = () => {
                             </a>
                             <a
                                 href="/auth/facebook/redirect"
-                                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#1877f2] bg-[#1877f2] px-3 text-sm font-semibold text-white shadow-sm transition hover:border-[#166fe5] hover:bg-[#166fe5]"
+                                className="inline-flex h-11 items-center justify-center gap-2 rounded-md border border-[#1877f2] bg-[#1877f2] px-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-[#166fe5] hover:bg-[#166fe5] hover:shadow-md"
                             >
                                 <span className="font-poppins text-base font-bold">f</span>
                                 Facebook

@@ -11,5 +11,6 @@ class PayMongoWebhookEvent extends Model
     protected $casts = [
         'livemode' => 'boolean',
         'processed_at' => 'datetime',
+        'resource' => 'array',
     ];
 }

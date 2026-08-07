@@ -7,6 +7,7 @@ use App\Models\AdmUser;
 use App\Models\SubscriptionRequest;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class SubscriptionEntitlementService
@@ -38,7 +39,10 @@ class SubscriptionEntitlementService
                 'paid_at' => $paidAt,
                 'failed_at' => null,
             ]);
-            $user->forceFill(['replay_access_ends_at' => $endsAt])->save();
+            $user->forceFill([
+                'replay_access_ends_at' => $endsAt,
+                'renewal_reminder_sent_at' => null,
+            ])->save();
 
             AdmNotifications::query()->create([
                 'adm_user_id' => $user->id,
@@ -47,6 +51,48 @@ class SubscriptionEntitlementService
                 'url' => '/subscription',
                 'is_read' => 0,
             ]);
+
+            return $lockedPayment->fresh();
+        });
+    }
+
+    public function revoke(SubscriptionRequest $payment, string $reason, array $context = []): SubscriptionRequest
+    {
+        return DB::transaction(function () use ($payment, $reason, $context) {
+            $lockedPayment = SubscriptionRequest::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            if ($lockedPayment->status === 'refunded') return $lockedPayment;
+
+            $user = AdmUser::whereKey($lockedPayment->adm_user_id)->lockForUpdate()->firstOrFail();
+            $hadFutureAccess = $user->replay_access_ends_at && $user->replay_access_ends_at->isFuture();
+            $otherPaidPurchaseExists = SubscriptionRequest::where('adm_user_id', $user->id)
+                ->where('id', '!=', $lockedPayment->id)
+                ->where('status', 'paid')
+                ->exists();
+
+            if ($hadFutureAccess) {
+                $user->forceFill(['replay_access_ends_at' => now()->subSecond()])->save();
+            }
+
+            $lockedPayment->update([
+                'status' => 'refunded',
+                'refunded_at' => now(),
+                'refund_reason' => $lockedPayment->refund_reason ?: $reason,
+            ]);
+
+            AdmNotifications::query()->create([
+                'adm_user_id' => $user->id,
+                'type' => 'subscription',
+                'content' => 'Your payment for the '.$lockedPayment->plan.' plan was refunded/reversed. Replay access has been removed.',
+                'url' => '/subscription',
+                'is_read' => 0,
+            ]);
+
+            Log::info('Subscription access revoked for user '.$user->id.' via subscription_request '.$lockedPayment->id.': '.$reason, $context);
+
+            if ($otherPaidPurchaseExists) {
+                Log::warning('Refund fully cleared replay access for user '.$user->id.' via subscription_request '.$lockedPayment->id
+                    .' while other paid, non-refunded purchases exist for this user — access may have been over-revoked. Manual review recommended.');
+            }
 
             return $lockedPayment->fresh();
         });

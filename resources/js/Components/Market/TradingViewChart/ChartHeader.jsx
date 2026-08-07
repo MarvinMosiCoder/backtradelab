@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import { marketCategoryLabel } from '../../../utils/marketLabels';
-import { Bell, ChevronDown, CircleHelp, Info, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Bell, CandlestickChart, Check, ChevronDown, CircleHelp, Info, ListPlus, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
+import { useWatchlist } from '../../../Context/WatchlistContext';
+
+const searchResultKey = (exchange, category, symbol) => `${String(exchange).toLowerCase()}:${String(category).toLowerCase()}:${String(symbol).toUpperCase()}`;
 
 function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, isDark }) {
   return (
@@ -44,16 +48,30 @@ function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, i
   );
 }
 
-export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, candleColors, candleSize, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onCandleColorChange, onCandleSizeChange, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
+export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
+  const { watchlists = {}, activeWatchlist: activeWatchlistName = null, addSymbolToWatchlist: onAddToWatchlist = null } = useWatchlist() ?? {};
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [recentlyAddedKey, setRecentlyAddedKey] = useState(null);
+  const [watchlistMenuOpenKey, setWatchlistMenuOpenKey] = useState(null);
+  const watchlistNames = useMemo(() => {
+    const names = Object.keys(watchlists);
+    if (activeWatchlistName && names.includes(activeWatchlistName)) {
+      return [activeWatchlistName, ...names.filter((name) => name !== activeWatchlistName)];
+    }
+    return names;
+  }, [watchlists, activeWatchlistName]);
+
+  useEffect(() => {
+    if (!isAddOpen) setWatchlistMenuOpenKey(null);
+  }, [isAddOpen]);
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState(false);
-  const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMarketInfoOpen, setIsMarketInfoOpen] = useState(false);
   const [marketMetadata, setMarketMetadata] = useState(null);
   const [marketMetadataLoading, setMarketMetadataLoading] = useState(false);
   const [marketMetadataError, setMarketMetadataError] = useState('');
   const [symbolSearch, setSymbolSearch] = useState('');
+  const [searchMetadata, setSearchMetadata] = useState({});
   const isDark = chartTheme?.mode === 'dark';
   const panelStyle = {
     backgroundColor: chartTheme?.panel ?? (isDark ? '#242627' : '#ffffff'),
@@ -92,15 +110,38 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
       .slice(0, 80);
   }, [availableSymbols, symbolSearch]);
 
+  useEffect(() => {
+    if (!isAddOpen || !filteredAddSymbolOptions.length) return undefined;
+    const timer = setTimeout(() => {
+      const markets = filteredAddSymbolOptions.slice(0, 40).map((item) => ({
+        exchange: item.exchange ?? 'bybit',
+        category: item.category ?? 'spot',
+        symbol: item.symbol,
+      }));
+      axios.post('/market-metadata/batch', { markets }).then((response) => {
+        const next = {};
+        (response.data?.items ?? []).forEach((entry) => {
+          next[searchResultKey(entry.market.exchange, entry.market.category, entry.market.symbol)] = entry;
+        });
+        setSearchMetadata(next);
+      }).catch(() => {});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [isAddOpen, filteredAddSymbolOptions]);
+
   const handleSelectSymbol = (nextSymbol) => {
     if (!savedSymbolSet.has(buildSymbolKey(nextSymbol))) onAddSymbol(nextSymbol);
     else onSymbolChange(buildSymbolKey(nextSymbol));
     setSymbolSearch('');
     setIsAddOpen(false);
   };
-  const handleCandleSizeChange = (value) => {
-    const nextSize = Math.min(Math.max(Number(value) || 8, 3), 24);
-    onCandleSizeChange(nextSize);
+  const handleAddToWatchlist = (item, targetWatchlistName) => {
+    if (!onAddToWatchlist || !targetWatchlistName) return;
+    if (!savedSymbolSet.has(buildSymbolKey(item))) onAddSymbol(item);
+    onAddToWatchlist(targetWatchlistName, buildSymbolKey(item));
+    setRecentlyAddedKey(buildSymbolKey(item));
+    setWatchlistMenuOpenKey(null);
+    setTimeout(() => setRecentlyAddedKey((current) => (current === buildSymbolKey(item) ? null : current)), 1500);
   };
 
   useEffect(() => {
@@ -159,19 +200,60 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                 </div>
                 <div className="max-h-72 overflow-y-auto">
                   {filteredAddSymbolOptions.length ? (
-                    filteredAddSymbolOptions.map((item) => (
+                    filteredAddSymbolOptions.map((item) => {
+                      const meta = searchMetadata[searchResultKey(item.exchange ?? 'bybit', item.category ?? 'spot', item.symbol)];
+                      const watchlistItemKey = buildSymbolKey(item);
+                      const inAnyWatchlist = watchlistNames.some((name) => (watchlists[name] ?? []).includes(watchlistItemKey));
+                      const justAddedToWatchlist = recentlyAddedKey === watchlistItemKey;
+                      const menuOpen = watchlistMenuOpenKey === watchlistItemKey;
+                      return (
                       <div key={buildSymbolKey(item)} className={`flex items-center gap-2 border-b px-3 py-2 last:border-b-0 ${isDark ? 'border-gray-700/50' : 'border-gray-100'}`}>
+                        <span className={`flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-100'}`}>
+                          {meta?.fundamentals?.logo_url ? <img src={meta.fundamentals.logo_url} alt="" className="h-full w-full object-contain" /> : <CandlestickChart size={12} className="text-[#5b8cff]" />}
+                        </span>
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-xs font-semibold text-emerald-500">{item.symbol}</div>
                           <div className={`truncate text-[9px] ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
                             {String(item.exchangeLabel ?? item.exchange).toUpperCase()} {marketCategoryLabel(item.category)}
                           </div>
                         </div>
+                        {onAddToWatchlist && watchlistNames.length > 0 && (
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setWatchlistMenuOpenKey((current) => (current === watchlistItemKey ? null : watchlistItemKey))}
+                              title="Add to watchlist"
+                              className={`flex h-6 w-6 items-center justify-center rounded-md border ${inAnyWatchlist || justAddedToWatchlist ? 'border-emerald-500/40 text-emerald-500' : isDark ? 'border-gray-700 text-gray-400 hover:border-[#2962ff] hover:text-[#2962ff]' : 'border-gray-200 text-slate-500 hover:border-[#2962ff] hover:text-[#2962ff]'}`}
+                            >
+                              {inAnyWatchlist || justAddedToWatchlist ? <Check size={12} /> : <ListPlus size={12} />}
+                            </button>
+                            {menuOpen && (
+                              <div className={`absolute right-0 top-7 z-[130] w-44 overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
+                                <div className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-gray-500' : 'text-slate-400'}`}>Add to watchlist</div>
+                                {watchlistNames.map((name) => {
+                                  const inList = (watchlists[name] ?? []).includes(watchlistItemKey);
+                                  return (
+                                    <button
+                                      key={name}
+                                      type="button"
+                                      onClick={() => handleAddToWatchlist(item, name)}
+                                      className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                                    >
+                                      <span className="truncate">{name}</span>
+                                      {inList && <Check size={12} className="shrink-0 text-emerald-500" />}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         <button type="button" onClick={() => handleSelectSymbol(item)} disabled={isSavingSymbol} className="rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-40">
                           Open
                         </button>
                       </div>
-                    ))
+                      );
+                    })
                   ) : (
                     <div className={`px-3 py-5 text-center text-xs ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>No symbols found</div>
                   )}
@@ -234,47 +316,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
               </div>
             )}
           </div>
-          <div className="relative">
-            <button data-tour="appearance" type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
-              <SlidersHorizontal size={13} />
-              <span className="hidden md:inline">Style</span>
-            </button>
-            {isAppearanceOpen && (
-              <div className="absolute right-0 top-full z-[100] mt-2 flex w-56 items-center gap-3 rounded-md border p-3 shadow-2xl" style={panelStyle}>
-                <label className="text-[10px]">
-                  Buy
-                  <input
-                    type="color"
-                    value={candleColors.up}
-                    onChange={(e) =>
-                      onCandleColorChange((c) => ({
-                        ...c,
-                        up: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="text-[10px]">
-                  Sell
-                  <input
-                    type="color"
-                    value={candleColors.down}
-                    onChange={(e) =>
-                      onCandleColorChange((c) => ({
-                        ...c,
-                        down: e.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="min-w-0 flex-1 text-[10px]">
-                  Size
-                  <input className="w-full" type="range" min="3" max="24" value={candleSize} onChange={(e) => handleCandleSizeChange(e.target.value)} />
-                </label>
-              </div>
-            )}
-          </div>
-
           <div className="min-w-0 px-1">
             <div className="truncate text-[10px] leading-none text-gray-400">{replayMode ? 'Replay' : 'Price'}</div>
             <div className="truncate text-sm font-bold leading-tight text-green-500">${formatPrice(currentPrice)}</div>
@@ -339,8 +380,17 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
               </div>
               <div className="max-h-64 overflow-y-auto">
                 {filteredAddSymbolOptions.length ? (
-                  filteredAddSymbolOptions.map((item) => (
+                  filteredAddSymbolOptions.map((item) => {
+                    const meta = searchMetadata[searchResultKey(item.exchange ?? 'bybit', item.category ?? 'spot', item.symbol)];
+                    const watchlistItemKey = buildSymbolKey(item);
+                    const inAnyWatchlist = watchlistNames.some((name) => (watchlists[name] ?? []).includes(watchlistItemKey));
+                    const justAddedToWatchlist = recentlyAddedKey === watchlistItemKey;
+                    const menuOpen = watchlistMenuOpenKey === watchlistItemKey;
+                    return (
                     <div key={buildSymbolKey(item)} className={`flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0 ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-100'}`}>
+                        {meta?.fundamentals?.logo_url ? <img src={meta.fundamentals.logo_url} alt="" className="h-full w-full object-contain" /> : <CandlestickChart size={12} className="text-[#5b8cff]" />}
+                      </span>
                       <div className="min-w-0 flex-1">
                         <div className={`truncate text-xs font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
                           {item.symbol}
@@ -350,11 +400,43 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                         </div>
                         {(item.coin_name || item.baseCoin || item.quoteCoin || item.status) && <div className="truncate text-[10px] text-gray-400">{[item.coin_name, item.baseCoin && item.quoteCoin ? `${item.baseCoin}/${item.quoteCoin}` : null, item.status].filter(Boolean).join(' / ')}</div>}
                       </div>
+                      {onAddToWatchlist && watchlistNames.length > 0 && (
+                        <div className="relative shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setWatchlistMenuOpenKey((current) => (current === watchlistItemKey ? null : watchlistItemKey))}
+                            title="Add to watchlist"
+                            className={`flex h-6 w-6 items-center justify-center rounded-md border ${inAnyWatchlist || justAddedToWatchlist ? 'border-emerald-500/40 text-emerald-500' : isDark ? 'border-gray-700 text-gray-400 hover:border-[#2962ff] hover:text-[#2962ff]' : 'border-gray-200 text-slate-500 hover:border-[#2962ff] hover:text-[#2962ff]'}`}
+                          >
+                            {inAnyWatchlist || justAddedToWatchlist ? <Check size={12} /> : <ListPlus size={12} />}
+                          </button>
+                          {menuOpen && (
+                            <div className={`absolute right-0 top-7 z-[130] w-44 overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
+                              <div className={`px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wide ${isDark ? 'text-gray-500' : 'text-slate-400'}`}>Add to watchlist</div>
+                              {watchlistNames.map((name) => {
+                                const inList = (watchlists[name] ?? []).includes(watchlistItemKey);
+                                return (
+                                  <button
+                                    key={name}
+                                    type="button"
+                                    onClick={() => handleAddToWatchlist(item, name)}
+                                    className={`flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                                  >
+                                    <span className="truncate">{name}</span>
+                                    {inList && <Check size={12} className="shrink-0 text-emerald-500" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <button type="button" onClick={() => handleSelectSymbol(item)} disabled={isSavingSymbol} className="rounded-md bg-emerald-600 px-2 py-1 text-[10px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-40" title={`Open ${item.symbol}`}>
                         Open
                       </button>
                     </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="px-2 py-3 text-center text-xs text-gray-400">No symbols found</div>
                 )}
@@ -381,54 +463,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             {replayAccessStatus === 'checking-access' ? <LoaderCircle size={15} className="animate-spin" /> : replayMode ? <X size={15} /> : <Play size={15} />}
             {replayAccessStatus === 'checking-access' ? 'Checking replay access…' : replayAccessStatus === 'pick-candle' ? 'Click a candle to start' : replayMode ? 'Back to Live' : 'Start Replay'}
           </button>
-        </div>
-
-        <div className="relative col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
-          <button data-tour="appearance" type="button" onClick={() => setIsAppearanceOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
-            <SlidersHorizontal size={14} />
-            <span className="hidden xl:inline">Style</span>
-          </button>
-          {isAppearanceOpen && (
-            <div className="absolute left-0 top-full z-[90] mt-2 max-h-[min(32rem,calc(100vh-7rem))] w-full min-w-0 overflow-y-auto rounded-md border p-3 shadow-2xl sm:left-auto sm:right-0 sm:w-72" style={panelStyle}>
-              <div className={`mb-2 text-xs font-semibold ${labelClass}`}>Candle appearance</div>
-              <div className={`${fieldClass} flex w-full items-center gap-2 px-2`}>
-                <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bull candle color">
-                  G
-                  <input
-                    type="color"
-                    value={candleColors.up}
-                    onChange={(event) =>
-                      onCandleColorChange((current) => ({
-                        ...current,
-                        up: event.target.value,
-                      }))
-                    }
-                    className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
-                  />
-                </label>
-                <label className={`flex items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Bear candle color">
-                  R
-                  <input
-                    type="color"
-                    value={candleColors.down}
-                    onChange={(event) =>
-                      onCandleColorChange((current) => ({
-                        ...current,
-                        down: event.target.value,
-                      }))
-                    }
-                    className="h-6 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
-                  />
-                </label>
-                <label className={`flex min-w-0 flex-1 items-center gap-1 text-[10px] font-semibold ${labelClass}`} title="Candle size">
-                  Size
-                  <input type="range" min="3" max="24" step="1" value={candleSize} onChange={(event) => handleCandleSizeChange(event.target.value)} className="min-w-0 flex-1 accent-emerald-500" />
-                  <span className="w-5 text-right tabular-nums">{candleSize}</span>
-                </label>
-              </div>
-              <div className="mt-3 space-y-2 text-xs"></div>
-            </div>
-          )}
         </div>
 
         <div className="relative col-span-1 sm:col-span-3 lg:col-span-2">

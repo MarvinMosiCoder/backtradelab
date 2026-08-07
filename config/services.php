@@ -68,6 +68,10 @@ return [
         'signature_tolerance' => (int) env('PAYMONGO_SIGNATURE_TOLERANCE', 300),
     ],
 
+    'subscriptions' => [
+        'renewal_reminder_days' => (int) env('SUBSCRIPTION_RENEWAL_REMINDER_DAYS', 3),
+    ],
+
     'apple_api' => [
         'base_url' => env('APPLE_API_BASE_URL'),
         'bulk_enroll_endpoint' => env('APPLE_API_BULK_ENROLL_ENDPOINT'),

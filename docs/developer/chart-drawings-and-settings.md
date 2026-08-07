@@ -26,6 +26,8 @@ Browser mirrors use scoped keys such as `replay-drawings:{userId}:{exchange}:{ca
 
 Drawings are market-scoped rather than timeframe-scoped. Loading drawings is independent from candle loading, a failed refresh retains the last local/server copy, and absolute drawing times are projected onto the active timeframe. Price Range uses a rectangular two-axis shape with corner and edge handles. Long/short Entry, TP, and SL values render in a dedicated right-axis label layer and remain visible whether or not the drawing is hovered or selected.
 
+Price Range also renders a vertical directional arrow centered in the box (`ChartStage.jsx`, in the same `'rect'`/`'price-range'`/`'date-range'`/`'price-date-range'` box-render block, gated to `d.type === 'price-range'` only): green pointing up when `end.price > start.price`, red pointing down when lower, hidden while flat (`end.price === start.price`) or during the live drag preview (`temp-` id). Direction is based purely on the price delta, not which corner the user dragged from — reuses the existing `getArrowHeadPoints` helper already used for the `forecast`/`arrow` tool types rather than a new arrowhead implementation. Date Range and Price & Date Range do not get this arrow (a duration/bar-count range has no up/down direction to show).
+
 ## Maintenance
 
 - Add a new tool in constants/tool menus, creation state, rendering, hit testing, movement, resizing, serialization, and validation.
@@ -39,6 +41,7 @@ Drawings are market-scoped rather than timeframe-scoped. Loading drawings is ind
 - Reload and market switching.
 - Create on 5m, switch to 1h and back to 5m, and confirm geometry and selection remain available.
 - Resize Price Range independently from every edge and corner.
+- Price Range arrow points up (green) when the box's end price is higher than its start price, down (red) when lower, regardless of which corner was dragged first; no arrow when the two prices are equal.
 - Confirm long/short Entry, TP, and SL axis labels remain visible before, during, and after hover/selection.
 - Hover each long/short profit or stop zone and confirm the centered Target/Stop and Open P&L details appear, then disappear on pointer leave when the drawing is not selected.
 - Select a long/short drawing and confirm its detail labels remain visible after pointer leave. Target and Stop must each stay centered on one line; Open P&L and Risk/Reward remain a two-line badge.

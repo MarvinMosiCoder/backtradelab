@@ -1,0 +1,175 @@
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import axios from 'axios';
+import { Trash2, X } from 'lucide-react';
+import { useTheme } from './ThemeContext';
+
+const WatchlistContext = createContext();
+
+export const useWatchlist = () => useContext(WatchlistContext);
+
+export const watchlistMarketKey = (exchange, category, symbol) => `${String(exchange).toLowerCase()}:${String(category).toLowerCase()}:${String(symbol).toUpperCase()}`;
+
+export const WatchlistProvider = ({ children, userId }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'bg-skin-black';
+    const watchlistKey = `backtradelab-watchlists:${userId ?? 'guest'}`;
+    const [savedSymbols, setSavedSymbols] = useState([]);
+    const [savedSymbolsMetadata, setSavedSymbolsMetadata] = useState({});
+    const [watchlists, setWatchlists] = useState(() => { try { return JSON.parse(localStorage.getItem(watchlistKey) || '{"Main":[]}'); } catch { return { Main: [] }; } });
+    const [activeWatchlist, setActiveWatchlist] = useState(Object.keys(watchlists)[0] ?? 'Main');
+    const [expandedWatchlists, setExpandedWatchlists] = useState(() => new Set([Object.keys(watchlists)[0] ?? 'Main']));
+    const [isWatchlistModalOpen, setIsWatchlistModalOpen] = useState(false);
+    const [watchlistName, setWatchlistName] = useState('');
+    const [watchlistError, setWatchlistError] = useState('');
+    const [editingWatchlist, setEditingWatchlist] = useState(null);
+    const [deleteWatchlistName, setDeleteWatchlistName] = useState(null);
+    const [watchlistsHydrated, setWatchlistsHydrated] = useState(false);
+    const [watchlistMetadata, setWatchlistMetadata] = useState({});
+
+    useEffect(() => {
+        fetch('/market-symbols', { headers: { Accept: 'application/json' } }).then((response) => response.json()).then((data) => setSavedSymbols(data.symbols ?? [])).catch(() => setSavedSymbols([]));
+    }, []);
+
+    useEffect(() => {
+        if (!savedSymbols.length) { setSavedSymbolsMetadata({}); return undefined; }
+        const markets = savedSymbols.map((item) => ({ exchange: item.exchange ?? 'bybit', category: item.category ?? 'spot', symbol: item.symbol }));
+        let cancelled = false;
+        axios.post('/market-metadata/batch', { markets }).then((response) => {
+            if (cancelled) return;
+            const next = {};
+            (response.data?.items ?? []).forEach((item) => {
+                next[watchlistMarketKey(item.market.exchange, item.market.category, item.market.symbol)] = item;
+            });
+            setSavedSymbolsMetadata(next);
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [savedSymbols]);
+
+    useEffect(() => {
+        axios.get('/market-watchlists').then(({ data }) => {
+            if (data?.exists) setWatchlists(data.watchlists ?? { Main: [] });
+        }).catch(() => {}).finally(() => setWatchlistsHydrated(true));
+    }, []);
+
+    useEffect(() => {
+        localStorage.setItem(watchlistKey, JSON.stringify(watchlists));
+        if (!watchlistsHydrated) return;
+        const timer = setTimeout(() => {
+            axios.put('/market-watchlists', { data: watchlists }).catch(() => {});
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [watchlistKey, watchlists, watchlistsHydrated]);
+
+    useEffect(() => {
+        const allKeys = [...new Set(Object.values(watchlists).flat())];
+        if (!allKeys.length) { setWatchlistMetadata({}); return undefined; }
+        const markets = allKeys.map((key) => {
+            const [exchange, category, ...symbolParts] = key.split(':');
+            return { exchange, category, symbol: symbolParts.join(':') };
+        });
+        let cancelled = false;
+        axios.post('/market-metadata/batch', { markets }).then((response) => {
+            if (cancelled) return;
+            const next = {};
+            (response.data?.items ?? []).forEach((item) => {
+                next[watchlistMarketKey(item.market.exchange, item.market.category, item.market.symbol)] = item;
+            });
+            setWatchlistMetadata(next);
+        }).catch(() => {});
+        return () => { cancelled = true; };
+    }, [watchlists]);
+
+    const createWatchlist = (event) => {
+        event.preventDefault();
+        const name = watchlistName.trim();
+        if (!name) return setWatchlistError('Enter a watchlist name.');
+        if (watchlists[name] && name !== editingWatchlist) return setWatchlistError('A watchlist with this name already exists.');
+        setWatchlists((current) => editingWatchlist
+            ? Object.fromEntries(Object.entries(current).map(([key, items]) => [key === editingWatchlist ? name : key, items]))
+            : ({ ...current, [name]: [] }));
+        setActiveWatchlist(name);
+        setExpandedWatchlists(new Set([name]));
+        setWatchlistName('');
+        setWatchlistError('');
+        setEditingWatchlist(null);
+        setIsWatchlistModalOpen(false);
+    };
+
+    const toggleWatchlist = (name) => {
+        setActiveWatchlist(name);
+        setExpandedWatchlists((current) => {
+            const next = new Set(current);
+            if (next.has(name)) next.delete(name); else next.add(name);
+            return next;
+        });
+    };
+
+    const deleteWatchlist = () => {
+        if (!deleteWatchlistName) return;
+        const remainingNames = Object.keys(watchlists).filter((name) => name !== deleteWatchlistName);
+        const fallbackName = remainingNames[0] ?? 'Main';
+        setWatchlists((current) => {
+            const next = Object.fromEntries(Object.entries(current).filter(([name]) => name !== deleteWatchlistName));
+            return Object.keys(next).length ? next : { Main: [] };
+        });
+        setActiveWatchlist(fallbackName);
+        setExpandedWatchlists(new Set([fallbackName]));
+        setDeleteWatchlistName(null);
+    };
+
+    const addSymbolToWatchlist = (name, symbolKey) => {
+        if (!symbolKey) return;
+        setWatchlists((current) => ({
+            ...current,
+            [name]: current[name]?.includes(symbolKey) ? current[name] : [...(current[name] ?? []), symbolKey],
+        }));
+    };
+
+    const removeSymbolFromWatchlist = (name, symbolKey) => {
+        setWatchlists((current) => ({
+            ...current,
+            [name]: (current[name] ?? []).filter((value) => value !== symbolKey),
+        }));
+    };
+
+    const openCreateWatchlistModal = () => {
+        setEditingWatchlist(null);
+        setWatchlistError('');
+        setWatchlistName('');
+        setIsWatchlistModalOpen(true);
+    };
+
+    const openEditWatchlistModal = (name) => {
+        setEditingWatchlist(name);
+        setWatchlistName(name);
+        setWatchlistError('');
+        setIsWatchlistModalOpen(true);
+    };
+
+    return (
+        <WatchlistContext.Provider value={{
+            savedSymbols,
+            savedSymbolsMetadata,
+            watchlists,
+            activeWatchlist,
+            expandedWatchlists,
+            watchlistMetadata,
+            toggleWatchlist,
+            addSymbolToWatchlist,
+            removeSymbolFromWatchlist,
+            openCreateWatchlistModal,
+            openEditWatchlistModal,
+            setDeleteWatchlistName,
+        }}>
+            {children}
+            {typeof document !== 'undefined' && createPortal(
+                <>
+                    {isWatchlistModalOpen && <div className="fixed inset-0 z-[10020] flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center" onMouseDown={(event) => event.target === event.currentTarget && setIsWatchlistModalOpen(false)}><form onSubmit={createWatchlist} className={`w-full max-w-md rounded-2xl border p-5 shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}><div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-bold uppercase tracking-[.18em] text-[#2962ff]">Workspace watchlists</div><h2 className="mt-1 text-lg font-bold">{editingWatchlist ? 'Rename watchlist' : 'Create a watchlist'}</h2><p className="mt-1 text-xs text-[#787b86]">{editingWatchlist ? 'Update the group name without changing its markets.' : 'Name a group, then add saved markets from its dropdown.'}</p></div><button type="button" onClick={() => { setEditingWatchlist(null); setIsWatchlistModalOpen(false); }} className={`rounded-lg p-2 text-[#787b86] ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`} aria-label="Close"><X size={17} /></button></div><label className="mt-5 block text-xs font-semibold">Watchlist name<input autoFocus maxLength="60" value={watchlistName} onChange={(event) => { setWatchlistName(event.target.value); setWatchlistError(''); }} placeholder="Example: Swing trades" className={`mt-1.5 h-11 w-full rounded-lg border px-3 text-sm outline-none focus:border-[#2962ff] ${isDark ? 'border-[#2a2e39] bg-[#0b0e14] text-white placeholder:text-gray-600' : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400'}`} /></label>{watchlistError && <p className="mt-2 text-xs text-red-500">{watchlistError}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => { setEditingWatchlist(null); setIsWatchlistModalOpen(false); }} className={`h-10 rounded-lg border px-4 text-xs font-semibold ${isDark ? 'border-[#2a2e39] hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50'}`}>Cancel</button><button type="submit" className="h-10 rounded-lg bg-[#2962ff] px-4 text-xs font-bold text-white hover:bg-blue-600">{editingWatchlist ? 'Save changes' : 'Create watchlist'}</button></div></form></div>}
+                    {deleteWatchlistName && <div className="fixed inset-0 z-[10021] flex items-end justify-center bg-black/70 p-4 backdrop-blur-sm sm:items-center"><div className={`w-full max-w-sm rounded-2xl border p-5 shadow-2xl ${isDark ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}><span className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10 text-red-500"><Trash2 size={18} /></span><h2 className="mt-4 text-lg font-bold">Delete {deleteWatchlistName}?</h2><p className="mt-2 text-xs leading-5 text-[#787b86]">The group and its market assignments will be removed. Your saved market symbols will not be deleted.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setDeleteWatchlistName(null)} className={`h-10 rounded-lg border px-4 text-xs font-semibold ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>Cancel</button><button type="button" onClick={deleteWatchlist} className="h-10 rounded-lg bg-red-600 px-4 text-xs font-bold text-white hover:bg-red-700">Delete watchlist</button></div></div></div>}
+                </>,
+                document.body
+            )}
+        </WatchlistContext.Provider>
+    );
+};

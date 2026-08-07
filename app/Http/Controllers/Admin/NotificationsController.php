@@ -83,7 +83,7 @@ class NotificationsController extends Controller{
         $notifications = AdmNotifications::where('adm_user_id', $user->id)->latest()->get()->map(fn ($item) => [
             'key' => 'notification:'.$item->id, 'id' => $item->id, 'source_type' => 'notification',
             'type' => $item->type, 'content' => $item->content, 'is_read' => (bool) $item->is_read,
-            'created_at' => $item->created_at, 'metadata' => $item->metadata,
+            'created_at' => $item->created_at, 'metadata' => $item->metadata, 'url' => $item->url,
         ]);
         $announcements = Announcement::where('status', 'ACTIVE')->latest()->get()->map(fn ($item) => [
             'key' => 'announcement:'.$item->id, 'id' => $item->id, 'source_type' => 'announcement',
