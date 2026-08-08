@@ -9,6 +9,7 @@ import { useTheme } from "../../Context/ThemeContext";
 import TraderNavbar from "./TraderNavbar";
 import TraderSidebar from "./TraderSidebar";
 import AdminNavbar from './AdminNavbar';
+import AnnouncementGate from '../../Components/Announcements/AnnouncementGate';
 
 const Layout = ({ children }) => {
     const {theme} = useTheme();
@@ -16,6 +17,7 @@ const Layout = ({ children }) => {
     const isAdmin = Boolean(auth?.role?.isAdmin);
     return (
         <NavbarProvider>
+            <AnnouncementGate />
             <div className="fixed z-[200] w-full">
                 {isAdmin ? <AdminNavbar /> : <TraderNavbar />}
             </div>

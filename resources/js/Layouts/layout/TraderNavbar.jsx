@@ -1,20 +1,30 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, router, usePage } from '@inertiajs/react';
-import { AlertTriangle, BarChart3, Bell, LogOut, Menu, Moon, RefreshCw, Search, Sun, Wallet, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bell, LogOut, Menu, Moon, RefreshCw, Sun, Wallet, X } from 'lucide-react';
 import axios from 'axios';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
+import getAppName from '../../Components/SystemSettings/ApplicationName';
 import { useSidebar } from '../../Context/SidebarContext';
-import { useTheme } from '../../Context/ThemeContext';
-import { marketCategoryLabel } from '../../utils/marketLabels';
+import { useProfile, useTheme } from '../../Context/ThemeContext';
+import getInitials from '../../utils/getInitials';
+import colorMap from '../../Components/Notification/ColorMap';
+import AvatarBadge from '../../Components/Profile/AvatarBadge';
+import { getAvatarFromFileName } from '../../Components/Profile/avatarCatalog';
 
 export default function TraderNavbar() {
     const { auth } = usePage().props;
     const activeSymbolStorageKey = `backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`;
     const { toggleSidebar } = useSidebar();
     const { theme, setTheme } = useTheme();
+    const { profile } = useProfile();
     const isDark = theme === 'bg-skin-black';
+    const displayIdentity = auth?.user?.username || auth?.user?.name || '';
+    const navFileName = profile ?? auth?.profile?.file_name;
+    const navAvatar = getAvatarFromFileName(navFileName);
+    const navInitials = getInitials(displayIdentity);
+    const navBackground = colorMap[navInitials.charAt(0)] || 'bg-slate-300';
     const [logo, setLogo] = useState('');
-    const [symbols, setSymbols] = useState([]);
+    const [appName, setAppName] = useState('BacktradeLab');
     const [showLogoutModal, setShowLogoutModal] = useState(false);
     const [showAssets, setShowAssets] = useState(false);
     const [assetsAccount, setAssetsAccount] = useState(null);
@@ -36,10 +46,7 @@ export default function TraderNavbar() {
 
     useEffect(() => {
         getAppLogo().then(setLogo);
-        fetch('/market-symbols', { headers: { Accept: 'application/json' } })
-            .then((response) => response.ok ? response.json() : Promise.reject(response))
-            .then((payload) => setSymbols(Array.isArray(payload.symbols) ? payload.symbols : []))
-            .catch(() => setSymbols([]));
+        getAppName().then(setAppName);
     }, []);
 
     useEffect(() => {
@@ -86,12 +93,6 @@ export default function TraderNavbar() {
     }, [auth?.user?.id]);
 
     useEffect(() => {
-        const syncSymbols = (event) => setSymbols(Array.isArray(event.detail) ? event.detail : []);
-        window.addEventListener('backtradelab-symbols-changed', syncSymbols);
-        return () => window.removeEventListener('backtradelab-symbols-changed', syncSymbols);
-    }, []);
-
-    useEffect(() => {
         const syncAccount = (event) => {
             if (event.detail) {
                 setAssetsAccount(event.detail);
@@ -107,25 +108,6 @@ export default function TraderNavbar() {
             window.removeEventListener('backtradelab-active-symbol-change', syncActiveSymbol);
         };
     }, []);
-
-    const symbolKey = (item) => item?.symbol
-        ? `${item.exchange ?? 'bybit'}:${item.category ?? 'spot'}:${item.symbol}`
-        : '';
-
-    const changeSymbol = (event) => {
-        const item = symbols.find((symbol) => symbolKey(symbol) === event.target.value);
-        if (!item) return;
-
-        const selected = {
-            symbol: item.symbol,
-            exchange: item.exchange ?? 'bybit',
-            category: item.category ?? 'spot',
-        };
-        setActiveSymbol(selected);
-        localStorage.setItem(activeSymbolStorageKey, JSON.stringify(selected));
-        window.dispatchEvent(new CustomEvent('backtradelab-active-symbol-change', { detail: selected }));
-        router.visit('/workspace');
-    };
 
     const toggleTheme = () => {
         const nextTheme = isDark ? 'bg-skin-white' : 'bg-skin-black';
@@ -162,6 +144,14 @@ export default function TraderNavbar() {
             await axios.post('/notifications/read', { notification_id: item.id, source_type: 'notification' });
             setNotifications((current) => current.map((value) => value.id === item.id ? { ...value, is_read: true } : value));
             setUnreadNotifications((count) => Math.max(count - 1, 0));
+        } catch {}
+    };
+
+    const dismissNotification = async (item) => {
+        setNotifications((current) => current.filter((value) => value.id !== item.id));
+        if (!item.is_read) setUnreadNotifications((count) => Math.max(count - 1, 0));
+        try {
+            await axios.post('/notifications/dismiss', { notification_id: item.id });
         } catch {}
     };
 
@@ -210,25 +200,13 @@ export default function TraderNavbar() {
 
             <Link href="/workspace" className="flex shrink-0 items-center gap-2 pr-3 sm:pr-5">
                 <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md bg-[#2962ff]">
-                    {logo ? <img src={logo} alt="BacktradeLab" className="h-full w-full object-contain p-1" /> : <BarChart3 size={17} className="text-white" />}
+                    {logo ? <img src={logo} alt={appName} className="h-full w-full object-contain p-1" /> : <BarChart3 size={17} className="text-white" />}
                 </div>
                 <div className="hidden sm:block">
-                    <div className="text-sm font-bold leading-none">BacktradeLab</div>
+                    <div className="text-sm font-bold leading-none">{appName}</div>
                     <div className="mt-1 text-[9px] font-semibold uppercase tracking-[0.2em] text-[#787b86]">Trading terminal</div>
                 </div>
             </Link>
-
-            <div className={`hidden h-8 items-center gap-2 rounded-md border px-2 md:flex ${isDark ? 'border-[#2a2e39] bg-[#0b0e14]' : 'border-slate-200 bg-slate-50'}`}>
-                <Search size={14} className="text-[#787b86]" />
-                <select value={symbolKey(activeSymbol)} onChange={changeSymbol} className="max-w-52 bg-transparent text-xs font-semibold outline-none">
-                    <option value="">Select market</option>
-                    {symbols.map((item) => (
-                        <option key={symbolKey(item)} value={symbolKey(item)}>
-                            {item.symbol} · {String(item.exchange).toUpperCase()} · {marketCategoryLabel(item.category)}
-                        </option>
-                    ))}
-                </select>
-            </div>
 
             <div className="ml-auto" />
 
@@ -258,7 +236,7 @@ export default function TraderNavbar() {
 
                             <div className="max-h-[min(72vh,480px)] overflow-y-auto">
                                 {notifications.length ? notifications.map((item) => {
-                                    const rowClass = `flex w-full items-start gap-3 border-b px-4 py-3 text-left transition last:border-0 ${isDark ? 'border-[#2a2e39] hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50'} ${item.is_read ? 'opacity-70' : 'bg-[#2962ff]/5'}`;
+                                    const rowWrapClass = `group flex w-full items-start gap-1 border-b pl-4 pr-2 transition last:border-0 ${isDark ? 'border-[#2a2e39] hover:bg-white/5' : 'border-slate-200 hover:bg-slate-50'} ${item.is_read ? 'opacity-70' : 'bg-[#2962ff]/5'}`;
                                     const rowContent = <>
                                         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-400"><Bell size={14} /></span>
                                         <span className="min-w-0 flex-1">
@@ -267,9 +245,23 @@ export default function TraderNavbar() {
                                             <span className="mt-1 block text-[10px] text-[#787b86]">{new Date(item.created_at).toLocaleString()}</span>
                                         </span>
                                     </>;
-                                    return item.url
-                                        ? <a key={item.id} href={item.url} onClick={() => markNotificationRead(item)} className={rowClass}>{rowContent}</a>
-                                        : <button key={item.id} type="button" onClick={() => markNotificationRead(item)} className={rowClass}>{rowContent}</button>;
+                                    const inner = item.url
+                                        ? <a href={item.url} onClick={() => markNotificationRead(item)} className="flex flex-1 items-start gap-3 py-3 text-left">{rowContent}</a>
+                                        : <button type="button" onClick={() => markNotificationRead(item)} className="flex flex-1 items-start gap-3 py-3 text-left">{rowContent}</button>;
+                                    return (
+                                        <div key={item.id} className={rowWrapClass}>
+                                            {inner}
+                                            <button
+                                                type="button"
+                                                onClick={(event) => { event.preventDefault(); event.stopPropagation(); dismissNotification(item); }}
+                                                className="mt-2.5 shrink-0 rounded-md p-1.5 text-[#787b86] opacity-0 transition hover:bg-white/10 hover:text-current group-hover:opacity-100"
+                                                aria-label="Dismiss notification"
+                                                title="Dismiss from this list"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    );
                                 }) : <div className="p-8 text-center text-xs text-[#787b86]">No notifications yet.</div>}
                             </div>
 
@@ -340,7 +332,7 @@ export default function TraderNavbar() {
                                             <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-[#787b86]">Recent demo transactions</div>
                                             <div className="max-h-36 space-y-1 overflow-y-auto">
                                                 {assetsAccount.trades?.length ? assetsAccount.trades.slice(0, 8).map((trade) => (
-                                                    <div key={trade.id} className={`flex items-center justify-between gap-2 rounded px-2.5 py-2 text-[11px] ${isDark ? 'bg-[#0b0e14]' : 'bg-slate-50'}`}><span className="truncate">{String(trade.action).toUpperCase()} {String(trade.side).toUpperCase()} {trade.symbol}</span><span className={Number(trade.pnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}>{trade.pnl == null ? formatAssetMoney(trade.notional) : formatAssetMoney(trade.pnl)}</span></div>
+                                                    <div key={trade.id} className={`flex items-center justify-between gap-2 rounded px-2.5 py-2 text-[11px] ${isDark ? 'bg-[#0b0e14]' : 'bg-slate-50'}`}><span className="truncate">{String(trade.action).toUpperCase()} {String(trade.side).toUpperCase()} {trade.symbol}</span><span className={Number(trade.pnl ?? 0) >= 0 ? (isDark ? 'text-emerald-400' : 'text-emerald-600') : (isDark ? 'text-red-400' : 'text-red-600')}>{trade.pnl == null ? formatAssetMoney(trade.notional) : formatAssetMoney(trade.pnl)}</span></div>
                                                 )) : <div className="py-3 text-center text-[11px] text-[#787b86]">No demo transactions yet</div>}
                                             </div>
                                         </div>
@@ -356,10 +348,11 @@ export default function TraderNavbar() {
                 <button type="button" onClick={toggleTheme} className="rounded-md p-2 hover:bg-white/10" title="Toggle theme">
                     {isDark ? <Sun size={16} /> : <Moon size={16} />}
                 </button>
-                <div className="hidden text-right sm:block">
-                    <div className="max-w-28 truncate text-xs font-semibold">{auth?.user?.name}</div>
-                    <div className="text-[9px] uppercase tracking-wider text-[#787b86]">Trader</div>
-                </div>
+                <Link href="/profile" title="View profile" className={`h-9 w-9 shrink-0 overflow-hidden rounded-full border shadow-md transition hover:opacity-80 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                    {navAvatar ? <AvatarBadge avatar={navAvatar} sizeClassName="text-base"/> : (
+                        <div className={`flex h-full w-full items-center justify-center ${navBackground} text-xs font-bold text-slate-800`}>{navInitials}</div>
+                    )}
+                </Link>
                 <button type="button" onClick={() => setShowLogoutModal(true)} className="rounded-md p-2 text-[#787b86] hover:bg-red-500/10 hover:text-red-400" title="Sign out">
                     <LogOut size={16} />
                 </button>

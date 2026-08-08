@@ -2,19 +2,32 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePage } from '@inertiajs/react';
 import {
+  ArrowLeftRight,
   Bold,
   BoxSelect,
+  Bookmark,
   ChevronDown,
   ChevronRight,
   ChartNoAxesCombined,
+  Circle,
+  CircleDashed,
+  Compass,
   Copy,
   Crosshair,
+  Eye,
+  EyeOff,
+  Flag,
+  FileText,
   Gauge,
   GripVertical,
   Italic,
   LayoutGrid,
   LocateFixed,
   LoaderCircle,
+  Lock,
+  MapPin,
+  MessageCircle,
+  MessageSquare,
   MoreHorizontal,
   MousePointer2,
   MoveRight,
@@ -23,20 +36,30 @@ import {
   Pause,
   Pencil,
   Play,
+  Quote,
   RotateCcw,
   Save,
   Settings,
+  Shapes,
+  Sigma,
+  Signpost,
   SkipBack,
   SkipForward,
   Slash,
+  Spline,
+  StickyNote,
+  Tag,
   Trash2,
   TrendingDown,
   TrendingUp,
+  Triangle,
   Type,
+  Unlock,
   Wallet,
+  Waves,
   X,
 } from 'lucide-react';
-import { DRAWING_COLORS, DRAWING_WIDTHS, PLAYBACK_SPEEDS } from './constants';
+import { DRAWING_COLORS, DRAWING_WIDTHS, PLAYBACK_SPEEDS, TEXT_SIZES } from './constants';
 
 const controlBaseClass =
   'inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40';
@@ -207,6 +230,7 @@ const TOOL_BUTTONS = [
   { type: 'vertical-line', label: 'Vertical Line', icon: Slash },
   { type: 'parallel-channel', label: 'Parallel Channel', icon: ChartNoAxesCombined },
   { type: 'horizontal-ray', label: 'H Ray', icon: MoveRight },
+  { type: 'extended-line', label: 'Extended Line', icon: ArrowLeftRight },
   { type: 'path', label: 'Path', icon: Slash },
   { type: 'fib-retracement', label: 'Fib Retrace', icon: Crosshair },
   { type: 'fib-extension', label: 'Fib Extension', icon: ChartNoAxesCombined },
@@ -218,15 +242,32 @@ const TOOL_BUTTONS = [
   { type: 'date-range', label: 'Date Range', icon: LocateFixed },
   { type: 'price-date-range', label: 'Price & Date Range', icon: LocateFixed },
   { type: 'rect', label: 'Box', icon: BoxSelect },
+  { type: 'circle', label: 'Circle', icon: Circle },
+  { type: 'triangle', label: 'Triangle', icon: Triangle },
+  { type: 'arc', label: 'Arc', icon: CircleDashed },
+  { type: 'curve', label: 'Curve', icon: Waves },
+  { type: 'double-curve', label: 'Double Curve', icon: Spline },
   { type: 'text', label: 'Text', icon: Type },
+  { type: 'anchored-text', label: 'Anchored Text', icon: MapPin },
+  { type: 'note', label: 'Note', icon: StickyNote },
+  { type: 'anchored-note', label: 'Anchored Note', icon: FileText },
+  { type: 'callout', label: 'Callout', icon: Quote },
+  { type: 'comment', label: 'Comment', icon: MessageCircle },
+  { type: 'price-label', label: 'Price Label', icon: Tag },
+  { type: 'price-note', label: 'Price Note', icon: Bookmark },
+  { type: 'signpost', label: 'Signpost', icon: Signpost },
+  { type: 'flag-mark', label: 'Flag Mark', icon: Flag },
 ];
 
+const TEXT_MARKER_TYPES = ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'];
+const PRICE_ANCHORED_MARKER_TYPES = ['price-label', 'price-note'];
+
 const TOOL_GROUPS = [
-  { name: 'Trend Lines', tools: ['line', 'ray', 'arrow', 'horizontal-line', 'vertical-line', 'horizontal-ray', 'path', 'parallel-channel'] },
-  { name: 'Fibonacci', tools: ['fib-retracement', 'fib-extension'] },
-  { name: 'Forecasting', tools: ['long-position', 'short-position', 'forecast'] },
-  { name: 'Geometric Shape', tools: ['measure', 'price-range', 'date-range', 'price-date-range', 'rect'] },
-  { name: 'Annotation', tools: ['text'] },
+  { name: 'Trend Lines', groupIcon: Spline, tools: ['line', 'ray', 'arrow', 'horizontal-line', 'vertical-line', 'horizontal-ray', 'extended-line', 'path', 'parallel-channel'] },
+  { name: 'Fibonacci', groupIcon: Sigma, tools: ['fib-retracement', 'fib-extension'] },
+  { name: 'Forecasting', groupIcon: Compass, tools: ['long-position', 'short-position', 'forecast'] },
+  { name: 'Geometric Shape', groupIcon: Shapes, tools: ['measure', 'price-range', 'date-range', 'price-date-range', 'rect', 'circle', 'triangle', 'arc', 'curve', 'double-curve'] },
+  { name: 'Annotation', groupIcon: MessageSquare, tools: ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'] },
 ];
 
 const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
@@ -234,7 +275,7 @@ const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
   [toolButton.type]: toolButton.label,
 }), {});
 
-const WIDTH_TOOL_TYPES = TOOL_BUTTONS.map(item => item.type).filter(type => type !== 'text');
+const WIDTH_TOOL_TYPES = TOOL_BUTTONS.map(item => item.type).filter(type => !TEXT_MARKER_TYPES.includes(type));
 const LINE_STYLE_TOOL_TYPES = WIDTH_TOOL_TYPES;
 const LABEL_TOOL_TYPES = WIDTH_TOOL_TYPES;
 const PRESET_TOOL_TYPES = TOOL_BUTTONS.map(item => item.type);
@@ -281,12 +322,18 @@ function DrawingSettingsDialog({
   editorLabel,
   timeframe,
   chartTheme,
+  canUsePresets,
+  presetItems,
+  onSaveTemplate,
   onClose,
   onApply,
 }) {
   const isDark = chartTheme?.mode !== 'light';
   const [activeTab, setActiveTab] = useState('style');
   const [draft, setDraft] = useState(() => ({ ...drawing }));
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+  const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
+  const [templateNameDraft, setTemplateNameDraft] = useState('');
   const tabs = ['style', 'text', 'coordinates', 'visibility'];
   const surfaceClass = isDark ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800';
   const fieldClass = isDark
@@ -307,6 +354,31 @@ function DrawingSettingsDialog({
       if (key === 'point') return { ...current, point: { ...current.point, [field]: value } };
       return { ...current, [key]: { ...current[key], [field]: value } };
     });
+  };
+
+  const handleApplyDefaults = () => {
+    setDraft((current) => ({
+      ...current,
+      color: DRAWING_COLORS[0],
+      strokeWidth: 1,
+      lineStyle: 'solid',
+      textBold: false,
+      textItalic: false,
+      textSize: 12,
+      labelVertical: 'top',
+      labelHorizontal: 'center',
+    }));
+    setShowTemplateMenu(false);
+  };
+
+  const handleSaveTemplate = () => {
+    const name = templateNameDraft.trim();
+    if (!name) return;
+    const existing = (presetItems ?? []).find((item) => String(item.name).toLowerCase() === name.toLowerCase());
+    if (existing && !window.confirm(`Overwrite the “${existing.name}” template with the current tool settings?`)) return;
+    onSaveTemplate?.(name);
+    setShowSaveAsDialog(false);
+    setTemplateNameDraft('');
   };
 
   return (
@@ -371,6 +443,9 @@ function DrawingSettingsDialog({
                 <input type="color" value={normalizeHexColor(draft.color) ?? '#ffffff'} onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))} className={`h-11 w-11 cursor-pointer rounded-lg border p-1 ${fieldClass}`} aria-label="Text color" />
                 <button type="button" onClick={() => setDraft((current) => ({ ...current, textBold: !current.textBold }))} className={`h-11 w-11 rounded-lg border text-lg font-bold ${fieldClass} ${draft.textBold ? 'ring-1 ring-[#2962ff]' : ''}`}>B</button>
                 <button type="button" onClick={() => setDraft((current) => ({ ...current, textItalic: !current.textItalic }))} className={`h-11 w-11 rounded-lg border text-lg italic ${fieldClass} ${draft.textItalic ? 'ring-1 ring-[#2962ff]' : ''}`}>I</button>
+                <select value={Number(draft.textSize) || 12} onChange={(event) => setDraft((current) => ({ ...current, textSize: Number(event.target.value) }))} className={`h-11 flex-1 rounded-lg border px-2 text-sm outline-none ${fieldClass}`} aria-label="Text size">
+                  {TEXT_SIZES.map((size) => <option key={size} value={size}>{size}px</option>)}
+                </select>
               </div>
               <textarea value={draft.text ?? draft.labelText ?? ''} onChange={(event) => setDraft((current) => ({ ...current, text: event.target.value, labelText: event.target.value }))} disabled={draft.showText === false} className={`h-28 w-full resize-none rounded-lg border p-3 text-sm outline-none ${fieldClass} disabled:opacity-40`} placeholder="Drawing text" />
               <div className="grid grid-cols-[1fr_1fr_1fr] items-center gap-2">
@@ -415,11 +490,73 @@ function DrawingSettingsDialog({
           )}
         </div>
 
-        <footer className={`flex items-center justify-end gap-3 border-t px-6 py-5 ${dividerClass}`}>
-          <button type="button" onClick={onClose} className={`h-11 rounded-lg border px-5 text-sm font-semibold ${fieldClass}`}>Cancel</button>
-          <button type="button" onClick={() => onApply(draft)} className="h-11 rounded-lg bg-emerald-400 px-5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Ok</button>
+        <footer className={`flex items-center justify-between gap-3 border-t px-6 py-5 ${dividerClass}`}>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowTemplateMenu((current) => !current)}
+              disabled={!canUsePresets}
+              className={`flex h-11 items-center gap-1.5 rounded-lg border px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${fieldClass}`}
+            >
+              Template
+              <ChevronDown size={15} className={`transition-transform ${showTemplateMenu ? 'rotate-180' : ''}`} />
+            </button>
+            {showTemplateMenu && (
+              <>
+                <button type="button" className="fixed inset-0 z-[10029] cursor-default" onClick={() => setShowTemplateMenu(false)} aria-label="Close template menu" tabIndex={-1} />
+                <div className={`absolute bottom-full left-0 z-[10030] mb-2 w-44 overflow-hidden rounded-lg border py-1.5 shadow-2xl ${surfaceClass}`}>
+                  <button
+                    type="button"
+                    onClick={() => { setTemplateNameDraft(''); setShowSaveAsDialog(true); setShowTemplateMenu(false); }}
+                    className={`block w-full px-4 py-2.5 text-left text-sm ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                  >
+                    Save as...
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyDefaults}
+                    className={`block w-full px-4 py-2.5 text-left text-sm ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                  >
+                    Apply defaults
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={onClose} className={`h-11 rounded-lg border px-5 text-sm font-semibold ${fieldClass}`}>Cancel</button>
+            <button type="button" onClick={() => onApply(draft)} className="h-11 rounded-lg bg-emerald-400 px-5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300">Ok</button>
+          </div>
         </footer>
       </section>
+
+      {showSaveAsDialog && (
+        <div className="fixed inset-0 z-[10031] flex items-center justify-center bg-black/40 px-3" data-chart-ui>
+          <section className={`w-full max-w-sm overflow-hidden rounded-md border shadow-2xl ${surfaceClass}`} role="dialog" aria-modal="true" aria-label="Save drawing template as">
+            <header className="flex items-center justify-between px-6 pb-4 pt-6">
+              <h2 className="text-lg font-semibold">Save drawing template as</h2>
+              <button type="button" onClick={() => setShowSaveAsDialog(false)} className={`flex h-9 w-9 items-center justify-center rounded transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`} aria-label="Close"><X size={22} strokeWidth={1.4} /></button>
+            </header>
+            <div className="px-6 pb-6">
+              <label className={`mb-1 block text-sm font-medium ${mutedClass}`}>
+                Template name:
+                <input
+                  type="text"
+                  autoFocus
+                  value={templateNameDraft}
+                  onChange={(event) => setTemplateNameDraft(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Enter') handleSaveTemplate(); }}
+                  className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${fieldClass}`}
+                />
+              </label>
+            </div>
+            <footer className={`flex items-center justify-end gap-3 border-t px-6 py-5 ${dividerClass}`}>
+              <button type="button" onClick={() => setShowSaveAsDialog(false)} className={`h-11 rounded-lg border px-5 text-sm font-semibold ${fieldClass}`}>Cancel</button>
+              <button type="button" onClick={handleSaveTemplate} disabled={!templateNameDraft.trim()} className="h-11 rounded-lg bg-emerald-400 px-5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40">Save</button>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -457,6 +594,7 @@ function TopToolEditorBar({
   onDuplicateSelectedDrawing,
   onDeleteSelectedDrawing,
   onSavePreset,
+  onSaveSelectedToolPreset,
   chartTheme,
   availableWidth,
 }) {
@@ -822,6 +960,9 @@ function TopToolEditorBar({
           editorLabel={editorLabel}
           timeframe={timeframe}
           chartTheme={chartTheme}
+          canUsePresets={canUsePresets}
+          presetItems={presetItems}
+          onSaveTemplate={onSaveSelectedToolPreset}
           onClose={() => setOpenMenu(null)}
           onApply={(nextDrawing) => {
             if (nextDrawing.color !== activeColor) onDrawingColorChange(nextDrawing.color);
@@ -829,11 +970,12 @@ function TopToolEditorBar({
             if (canEditLineStyle && nextDrawing.lineStyle !== activeLineStyle) onDrawingLineStyleChange(nextDrawing.lineStyle);
             onDrawingLabelChange({
               labelText: nextDrawing.labelText ?? '',
-              ...(nextDrawing.type === 'text' ? { text: nextDrawing.text ?? nextDrawing.labelText ?? '' } : {}),
+              ...(TEXT_MARKER_TYPES.includes(nextDrawing.type) ? { text: nextDrawing.text ?? nextDrawing.labelText ?? '' } : {}),
               labelVertical: nextDrawing.labelVertical ?? 'top',
               labelHorizontal: nextDrawing.labelHorizontal ?? 'center',
               textBold: Boolean(nextDrawing.textBold),
               textItalic: Boolean(nextDrawing.textItalic),
+              textSize: Number(nextDrawing.textSize) || 12,
               showText: nextDrawing.showText !== false,
               locked: Boolean(nextDrawing.locked),
               visibleTimeframe: nextDrawing.visibleTimeframe ?? null,
@@ -1065,6 +1207,10 @@ export default function ReplayPanel({
   onClearDrawings,
   onDuplicateSelectedDrawing,
   onDeleteSelectedDrawing,
+  allDrawingsLocked,
+  onToggleLockAllDrawings,
+  hiddenLayers,
+  onToggleVisibility,
   onStartBacktestSession,
   onEndBacktestSession,
   symbol,
@@ -1151,7 +1297,7 @@ export default function ReplayPanel({
     : [];
   const canUsePresets = PRESET_TOOL_TYPES.includes(editorType);
   const selectedPresetName = (
-    selectedDrawing?.type === 'text'
+    TEXT_MARKER_TYPES.includes(selectedDrawing?.type)
       ? selectedDrawing?.text
       : selectedDrawing?.labelText
   )?.trim();
@@ -1167,7 +1313,7 @@ export default function ReplayPanel({
   const canEditWidth = WIDTH_TOOL_TYPES.includes(editorType);
   const canEditLineStyle = LINE_STYLE_TOOL_TYPES.includes(editorType);
   const canEditLabel = LABEL_TOOL_TYPES.includes(editorType);
-  const canEditText = editorType === 'text';
+  const canEditText = TEXT_MARKER_TYPES.includes(editorType);
   const hasToolEditor = Boolean(editorType);
   const activeToolIcon = useMemo(() => {
     return TOOL_BUTTONS.find((item) => item.type === tool)?.icon ?? MousePointer2;
@@ -1482,6 +1628,24 @@ export default function ReplayPanel({
         />
         {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
           <RailButton
+            icon={allDrawingsLocked ? Lock : Unlock}
+            active={allDrawingsLocked}
+            title={allDrawingsLocked ? 'Unlock all drawings' : 'Lock all drawings'}
+            onClick={onToggleLockAllDrawings}
+            chartTheme={chartTheme}
+          />
+        )}
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
+          <RailButton
+            icon={(hiddenLayers?.drawings || hiddenLayers?.indicators || hiddenLayers?.positions) ? EyeOff : Eye}
+            active={activeGroup === 'visibility'}
+            title="Show/Hide"
+            onClick={() => toggleGroup('visibility')}
+            chartTheme={chartTheme}
+          />
+        )}
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
+          <RailButton
             icon={Trash2}
             disabled={!drawings.length}
             title="Clear Drawings"
@@ -1517,7 +1681,7 @@ export default function ReplayPanel({
       {(fullscreenDrawingOnly || groupedWorkspaceRail) && TOOL_GROUPS.map((group) => (
         activeGroup === `tools:${group.name}` ? (
           <div key={group.name} className="pointer-events-auto">
-            <Flyout title={group.name} icon={TOOL_BUTTONS.find((item) => item.type === group.tools[0])?.icon} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
+            <Flyout title={group.name} icon={group.groupIcon ?? TOOL_BUTTONS.find((item) => item.type === group.tools[0])?.icon} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
               <div className="grid grid-cols-1 gap-2">
                 {group.tools.map((toolType) => {
                   const item = TOOL_BUTTONS.find((candidate) => candidate.type === toolType);
@@ -1659,10 +1823,11 @@ export default function ReplayPanel({
                   .map((toolType) => TOOL_BUTTONS.find((item) => item.type === toolType))
                   .filter(Boolean);
 
+                const GroupIcon = group.groupIcon;
                 return (
                   <details key={group.name} className={`group rounded-md border p-2 ${isDarkTheme ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
                     <summary className={`flex cursor-pointer list-none items-center justify-between text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>
-                      {group.name}<ChevronDown size={13} className="transition group-open:rotate-180"/>
+                      <span className="flex items-center gap-1.5">{GroupIcon && <GroupIcon size={13}/>}{group.name}</span><ChevronDown size={13} className="transition group-open:rotate-180"/>
                     </summary>
                     <div className="grid grid-cols-2 gap-2">
                       {groupTools.map(({ type, label, icon }) => (
@@ -1682,7 +1847,25 @@ export default function ReplayPanel({
               })}
             </div>
 
-            <div className={`border-t pt-3 ${sectionBorderClass}`}>
+            <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
+              <ControlButton
+                icon={allDrawingsLocked ? Lock : Unlock}
+                onClick={onToggleLockAllDrawings}
+                active={allDrawingsLocked}
+                className="w-full"
+                chartTheme={chartTheme}
+              >
+                {allDrawingsLocked ? 'Unlock all drawings' : 'Lock all drawings'}
+              </ControlButton>
+              <div className={`rounded-md border p-2 ${isDarkTheme ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                <div className={`mb-1.5 text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>Show / Hide</div>
+                {[['drawings', 'Drawings'], ['indicators', 'Indicators'], ['positions', 'Positions and orders']].map(([key, label]) => (
+                  <label key={key} className="flex cursor-pointer items-center justify-between gap-3 py-1 text-xs">
+                    {label}
+                    <input type="checkbox" checked={Boolean(hiddenLayers?.[key])} onChange={() => onToggleVisibility?.(key)} className="h-4 w-4 accent-[#2962ff]" />
+                  </label>
+                ))}
+              </div>
               <ControlButton
                 icon={Trash2}
                 onClick={onClearDrawings}
@@ -2082,11 +2265,38 @@ export default function ReplayPanel({
           onDuplicateSelectedDrawing={onDuplicateSelectedDrawing}
           onDeleteSelectedDrawing={onDeleteSelectedDrawing}
           onSavePreset={handleSavePreset}
+          onSaveSelectedToolPreset={onSaveSelectedToolPreset}
           chartTheme={chartTheme}
           availableWidth={Math.max((Number(overlayWidth) || 0) - 164, 140)}
         />
       )}
 
+      {activeGroup === 'visibility' && (
+        <div className="pointer-events-auto">
+          <Flyout title="Show/Hide" icon={Eye} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
+            {[
+              ['drawings', 'Hide drawings'],
+              ['indicators', 'Hide indicators'],
+              ['positions', 'Hide positions and orders'],
+            ].map(([key, label]) => (
+              <label key={key} className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+                {label}
+                <input type="checkbox" checked={Boolean(hiddenLayers?.[key])} onChange={() => onToggleVisibility?.(key)} className="h-4 w-4 accent-[#2962ff]" />
+              </label>
+            ))}
+            <div className={`border-t pt-3 ${sectionBorderClass}`}>
+              <ControlButton
+                icon={(hiddenLayers?.drawings && hiddenLayers?.indicators && hiddenLayers?.positions) ? Eye : EyeOff}
+                onClick={() => onToggleVisibility?.('all')}
+                className="w-full"
+                chartTheme={chartTheme}
+              >
+                {(hiddenLayers?.drawings && hiddenLayers?.indicators && hiddenLayers?.positions) ? 'Show all' : 'Hide all'}
+              </ControlButton>
+            </div>
+          </Flyout>
+        </div>
+      )}
     </div>
   );
 }

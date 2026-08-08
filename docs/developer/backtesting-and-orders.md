@@ -33,6 +33,7 @@ Chart position lines are draggable. Pending entries and every active SL/TP updat
 - Define rounding, fee, margin, and PnL behavior in one backend path.
 - Update account summaries and transaction history for every new state transition.
 - Never describe simulated balances as deposited or custodied funds.
+- `MarketBacktestController.php` has no explicit `try`/`catch`/`report()` calls of its own; any exception here still reaches admins because it bubbles to Laravel's default exception handler, which now persists it to `system_error_logs` (area `backtest`) — see [System error logs and payment activity](system-error-logs-and-payment-activity.md). This is a safety net, not a substitute for validating inputs and handling expected failure modes explicitly in the controller.
 
 ## Verification
 
@@ -44,7 +45,7 @@ Chart position lines are draggable. Pending entries and every active SL/TP updat
 - Cancel pending, close open, end session, reset.
 - Cross-user record access returns not found/forbidden.
 
-Related: [Reports](trade-reports-and-journals.md), [Replay](replay-and-progress.md).
+Related: [Reports](trade-reports-and-journals.md), [Replay](replay-and-progress.md), [System error logs and payment activity](system-error-logs-and-payment-activity.md).
 # Custom demo balance
 
 The trader Assets panel accepts a starting balance from `1` through `1,000,000,000`. Applying it uses the existing demo reset operation and requires confirmation because it deletes positions and demo trades and resets cash, realized PnL, and fees.

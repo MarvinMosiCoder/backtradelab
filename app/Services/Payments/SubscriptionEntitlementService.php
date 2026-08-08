@@ -12,6 +12,10 @@ use RuntimeException;
 
 class SubscriptionEntitlementService
 {
+    public function __construct(private readonly PaymentActivityLogger $activityLog)
+    {
+    }
+
     public function activate(SubscriptionRequest $payment, array $providerPayment): SubscriptionRequest
     {
         return DB::transaction(function () use ($payment, $providerPayment) {
@@ -52,6 +56,9 @@ class SubscriptionEntitlementService
                 'is_read' => 0,
             ]);
 
+            $this->activityLog->log($lockedPayment, $user, 'payment_activated',
+                "Access activated until {$endsAt->format('M j, Y g:i A')} ({$lockedPayment->duration_days} days, {$lockedPayment->plan} plan).");
+
             return $lockedPayment->fresh();
         });
     }
@@ -82,7 +89,7 @@ class SubscriptionEntitlementService
             AdmNotifications::query()->create([
                 'adm_user_id' => $user->id,
                 'type' => 'subscription',
-                'content' => 'Your payment for the '.$lockedPayment->plan.' plan was refunded/reversed. Replay access has been removed.',
+                'content' => 'Your payment for the '.$lockedPayment->plan.' plan was refunded/reversed. Replay access has been removed. Refunds are typically credited back to your original payment method within 2-3 business days.',
                 'url' => '/subscription',
                 'is_read' => 0,
             ]);
@@ -93,6 +100,48 @@ class SubscriptionEntitlementService
                 Log::warning('Refund fully cleared replay access for user '.$user->id.' via subscription_request '.$lockedPayment->id
                     .' while other paid, non-refunded purchases exist for this user — access may have been over-revoked. Manual review recommended.');
             }
+
+            $this->activityLog->log($lockedPayment, $user, 'access_revoked', $reason, $context,
+                $context['triggered_by'] ?? 'system');
+
+            return $lockedPayment->fresh();
+        });
+    }
+
+    /**
+     * Re-grants replay access after an admin refund's revoke() cleared a user's access that
+     * was still legitimately covered by a different, unrefunded purchase (e.g. a duplicate
+     * payment refund). $payment is the refunded transaction this restoration is attributed to,
+     * for audit purposes only — it is not re-activated and its status/refund fields are untouched.
+     */
+    public function restoreAccess(SubscriptionRequest $payment, int $days, string $reason, AdmUser $admin): SubscriptionRequest
+    {
+        return DB::transaction(function () use ($payment, $days, $reason, $admin) {
+            $lockedPayment = SubscriptionRequest::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            $user = AdmUser::whereKey($lockedPayment->adm_user_id)->lockForUpdate()->firstOrFail();
+
+            $startsAt = $user->replay_access_ends_at && $user->replay_access_ends_at->isFuture()
+                ? $user->replay_access_ends_at->copy()
+                : now();
+            $endsAt = $startsAt->addDays($days);
+            $user->forceFill(['replay_access_ends_at' => $endsAt])->save();
+
+            $note = now()->format('Y-m-d H:i').' — admin:'.$admin->id." restored {$days} day(s) of access: {$reason}";
+            $lockedPayment->update(['admin_notes' => trim(($lockedPayment->admin_notes ? $lockedPayment->admin_notes."\n" : '').$note)]);
+
+            AdmNotifications::query()->create([
+                'adm_user_id' => $user->id,
+                'type' => 'subscription',
+                'content' => 'Your replay access was restored and is now active until '.$endsAt->format('M j, Y g:i A').'.',
+                'url' => '/subscription',
+                'is_read' => 0,
+            ]);
+
+            Log::info('Subscription access restored for user '.$user->id.' via subscription_request '.$lockedPayment->id
+                .' by admin '.$admin->id.": {$days} day(s). {$reason}");
+
+            $this->activityLog->log($lockedPayment, $user, 'access_restored',
+                "{$days} day(s) restored: {$reason}", [], 'admin:'.$admin->id);
 
             return $lockedPayment->fresh();
         });

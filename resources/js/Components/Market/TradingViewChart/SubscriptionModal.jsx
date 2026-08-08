@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Check, Crown, ExternalLink, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { Check, ChevronRight, Crown, ExternalLink, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { useTheme } from '../../../Context/ThemeContext';
+import { useToast } from '../../../Context/ToastContext';
 
 const token = () => {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -13,6 +14,7 @@ const token = () => {
 
 export default function SubscriptionModal({ onClose, onTrialActivated }) {
   const { theme } = useTheme();
+  const { handleToast } = useToast();
   const dark = theme === 'bg-skin-black';
   const [plans, setPlans] = useState([]), [selectedCode, setSelectedCode] = useState('');
   const [checkout, setCheckout] = useState({}), [trialAvailable, setTrialAvailable] = useState(false);
@@ -21,6 +23,7 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
   const [submissionToken] = useState(token);
   const selected = plans.find(plan => plan.code === selectedCode) ?? plans[0];
   const readOnly = Boolean(activeAccess);
+  const weeklyTrialEligible = selected?.code === 'weekly' && trialAvailable && !readOnly;
 
   useEffect(() => {
     let cancelled = false;
@@ -38,8 +41,13 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
     setSaving(true); setStatus('');
     try {
       const response = await axios.post('/replay-trial/activate');
-      setStatus(response.data?.message); onTrialActivated?.(response.data);
-    } catch (error) { setStatus(error.response?.data?.message ?? 'Unable to activate your trial.'); }
+      handleToast(response.data?.message || 'Your free 7-day trial is now active.', 'success');
+      onTrialActivated?.(response.data);
+    } catch (error) {
+      const message = error.response?.data?.message ?? 'Unable to activate your trial.';
+      setStatus(message);
+      handleToast(message, 'error');
+    }
     finally { setSaving(false); }
   };
   const startCheckout = async () => {
@@ -60,6 +68,9 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
         <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={13}/>Replay access</div><h2 className="mt-0.5 text-xl font-bold">Build your trading practice</h2><p className="mt-0.5 text-xs text-[#787b86]">Activate your free week or purchase one-time access through our secure payment provider.</p></div>
         <button type="button" onClick={onClose} aria-label="Close"><X size={19}/></button>
       </header>
+      {!loading && !readOnly && <div className="flex shrink-0 items-center gap-1.5 px-4 pt-3 text-[10px] font-bold uppercase tracking-wider text-[#787b86] sm:px-5">
+        <span className={!saving ? 'text-[#2962ff]' : ''}>1. Choose plan</span><ChevronRight size={11}/><span className={saving ? 'text-[#2962ff]' : ''}>2. {weeklyTrialEligible ? 'Activating' : 'Redirecting to checkout'}</span>
+      </div>}
       {(trialAvailable || activeAccess?.kind === 'trial') && <div className="mx-4 mt-3 flex shrink-0 flex-col justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2.5 sm:mx-5 sm:flex-row sm:items-center">
         <div><div className="text-[10px] font-bold uppercase text-emerald-500">{activeAccess ? 'Active free trial' : 'Free trial'}</div><div className="flex flex-wrap items-baseline gap-x-2"><h3 className="font-bold">7 days free</h3><p className="text-xs text-[#787b86]">{activeAccess ? `Active until ${new Date(activeAccess.endsAt).toLocaleString()}.` : 'Starts only after activation and can be used once.'}</p></div></div>
         {!readOnly && <button disabled={saving} onClick={activateTrial} className="h-9 shrink-0 rounded-lg bg-emerald-500 px-4 text-xs font-bold text-white disabled:opacity-50">Activate free week</button>}
@@ -77,8 +88,8 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
         {readOnly && <div className="mt-2.5 rounded-lg bg-emerald-500/10 p-2 text-xs text-emerald-500">Your {activeAccess.kind} access is active until {new Date(activeAccess.endsAt).toLocaleString()}. You can choose another plan after it expires.</div>}
         {status && <div className="mt-2.5 rounded-lg bg-red-500/10 p-2 text-xs text-red-500">{status}</div>}
         {!readOnly && <div className="mt-2.5 flex flex-col gap-2 rounded-xl border p-3 text-xs text-[#787b86] sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1"><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Secure checkout</div><p className="mt-0.5 truncate">Methods: <span className="capitalize">{checkout.payment_methods?.join(' · ') || 'None'}</span></p></div>
-          <button disabled={!selected?.price || !checkout.enabled || saving} onClick={startCheckout} className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-4 font-bold text-white disabled:opacity-50">{saving ? 'Opening checkout…' : `Continue with ${selected?.name ?? 'plan'}`}<ExternalLink size={14}/></button>
+          <div className="min-w-0 flex-1">{weeklyTrialEligible ? <><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Free, one-time trial</div><p className="mt-0.5 truncate">No payment required for your first 7 days.</p></> : <><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Secure checkout</div><p className="mt-0.5 truncate">Methods: <span className="capitalize">{checkout.payment_methods?.join(' · ') || 'None'}</span></p></>}</div>
+          <button disabled={weeklyTrialEligible ? saving : (!selected?.price || !checkout.enabled || saving)} onClick={weeklyTrialEligible ? activateTrial : startCheckout} className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-4 font-bold text-white disabled:opacity-50">{weeklyTrialEligible ? (saving ? 'Activating…' : 'Activate free trial') : (saving ? 'Opening checkout…' : `Continue with ${selected?.name ?? 'plan'}`)}{!weeklyTrialEligible && <ExternalLink size={14}/>}</button>
         </div>}
       </div>
     </section>

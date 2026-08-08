@@ -21,7 +21,9 @@ use App\Http\Controllers\MarketReplayProgressController;
 use App\Http\Controllers\MarketToolSettingController;
 use App\Http\Controllers\MarketWatchlistController;
 use App\Http\Controllers\MarketPriceAlertController;
+use App\Http\Controllers\PaymentActivityLogController;
 use App\Http\Controllers\ReplayAccessController;
+use App\Http\Controllers\SystemErrorLogController;
 use App\Http\Controllers\UserFeedbackController;
 use App\Http\Controllers\PayMongoWebhookController;
 use App\Http\Controllers\Users\ChangePasswordController;
@@ -98,11 +100,13 @@ Route::group(['middleware' => ['auth', 'account.active', 'web']], function () {
     //ANNOUNCEMENT
     Route::get('unread-announcement', [AnnouncementsController::class, 'getUnreadAnnouncements'])->name('show-announcement');
     Route::post('read-announcement', [AnnouncementsController::class, 'markAnnouncementAsRead'])->name('read-announcement');
-    Route::get('announcement', [AnnouncementsController::class, 'getAnnouncements'])->name('announcement');
-    Route::get('announcement/add-announcement', [AnnouncementsController::class, 'addAnnouncementForm'])->middleware('admin.permission:announcements,create')->name('add-announcement');
-    Route::post('announcement/SaveAnnouncement', [AnnouncementsController::class, 'saveAnnouncement'])->middleware('admin.permission:announcements,create')->name('announcement/SaveAnnouncement');
-    Route::get('announcement/edit-announcement/{id}', [AnnouncementsController::class, 'editAnnouncement'])->middleware('admin.permission:announcements,edit')->name('edit-announcement');
-    Route::post('announcement/saveEditAnnouncement', [AnnouncementsController::class, 'saveEditAnnouncement'])->middleware('admin.permission:announcements,edit')->name('saveEditAnnouncement');
+    Route::get('updates', [AnnouncementsController::class, 'getAllAnnouncements'])->name('updates');
+    Route::get('announcements', [AnnouncementsController::class, 'getIndex'])->middleware('admin.permission:announcements,view')->name('announcements');
+    Route::get('announcements/add-announcement', [AnnouncementsController::class, 'addAnnouncementForm'])->middleware('admin.permission:announcements,create')->name('add-announcement');
+    Route::post('announcements/SaveAnnouncement', [AnnouncementsController::class, 'saveAnnouncement'])->middleware('admin.permission:announcements,create')->name('announcement/SaveAnnouncement');
+    Route::get('announcements/edit-announcement/{id}', [AnnouncementsController::class, 'editAnnouncement'])->middleware('admin.permission:announcements,edit')->name('edit-announcement');
+    Route::post('announcements/saveEditAnnouncement', [AnnouncementsController::class, 'saveEditAnnouncement'])->middleware('admin.permission:announcements,edit')->name('saveEditAnnouncement');
+    Route::post('announcements/delete-announcement/{id}', [AnnouncementsController::class, 'deleteAnnouncement'])->middleware('admin.permission:announcements,delete')->name('delete-announcement');
 });
 
 Route::post('/webhooks/paymongo', PayMongoWebhookController::class)->middleware('throttle:api')->name('webhooks.paymongo');
@@ -135,6 +139,7 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::post('/market-price-alerts/check', [MarketPriceAlertController::class, 'check'])->middleware('throttle:price-alert-check');
     Route::delete('/market-price-alerts/{marketPriceAlert}', [MarketPriceAlertController::class, 'destroy'])->middleware('throttle:price-alert-write');
     Route::get('/replay-access', [ReplayAccessController::class, 'status']);
+    Route::get('/subscription-requests/mine', [ReplayAccessController::class, 'myRequests']);
     Route::post('/replay-trial/activate', [ReplayAccessController::class, 'activateTrial'])->middleware('throttle:market-write');
     Route::get('/subscription-plans', [ReplayAccessController::class, 'plans']);
     Route::put('/admin/subscription-plans', [ReplayAccessController::class, 'updatePlans'])->middleware(['superadmin', 'throttle:market-write']);
@@ -151,6 +156,12 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/admin/subscriptions/items', [ReplayAccessController::class, 'adminIndex'])->middleware('superadmin');
     Route::post('/admin/subscriptions/{subscriptionRequest}/reconcile', [ReplayAccessController::class, 'adminReconcile'])->middleware(['superadmin', 'throttle:market-write']);
     Route::post('/admin/subscriptions/{subscriptionRequest}/refund', [ReplayAccessController::class, 'adminRefund'])->middleware(['superadmin', 'throttle:market-write']);
+    Route::post('/admin/subscriptions/{subscriptionRequest}/restore-access', [ReplayAccessController::class, 'adminRestoreAccess'])->middleware(['superadmin', 'throttle:market-write']);
+    Route::get('/admin/payment-activity', [PaymentActivityLogController::class, 'adminPage'])->middleware('superadmin')->name('admin.payment-activity.index');
+    Route::get('/admin/payment-activity/items', [PaymentActivityLogController::class, 'adminIndex'])->middleware('superadmin')->name('admin.payment-activity.items');
+    Route::get('/admin/system-errors', [SystemErrorLogController::class, 'adminPage'])->middleware('superadmin')->name('admin.system-errors.index');
+    Route::get('/admin/system-errors/items', [SystemErrorLogController::class, 'adminIndex'])->middleware('superadmin')->name('admin.system-errors.items');
+    Route::post('/admin/system-errors/{systemErrorLog}/resolve', [SystemErrorLogController::class, 'resolve'])->middleware(['superadmin', 'throttle:market-write'])->name('admin.system-errors.resolve');
     Route::get('/feedback', [UserFeedbackController::class, 'userPage'])->name('feedback.index');
     Route::get('/feedback/items', [UserFeedbackController::class, 'index'])->name('feedback.items');
     Route::post('/feedback/items', [UserFeedbackController::class, 'store'])->middleware('throttle:feedback-write')->name('feedback.store');
@@ -187,6 +198,7 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::post('/save-edit-image', [ProfilePageController::class, 'saveEditImage'])->name('save-edit-image');
     Route::get('/profiles', [ProfilePageController::class, 'getProfiles'])->name('get-profiles');
     Route::post('/update-profile', [ProfilePageController::class, 'updateProfile'])->name('update-profile');
+    Route::post('/profile/avatar', [ProfilePageController::class, 'selectAvatar'])->name('profile.avatar.select');
     Route::put('/profile/details', [ProfilePageController::class, 'updateDetails'])->name('profile.details.update');
     Route::patch('/profile/timezone', [ProfilePageController::class, 'updateTimezone'])->name('profile.timezone.update');
     Route::post('/profile/deactivate', [ProfilePageController::class, 'deactivate'])->middleware('throttle:market-write')->name('profile.deactivate');
@@ -244,6 +256,7 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/notifications/feed', [NotificationsController::class, 'getLatestNotif'])->name('latest-notif');
     Route::post('/notifications/read', [NotificationsController::class, 'markAsRead'])->name('notification-read');
     Route::post('/notifications/read-all', [NotificationsController::class, 'markAllAsRead'])->name('notification-read-all');
+    Route::post('/notifications/dismiss', [NotificationsController::class, 'dismiss'])->name('notification-dismiss');
     Route::patch('/notification-preferences', [NotificationsController::class, 'updatePreferences'])->name('notification-preferences');
     Route::get('/notifications/view-notification/{id}', [NotificationsController::class, 'viewNotification'])->name('view-notification');
     Route::get('/notifications/view-all-notifications', [NotificationsController::class, 'viewAllNotification'])->name('view-all-notifications');

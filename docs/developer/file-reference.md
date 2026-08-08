@@ -10,6 +10,7 @@ Use this index to find the feature owner of a source file. Detailed behavior bel
 | `AdminAccessService.php`, `EnsureAdmin*.php` | [Roles and menus](roles-privileges-menus.md) |
 | `app/Http/Controllers/Users/*`, `AccountDeactivationService.php` | [Users and profiles](users-profiles-and-deactivation.md) |
 | `AdminUsersController.php`, `PrivilegesController.php`, `MenusController.php`, `ModulsController.php` | [Roles and menus](roles-privileges-menus.md) |
+| `Components/Profile/avatarCatalog.js`, `Components/Profile/AvatarBadge.jsx` | [Users, profiles, and deactivation](users-profiles-and-deactivation.md) |
 | `DashboardController.php`, `Pages/Dashboard/*`, `Layouts/*` | [Dashboard and layouts](dashboard-and-layouts.md), including admin operations and workspace mode |
 | `Pages/Public/*`, `CookieNotice.jsx`, `config/legal.php` | [Public and legal](public-and-legal-pages.md) |
 | `MarketDataController.php`, `MarketMetadataService.php`, `MarketOverviewController.php`, `MarketOverviewService.php`, `MarketSymbol.php` | [Market data](market-data-and-symbols.md) |
@@ -24,6 +25,8 @@ Use this index to find the feature owner of a source file. Detailed behavior bel
 | `AnnouncementsController.php`, `Announcement.php` | [Announcements](announcements.md) |
 | `AdminApiController.php`, `Api/ApiController.php`, `Models/AdmModels/Api*` | [Admin API generator](admin-api-generator.md) |
 | `SettingsController.php`, `Components/SystemSettings/*` | [System settings](system-settings.md) |
+| `app/Services/SystemErrorLogger.php`, `SystemErrorLogController.php`, `Pages/SystemLogs/*` | [System error logs and payment activity](system-error-logs-and-payment-activity.md) |
+| `app/Services/Payments/PaymentActivityLogger.php`, `PaymentActivityLogController.php`, `Pages/Subscriptions/ActivityLog.jsx` | [System error logs and payment activity](system-error-logs-and-payment-activity.md) |
 | `database/migrations/*` | The feature guide for the table being changed |
 | `tests/*` | [Testing guide](testing-guide.md) |
 

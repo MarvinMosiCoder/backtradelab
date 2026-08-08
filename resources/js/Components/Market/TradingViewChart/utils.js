@@ -256,10 +256,11 @@ export function isTwoPointDrawing(drawing) {
   return [
     'line',
     'horizontal-ray',
-    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
+    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
     'fib-retracement',
     'fib-extension',
-    'rect',
+    'rect', 'circle',
+    'triangle', 'arc', 'curve', 'double-curve',
     'measure',
     'forecast',
     'long-position',
@@ -272,12 +273,21 @@ export function isLineLikeDrawing(drawing) {
   return [
     'line',
     'horizontal-ray',
-    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
+    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
     'fib-retracement',
     'fib-extension',
+    'triangle', 'arc', 'curve', 'double-curve',
     'measure',
     'forecast',
   ].includes(drawing?.type);
+}
+
+export function isShapeDrawing(drawing) {
+  return ['triangle', 'arc', 'curve', 'double-curve'].includes(drawing?.type);
+}
+
+export function isTextMarkerDrawing(drawing) {
+  return ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'].includes(drawing?.type);
 }
 
 export function isHorizontalRayDrawing(drawing) {
@@ -311,7 +321,7 @@ export function offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical) {
     return nextDrawing;
   }
 
-  if (drawing.type === 'text') {
+  if (isTextMarkerDrawing(drawing)) {
     return {
       ...drawing,
       point: offsetPoint(drawing.point, deltaTime, deltaPrice, deltaLogical),

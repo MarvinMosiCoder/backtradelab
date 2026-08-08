@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { router } from "@inertiajs/react";
 import debounce from "lodash/debounce";
+import { Search } from "lucide-react";
 import PerPage from "./PerPage";
-import TableButton from "./Buttons/TableButton";
 import { useTheme } from "../../Context/ThemeContext";
-import Filters from "./Buttons/Filters";
 
 const TableSearch = ({ queryParams }) => {
   const {theme} = useTheme();
+  const isDark = theme === 'bg-skin-black';
   const [searchValue, setSearchValue] = useState(queryParams?.search || "");
   const path = window.location.pathname;
 
@@ -31,11 +31,11 @@ const TableSearch = ({ queryParams }) => {
   }, [searchValue]);
 
   return (
-    <>
-      <div className="flex justify-items-ends font-poppins w-full max-w-[550px]">
-      
+    <div className="flex w-full max-w-[550px] items-center gap-2">
+      <label className={`flex h-9 flex-1 items-center gap-2 rounded-lg border px-3 ${isDark ? 'border-[#2a2e39] bg-[#0b0e14] text-white' : 'border-slate-200 bg-slate-50 text-slate-900'}`}>
+        <Search size={14} className={isDark ? 'text-[#787b86]' : 'text-slate-400'}/>
         <input
-          className={`${theme === 'bg-skin-black' ? theme+' text-gray-300' : ''} border font-poppins border-secondary rounded-l-md overflow-hidden h-9.5 w-full block px-4 text-sm outline-none`}
+          className="w-full bg-transparent text-xs outline-none placeholder:text-[#787b86]"
           type="text"
           name="search"
           id="search"
@@ -43,9 +43,9 @@ const TableSearch = ({ queryParams }) => {
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
         />
-        <PerPage queryParams={queryParams} />
-      </div>
-    </>
+      </label>
+      <PerPage queryParams={queryParams} />
+    </div>
   );
 };
 

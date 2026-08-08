@@ -1,6 +1,11 @@
+import React from 'react';
+import { useTheme } from '../../Context/ThemeContext';
+
 const Thead = ({children}) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'bg-skin-black';
   return (
-     <thead className="sticky bg-white top-0 left-0 z-50 before:z-50  after:absolute after:bottom-0 after:left-0  after:h-[0.60px] after:w-full after:bg-secondary">
+     <thead className={`sticky top-0 left-0 z-30 border-b ${isDark ? 'bg-[#131722] border-[#2a2e39]' : 'bg-slate-50 border-slate-200'}`}>
         {children}
      </thead>
   )

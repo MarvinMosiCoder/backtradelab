@@ -76,6 +76,8 @@ export default function MarketSummary() {
         if (!tips.length) return null;
         return tips[Math.floor(Date.now() / 86400000) % tips.length];
     }, [overview.tips]);
+    const welcomeIdentity = auth?.user?.username || auth?.user?.name;
+    const welcomeName = welcomeIdentity ? String(welcomeIdentity).split(' ')[0] : '';
 
     const open = item => {
         const selected = { symbol: item.symbol, exchange: item.exchange, category: item.category };
@@ -101,7 +103,7 @@ export default function MarketSummary() {
         <div className={`mx-auto max-w-7xl space-y-5 ${dark ? 'text-white' : 'text-slate-900'}`}>
             <section className={`overflow-hidden rounded-2xl border ${panel}`}>
                 <div className={`grid gap-4 p-4 sm:p-5 lg:grid-cols-[1fr_auto] lg:items-center ${dark ? 'bg-gradient-to-r from-[#172554] via-[#131722] to-[#0b0e14]' : 'bg-gradient-to-r from-blue-50 via-white to-slate-50'}`}>
-                    <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={13}/>Market overview</div><h1 className="mt-1 text-2xl font-bold">Welcome back{auth?.user?.name ? `, ${String(auth.user.name).split(' ')[0]}` : ''}</h1><p className={`mt-1 text-sm ${muted}`}>{marketStatus}</p></div>
+                    <div><div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.18em] text-[#5b8cff]"><Sparkles size={13}/>Market overview</div><h1 className="mt-1 text-2xl font-bold">Welcome back{welcomeName ? `, ${welcomeName}` : ''}</h1><p className={`mt-1 text-sm ${muted}`}>{marketStatus}</p></div>
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:flex">
                         <QuickAction href="/workspace" icon={CandlestickChart} label="Workspace" dark={dark}/><QuickAction href="/trade-report" icon={FileChartColumn} label="Trade Report" dark={dark}/><QuickAction href="/subscription" icon={CreditCard} label="Subscription" dark={dark}/><QuickAction href="/help" icon={BookOpen} label="Help" dark={dark}/>
                     </div>
@@ -113,7 +115,7 @@ export default function MarketSummary() {
             </section>
 
             <div className="grid gap-4 lg:grid-cols-[1.35fr_.65fr]">
-                <section className={`rounded-xl border p-4 ${panel}`}><div className="flex items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 font-bold"><Megaphone size={16} className="text-violet-400"/>News & updates</h2><p className={`text-xs ${muted}`}>Trusted updates published by BacktradeLab administrators.</p></div><Link href="/unread-announcement" className="text-xs font-semibold text-[#5b8cff] transition hover:text-[#82a3ff] hover:underline">View all</Link></div>
+                <section className={`rounded-xl border p-4 ${panel}`}><div className="flex items-center justify-between gap-3"><div><h2 className="flex items-center gap-2 font-bold"><Megaphone size={16} className="text-violet-400"/>News & updates</h2><p className={`text-xs ${muted}`}>Trusted updates published by BacktradeLab administrators.</p></div><Link href="/updates" className="text-xs font-semibold text-[#5b8cff] transition hover:text-[#82a3ff] hover:underline">View all</Link></div>
                     {overviewError && <div className="mt-3 rounded-lg bg-amber-500/10 p-2 text-xs text-amber-500">{overviewError}</div>}
                     {!overviewLoaded ? <div className="mt-3 grid gap-2">{[0,1].map(item => <div key={item} className={`h-14 animate-pulse rounded-lg border ${soft}`}/>)}</div> : overview.announcements?.length ? <div className={`mt-3 divide-y ${dark ? 'divide-[#2a2e39]' : 'divide-slate-200'}`}>{overview.announcements.map(item => <button key={item.id} type="button" onClick={() => toggleAnnouncement(item)} className={`-mx-2 flex w-[calc(100%+1rem)] items-start gap-3 rounded-lg px-2 py-2.5 text-left transition-colors ${dark ? 'hover:bg-white/[.06]' : 'hover:bg-slate-100'}`}><span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.is_read ? 'bg-slate-500' : 'bg-[#2962ff]'}`}/><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-semibold">{item.title}</span><span className="shrink-0 text-[9px] text-[#787b86]">{formatDate(item.created_at)}</span></span><span className={`mt-0.5 block text-xs leading-5 ${muted} ${expandedAnnouncement === item.id ? '' : 'line-clamp-1'}`}>{item.excerpt || 'Open this update for more information.'}</span></span></button>)}</div> : <div className={`mt-3 rounded-lg border p-4 text-center text-xs ${soft} ${muted}`}>No system updates have been published yet.</div>}
                 </section>

@@ -36,6 +36,8 @@ The homepage requests a fixed Bybit Spot BTCUSDT, ETHUSDT, and SOLUSDT summary. 
 - Nav shows a scroll-progress bar and a shadow once scrolled; the login menu is always mounted and toggled with opacity/scale classes (not conditionally rendered) so it can transition on both open and close, and closes on outside click.
 - New `floatY` and `shimmer` keyframes live in `tailwind.config.js` for the floating hero card/badge and the coin-card loading skeleton.
 
+`TermsOfService.jsx` section 4 states fees are non-refundable except for a double/duplicate payment or a payment processing error; those two cases are refunded once verified (see [Subscriptions, trials, and PayMongo](subscriptions-trials-and-paymongo.md) for how a refund is actually processed and its effect on access).
+
 ## Maintenance
 
 - Edit legal content in the dedicated page, shared presentation in `LegalPage.jsx`, and operator facts in configuration.

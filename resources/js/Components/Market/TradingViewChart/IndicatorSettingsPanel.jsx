@@ -13,6 +13,12 @@ export function IndicatorClickTargets({ indicators, paneTops, onSelect, chartThe
   const isDark = chartTheme?.mode === 'dark';
   const buttonClass = `flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-semibold shadow ${isDark ? 'bg-[#151617]/90 text-gray-200 hover:bg-[#25282e]' : 'bg-white/90 text-slate-700 hover:bg-slate-100'}`;
   const mainIndicators = ['sma', 'ema'].filter((key) => indicators[key] && indicators[`${key}Visible`] !== false);
+  const paneLabel = (key) => {
+    if (key === 'volume') return 'Volume';
+    if (key === 'rsi') return `RSI ${indicators.rsiPeriod}`;
+    return `MACD ${indicators.macdFastPeriod}, ${indicators.macdSlowPeriod}, ${indicators.macdSignalPeriod}`;
+  };
+  const paneDotColor = (key) => (key === 'rsi' ? indicators.rsiColor : key === 'macd' ? indicators.macdColor : '#787b86');
 
   return (
     <>
@@ -24,11 +30,11 @@ export function IndicatorClickTargets({ indicators, paneTops, onSelect, chartThe
           })}
         </div>
       )}
-      {['rsi', 'macd'].map((key) => indicators[key] && indicators[`${key}Visible`] !== false && Number.isFinite(Number(paneTops?.[key])) ? (
+      {['volume', 'rsi', 'macd'].map((key) => indicators[key] && indicators[`${key}Visible`] !== false && Number.isFinite(Number(paneTops?.[key])) ? (
         <div key={key} data-chart-ui className="pointer-events-auto absolute left-16 z-[54]" style={{ top: Number(paneTops[key]) + 8 }}>
           <button type="button" onClick={(event) => onSelect(key, event)} className={buttonClass} aria-label={`Open ${INDICATOR_META[key].label} settings`}>
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: key === 'rsi' ? indicators.rsiColor : indicators.macdColor }} />
-            {key === 'rsi' ? `RSI ${indicators.rsiPeriod}` : `MACD ${indicators.macdFastPeriod}, ${indicators.macdSlowPeriod}, ${indicators.macdSignalPeriod}`}
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: paneDotColor(key) }} />
+            {paneLabel(key)}
           </button>
         </div>
       ) : null)}

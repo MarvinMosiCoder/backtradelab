@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useToast } from '../../Context/ToastContext';
 import { useTheme } from '../../Context/ThemeContext';
-import Button from '../../Components/Table/Buttons/Button';
 import { Head } from '@inertiajs/react';
 import { NavbarContext } from '../../Context/NavbarContext';
 import InputComponent from '../../Components/Forms/Input';
@@ -10,9 +9,10 @@ import WyswygTextEditor from '../../Components/Forms/WyswygTextEditor';
 import axios from 'axios';
 import DropdownSelect from '../../Components/Dropdown/Dropdown';
 import Status from './Status';
-import useThemeStyles from '../../Hooks/useThemeStyles';
+
 const AnnouncementForm = ({ announcement, page_title, action }) => {
     const {theme} = useTheme();
+    const isDark = theme === 'bg-skin-black';
     const { setTitle } = useContext(NavbarContext);
     const [loading, setLoading] = useState(false);
     const { handleToast } = useToast();
@@ -24,20 +24,12 @@ const AnnouncementForm = ({ announcement, page_title, action }) => {
         message: announcement?.message || '',
         status: announcement?.status || '',
     });
-    const { textColor, primayActiveColor } = useThemeStyles(theme);
 
     useEffect(() => {
         setTimeout(()=>{
             setTitle(page_title);
         });
     }, [page_title]);
-
-    useEffect(() => {
-        // If in edit mode, set initial values for preview
-        if (announcement?.message) {
-            handleChange({ target: { name: 'message', value: announcement.message } });
-        }
-    }, [announcement]);
 
     function handleChange(e) {
         const key = e.name ? e.name : e.target.name;
@@ -60,60 +52,26 @@ const AnnouncementForm = ({ announcement, page_title, action }) => {
 
     const handleSubmit = async (e, action) => {
         e.preventDefault();
-        console.log(action)
         const newErrors = validate();
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
         } else {
             setLoading(true);
-            if(action == 'Add'){
-                try {
-                    const response = await axios.post('announcement/SaveAnnouncement', forms, {
-                        headers: {
-                            'Content-Type': 'multipart/form-data',
-                        },
+            const endpoint = action == 'Add' ? '/announcements/SaveAnnouncement' : '/announcements/saveEditAnnouncement';
+            try {
+                const response = await axios.post(endpoint, forms);
+
+                handleToast(response.data.message, response.data.status);
+            } catch (error) {
+                if (error.response && error.response.status === 422) {
+                    setErrors(error.response.data.errors);
+                } else {
+                    setErrors({
+                        general: 'An error occurred. Please try again.',
                     });
-            
-                    if (response.data.type == 'success') {
-                        handleToast(response.data.message, response.data.status);
-                    } else {
-                        handleToast(response.data.message, response.data.status);
-                    }
-                } catch (error) {
-                    if (error.response && error.response.status === 422) {
-                        setErrors(error.response.data.errors);
-                    } else {
-                        setErrors({
-                            general: 'An error occurred. Please try again.',
-                        });
-                    }
-                } finally {
-                    setLoading(false);
                 }
-            }else{
-                try {
-                    const response = await axios.post('/saveEditAnnouncement', forms, {
-                        headers: {
-                            'Content-Type': 'multipart/form-data',
-                        },
-                    });
-            
-                    if (response.data.type == 'success') {
-                        handleToast(response.data.message, response.data.status);
-                    } else {
-                        handleToast(response.data.message, response.data.status);
-                    }
-                } catch (error) {
-                    if (error.response && error.response.status === 422) {
-                        setErrors(error.response.data.errors);
-                    } else {
-                        setErrors({
-                            general: 'An error occurred. Please try again.',
-                        });
-                    }
-                } finally {
-                    setLoading(false);
-                }
+            } finally {
+                setLoading(false);
             }
         }
     };
@@ -121,51 +79,53 @@ const AnnouncementForm = ({ announcement, page_title, action }) => {
         <>
             <Head title={page_title} />
             <ContentPanel>
-                <form onSubmit={(e) => handleSubmit(e, action)} className="p-2">
-                    <div className="flex flex-col mb-3 w-full">
+                <form onSubmit={(e) => handleSubmit(e, action)} className="space-y-5 p-2">
+                    {errors.general && (
+                        <div className={`rounded-lg border px-4 py-3 text-sm font-semibold ${isDark ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-red-200 bg-red-50 text-red-700'}`}>
+                            {errors.general}
+                        </div>
+                    )}
+                    <div className="w-full">
                         <InputComponent
                             name="title"
                             value={forms.title}
                             onChange={handleChange}
                         />
                         {(errors.title) && (
-                            <div className="font-poppins font-bold text-red-600">
+                            <div className={`mt-1 text-sm font-semibold ${isDark ? 'text-red-400' : 'text-red-600'}`}>
                                 {errors.title}
                             </div>
                         )}
                     </div>
-                    <div className="flex flex-col mb-3 w-full">
+                    <div className="w-full">
                         <WyswygTextEditor name="message" value={forms.message} onChange={handleChange} error={errors.message} action={action}/>
                     </div>
-                    <div className="flex flex-col mb-3 w-full">
-                        {action === 'Edit' 
-                        ?   
-                        <DropdownSelect
-                            selectType="select2"
-                            displayName="Select a Status"
-                            name="status"
-                            options={Status}
-                            value={{label:selectedStatusOption.name, value:selectedStatusOption.id}}
-                            onChange={handleChange}
-                        />
-                        : ''
-                        }
-                    </div>
-                    <Button
-                        type="button"
-                        extendClass={(theme === 'bg-skin-white' ? primayActiveColor : theme)+" block w-full mt-5"}
+                    {action === 'Edit' && (
+                        <div className="w-full max-w-xs">
+                            <DropdownSelect
+                                selectType="select2"
+                                displayName="Select a Status"
+                                name="status"
+                                options={Status}
+                                value={{label:selectedStatusOption.name, value:selectedStatusOption.id}}
+                                onChange={handleChange}
+                            />
+                        </div>
+                    )}
+                    <button
+                        type="submit"
                         disabled={loading}
-                        fontColor={theme === 'bg-skin-white' ? 'text-white' : textColor}
+                        className="h-11 w-full rounded-lg bg-[#2962ff] text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#254eda] hover:shadow-lg hover:shadow-blue-950/30 disabled:pointer-events-none disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
                     >
                        {
-                        action == 'Add' 
+                        action == 'Add'
                         ?
                         loading ? "Saving..." : "Save"
                         :
                         loading ? "Updating..." : "Update"
                        }
-                    </Button>
-                         
+                    </button>
+
                 </form>
             </ContentPanel>
         </>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Save, X } from 'lucide-react';
+import { Bookmark, Flag, FileText, MapPin, MessageCircle, Quote, Save, Signpost, StickyNote, Tag, X } from 'lucide-react';
 import getAppLogo from '../../SystemSettings/ApplicationLogo';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL, TIMEFRAME_SECONDS } from './constants';
 import {
@@ -76,7 +76,34 @@ function formatDuration(seconds) {
 }
 
 const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
-const BOX_TOOL_TYPES = ['rect', 'price-range', 'date-range', 'price-date-range'];
+const BOX_TOOL_TYPES = ['rect', 'circle', 'price-range', 'date-range', 'price-date-range'];
+const SHAPE_TOOL_TYPES = ['triangle', 'arc', 'curve', 'double-curve'];
+const THREE_POINT_TYPES = ['fib-extension', 'parallel-channel', 'triangle', 'curve', 'double-curve'];
+const TEXT_MARKER_TYPES = ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'];
+const PRICE_ANCHORED_MARKER_TYPES = ['price-label', 'price-note'];
+const TEXT_MARKER_ICONS = {
+  'anchored-text': MapPin,
+  note: StickyNote,
+  'anchored-note': FileText,
+  callout: Quote,
+  comment: MessageCircle,
+  'price-label': Tag,
+  'price-note': Bookmark,
+  signpost: Signpost,
+  'flag-mark': Flag,
+};
+const TEXT_MARKER_LABELS = {
+  text: 'Text',
+  'anchored-text': 'Anchored Text',
+  note: 'Note',
+  'anchored-note': 'Anchored Note',
+  callout: 'Callout',
+  comment: 'Comment',
+  'price-label': 'Price Label',
+  'price-note': 'Price Note',
+  signpost: 'Signpost',
+  'flag-mark': 'Flag Mark',
+};
 const FIB_EXTENSION_LEVELS = [
   0,
   0.236,
@@ -633,7 +660,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
       resizeHandles.push(selectedDrawing.screen.p2);
     }
 
-    if (selectedDrawing.type === 'fib-extension' && selectedDrawing.screen.p3) {
+    if (THREE_POINT_TYPES.includes(selectedDrawing.type) && selectedDrawing.screen.p3) {
       resizeHandles.push(selectedDrawing.screen.p3);
     }
   }
@@ -680,6 +707,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
             : Math.max(d.strokeWidth ?? 1, 1);
           const textWeight = getDrawingTextWeight(d);
           const textStyle = getDrawingTextStyle(d);
+          const textSize = Number(d.textSize) || 12;
 
           if (isPathDrawing(d)) {
             const pathPoints = [
@@ -695,10 +723,6 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                 ? '8,5'
                 : undefined;
 
-            if (d.type === 'parallel-channel' && d.screen.p3) {
-              const offsetX = d.screen.p3.x - d.screen.p2.x, offsetY = d.screen.p3.y - d.screen.p2.y;
-              return <g key={d.id}><polygon points={`${d.screen.p1.x},${d.screen.p1.y} ${d.screen.p2.x},${d.screen.p2.y} ${d.screen.p2.x + offsetX},${d.screen.p2.y + offsetY} ${d.screen.p1.x + offsetX},${d.screen.p1.y + offsetY}`} fill={colorToRgba(stroke, .12)} stroke="none"/><line x1={d.screen.p1.x} y1={d.screen.p1.y} x2={d.screen.p2.x} y2={d.screen.p2.y} stroke={stroke} strokeWidth={strokeWidth}/><line x1={d.screen.p1.x + offsetX} y1={d.screen.p1.y + offsetY} x2={d.screen.p2.x + offsetX} y2={d.screen.p2.y + offsetY} stroke={stroke} strokeWidth={strokeWidth}/></g>;
-            }
             return (
               <g key={d.id}>
                 {pathData && (
@@ -729,7 +753,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     y={labelPosition.y}
                     textAnchor={labelPosition.textAnchor}
                     fill="#ffffff"
-                    fontSize="12"
+                    fontSize={textSize}
                     fontWeight={textWeight}
                     fontStyle={textStyle}
                     paintOrder="stroke"
@@ -745,12 +769,13 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
           }
 
           if (isLineLikeDrawing(d)) {
+            const lineStart = d.screen.rayStart ?? d.screen.p1;
             const lineEnd = d.screen.rayEnd ?? d.screen.p2;
             const isUtilityTool = d.type === 'measure' || d.type === 'forecast';
             const isDashedLine = d.lineStyle === 'dashed';
             const labelText = d.showText === false ? '' : d.labelText?.trim();
             const labelPosition = labelText ? getLineLabelPosition(d) : null;
-            const lineGapSegments = getLineLabelGapSegments(d.screen.p1, lineEnd, labelText, d);
+            const lineGapSegments = getLineLabelGapSegments(lineStart, lineEnd, labelText, d);
             const lineDashArray = d.id.startsWith('temp-')
               ? '5,5'
               : d.type === 'forecast'
@@ -761,8 +786,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     ? '8,5'
                     : undefined;
             const midpoint = {
-              x: (d.screen.p1.x + lineEnd.x) / 2,
-              y: (d.screen.p1.y + lineEnd.y) / 2,
+              x: (lineStart.x + lineEnd.x) / 2,
+              y: (lineStart.y + lineEnd.y) / 2,
             };
 
             if (isFibonacciDrawing(d)) {
@@ -827,7 +852,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                       y={labelPosition.y}
                       textAnchor={labelPosition.textAnchor}
                       fill="#ffffff"
-                      fontSize="12"
+                      fontSize={textSize}
                       fontWeight={textWeight}
                       fontStyle={textStyle}
                       paintOrder="stroke"
@@ -840,6 +865,74 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                   )}
                 </g>
               );
+            }
+
+            if (d.type === 'parallel-channel' && d.screen.p3) {
+              const offsetX = d.screen.p3.x - d.screen.p2.x, offsetY = d.screen.p3.y - d.screen.p2.y;
+              return <g key={d.id}><polygon points={`${d.screen.p1.x},${d.screen.p1.y} ${d.screen.p2.x},${d.screen.p2.y} ${d.screen.p2.x + offsetX},${d.screen.p2.y + offsetY} ${d.screen.p1.x + offsetX},${d.screen.p1.y + offsetY}`} fill={colorToRgba(stroke, .12)} stroke="none"/><line x1={d.screen.p1.x} y1={d.screen.p1.y} x2={d.screen.p2.x} y2={d.screen.p2.y} stroke={stroke} strokeWidth={strokeWidth}/><line x1={d.screen.p1.x + offsetX} y1={d.screen.p1.y + offsetY} x2={d.screen.p2.x + offsetX} y2={d.screen.p2.y + offsetY} stroke={stroke} strokeWidth={strokeWidth}/></g>;
+            }
+
+            if (SHAPE_TOOL_TYPES.includes(d.type)) {
+              const { p1, p2, p3 } = d.screen;
+              const shapeDashArray = d.id.startsWith('temp-') ? '5,5' : (d.lineStyle === 'dashed' ? '8,5' : undefined);
+
+              if (d.type === 'triangle' && p3) {
+                return (
+                  <polygon
+                    key={d.id}
+                    points={`${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`}
+                    fill={colorToRgba(stroke, d.id.startsWith('temp-') ? 0.08 : 0.16) || DRAWING_FILL}
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={shapeDashArray}
+                  />
+                );
+              }
+
+              if (d.type === 'arc') {
+                const radius = Math.max(Math.hypot(p2.x - p1.x, p2.y - p1.y) * 0.75, 1);
+                return (
+                  <path
+                    key={d.id}
+                    d={`M ${p1.x} ${p1.y} A ${radius} ${radius} 0 0 1 ${p2.x} ${p2.y}`}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={shapeDashArray}
+                  />
+                );
+              }
+
+              if (d.type === 'curve' && p3) {
+                return (
+                  <path
+                    key={d.id}
+                    d={`M ${p1.x} ${p1.y} Q ${p3.x} ${p3.y} ${p2.x} ${p2.y}`}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={shapeDashArray}
+                  />
+                );
+              }
+
+              if (d.type === 'double-curve' && p3) {
+                const midX = (p1.x + p2.x) / 2, midY = (p1.y + p2.y) / 2;
+                const offX = p3.x - midX, offY = p3.y - midY;
+                const c1x = p1.x + (p2.x - p1.x) / 3 + offX, c1y = p1.y + (p2.y - p1.y) / 3 + offY;
+                const c2x = p1.x + (2 * (p2.x - p1.x)) / 3 - offX, c2y = p1.y + (2 * (p2.y - p1.y)) / 3 - offY;
+                return (
+                  <path
+                    key={d.id}
+                    d={`M ${p1.x} ${p1.y} C ${c1x} ${c1y} ${c2x} ${c2y} ${p2.x} ${p2.y}`}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={shapeDashArray}
+                  />
+                );
+              }
+              // triangle/curve/double-curve without p3 yet (mid-creation) fall through to the plain two-point line preview below.
             }
 
             return (
@@ -859,8 +952,8 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                   ))
                 ) : (
                   <line
-                    x1={d.screen.p1.x}
-                    y1={d.screen.p1.y}
+                    x1={lineStart.x}
+                    y1={lineStart.y}
                     x2={lineEnd.x}
                     y2={lineEnd.y}
                     stroke={stroke}
@@ -902,7 +995,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     y={labelPosition.y}
                     textAnchor={labelPosition.textAnchor}
                     fill="#ffffff"
-                    fontSize="12"
+                    fontSize={textSize}
                     fontWeight={textWeight}
                     fontStyle={textStyle}
                     paintOrder="stroke"
@@ -1042,7 +1135,7 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
             );
           }
 
-          if (['rect', 'price-range', 'date-range', 'price-date-range'].includes(d.type)) {
+          if (['rect', 'circle', 'price-range', 'date-range', 'price-date-range'].includes(d.type)) {
             const rect = normalizeVisibleRect(d.screen.p1, d.screen.p2);
             const labelText = d.showText === false ? '' : d.labelText?.trim();
             const labelPosition = labelText ? getBoxLabelPosition(rect, d) : null;
@@ -1051,23 +1144,35 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
               : d.lineStyle === 'dashed'
                 ? '8,5'
                 : undefined;
+            const shapeFill = d.id.startsWith('temp-')
+              ? colorToRgba(stroke, 0.08)
+              : colorToRgba(stroke, 0.16) || DRAWING_FILL;
 
             return (
               <g key={d.id}>
-                <rect
-                  x={rect.left}
-                  y={rect.top}
-                  width={rect.width}
-                  height={rect.height}
-                  fill={
-                    d.id.startsWith('temp-')
-                      ? colorToRgba(stroke, 0.08)
-                      : colorToRgba(stroke, 0.16) || DRAWING_FILL
-                  }
-                  stroke={stroke}
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={rectDashArray}
-                />
+                {d.type === 'circle' ? (
+                  <ellipse
+                    cx={rect.left + rect.width / 2}
+                    cy={rect.top + rect.height / 2}
+                    rx={rect.width / 2}
+                    ry={rect.height / 2}
+                    fill={shapeFill}
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={rectDashArray}
+                  />
+                ) : (
+                  <rect
+                    x={rect.left}
+                    y={rect.top}
+                    width={rect.width}
+                    height={rect.height}
+                    fill={shapeFill}
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={rectDashArray}
+                  />
+                )}
                 {d.type === 'price-range' && !d.id.startsWith('temp-') && d.end.price !== d.start.price && (() => {
                   const isUp = d.end.price > d.start.price;
                   const arrowColor = isUp ? '#22c55e' : '#ef4444';
@@ -1083,14 +1188,14 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     </g>
                   );
                 })()}
-                {d.type !== 'rect' && !d.id.startsWith('temp-') && <text x={rect.left + 8} y={rect.top + 18} fill="#ffffff" fontSize="12" fontWeight="700" paintOrder="stroke" stroke="rgba(15,23,42,.95)" strokeWidth="4">{getRangeLabel(d)}</text>}
+                {d.type !== 'rect' && d.type !== 'circle' && !d.id.startsWith('temp-') && <text x={rect.left + 8} y={rect.top + 18} fill="#ffffff" fontSize="12" fontWeight="700" paintOrder="stroke" stroke="rgba(15,23,42,.95)" strokeWidth="4">{getRangeLabel(d)}</text>}
                 {labelText && !d.id.startsWith('temp-') && (
                   <text
                     x={labelPosition.x}
                     y={labelPosition.y}
                     textAnchor={labelPosition.textAnchor}
                     fill="#ffffff"
-                    fontSize="12"
+                    fontSize={textSize}
                     fontWeight={textWeight}
                     fontStyle={textStyle}
                     paintOrder="stroke"
@@ -1148,30 +1253,62 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
       </svg>
 
       {renderedDrawings
-        .filter((d) => d.type === 'text' && d.showText !== false)
+        .filter((d) => TEXT_MARKER_TYPES.includes(d.type) && d.showText !== false)
         .map((d) => {
+          const Icon = TEXT_MARKER_ICONS[d.type];
+          const isCallout = d.type === 'callout';
+          const markerColor = d.color ?? '#ffffff';
+
           return (
-            <div
-              key={d.id}
-              className="pointer-events-none absolute z-10"
-              style={{
-                left: d.screen.p.x + 8,
-                top: d.screen.p.y - 10,
-                transform: 'translateY(-50%)',
-              }}
-            >
-              <span
-                className="text-xs font-semibold"
+            <React.Fragment key={d.id}>
+              {PRICE_ANCHORED_MARKER_TYPES.includes(d.type) && d.screen.pRight && (
+                <svg className="pointer-events-none absolute inset-0" style={{ width: '100%', height: '100%' }}>
+                  <line
+                    x1={d.screen.p.x}
+                    y1={d.screen.p.y}
+                    x2={d.screen.pRight.x}
+                    y2={d.screen.pRight.y}
+                    stroke={markerColor}
+                    strokeWidth={1}
+                    strokeDasharray="4,4"
+                    opacity="0.6"
+                  />
+                </svg>
+              )}
+              <div
+                className="pointer-events-none absolute z-10"
                 style={{
-                  color: d.color ?? '#ffffff',
-                  fontWeight: d.textBold ? 800 : 600,
-                  fontStyle: d.textItalic ? 'italic' : undefined,
-                  textShadow: '0 1px 2px rgba(0, 0, 0, 0.9)',
+                  left: d.screen.p.x + 8,
+                  top: d.screen.p.y - 10,
+                  transform: 'translateY(-50%)',
                 }}
               >
-                {d.text}
-              </span>
-            </div>
+                <span
+                  className={`inline-flex items-center gap-1.5 text-xs font-semibold ${isCallout ? 'rounded-md border px-2 py-1' : ''}`}
+                  style={{
+                    color: markerColor,
+                    fontWeight: d.textBold ? 800 : 600,
+                    fontStyle: d.textItalic ? 'italic' : undefined,
+                    fontSize: d.textSize ? `${d.textSize}px` : undefined,
+                    textShadow: isCallout ? undefined : '0 1px 2px rgba(0, 0, 0, 0.9)',
+                    background: isCallout ? 'rgba(15, 23, 42, 0.92)' : undefined,
+                    borderColor: isCallout ? markerColor : undefined,
+                  }}
+                >
+                  {d.type === 'signpost' ? (
+                    <span
+                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold"
+                      style={{ background: markerColor, color: '#0b0e14' }}
+                    >
+                      {d.signpostNumber ?? '•'}
+                    </span>
+                  ) : Icon ? (
+                    <Icon size={13} className="shrink-0" />
+                  ) : null}
+                  {d.text}
+                </span>
+              </div>
+            </React.Fragment>
           );
         })}
     </div>
@@ -1197,7 +1334,7 @@ function TextInputPopover({
         top: Math.max(textInput.y - 12, 12),
       }}
     >
-      <div className="mb-2 text-xs font-medium text-gray-300">Text label</div>
+      <div className="mb-2 text-xs font-medium text-gray-300">{TEXT_MARKER_LABELS[textInput.type] ?? 'Text'} label</div>
       <input
         value={textDraft}
         onChange={(e) => onTextDraftChange(e.target.value)}

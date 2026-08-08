@@ -129,25 +129,71 @@ class AdminSidebarMenuses extends Seeder
                 'created_at'        => date('Y-m-d H:i:s')
             ],
             [
-                'name'              => 'Module Activity History',
+                // Was "Module Activity History" / slug 'module_activity_history' — that slug never had a
+                // real route behind it. Renamed and repointed at the real payment activity viewer, and
+                // moved under the new "Payments" dropdown (id 13) below. See
+                // database/migrations/2026_08_08_000006_move_payment_menus_into_admin_sidebar.php, which
+                // applies this same change to already-seeded databases.
+                'name'              => 'Payment Activity',
                 'type'              => 'Route',
-                'slug'              => 'module_activity_history',
+                'slug'              => 'admin/payment-activity',
                 'color'             => NULL,
                 'icon'              => 'fa fa-history',
-                'parent_id'         => 0,
+                'parent_id'         => 13,
                 'is_active'         => 1,
-                'sorting'           => 8,
+                'sorting'           => 3,
                 'created_at'        => date('Y-m-d H:i:s')
             ],
             [
+                // slug was 'system_error_logs', another label with no route ever behind it — repointed
+                // at the real error log viewer built alongside Payment Activity. Stays top-level.
                 'name'              => 'System Error Logs',
                 'type'              => 'Route',
-                'slug'              => 'system_error_logs',
+                'slug'              => 'admin/system-errors',
                 'color'             => NULL,
                 'icon'              => 'fa fa-history',
                 'parent_id'         => 0,
                 'is_active'         => 1,
                 'sorting'           => 9,
+                'created_at'        => date('Y-m-d H:i:s')
+            ],
+            [
+                // New dropdown parent (id 13 on a fresh seed) grouping the payment-related admin pages
+                // that used to be plain links in AdminNavbar.jsx's top nav.
+                'name'              => 'Payments',
+                'type'              => 'URL',
+                'slug'              => 'payments_group',
+                'color'             => NULL,
+                'icon'              => 'fa fa-credit-card',
+                'parent_id'         => 0,
+                'is_active'         => 1,
+                'sorting'           => 5,
+                'created_at'        => date('Y-m-d H:i:s')
+            ],
+            [
+                // Named "Transactions", not "Payments" — this seeder matches rows by `name` via
+                // updateOrInsert(), so reusing the parent dropdown's own label here would make this
+                // entry and the "Payments" URL-type parent above collide on the same name and corrupt
+                // each other on every re-seed (confirmed the hard way; fixed live data by hand once).
+                'name'              => 'Transactions',
+                'type'              => 'Route',
+                'slug'              => 'admin/subscriptions',
+                'color'             => NULL,
+                'icon'              => 'fa fa-credit-card',
+                'parent_id'         => 13,
+                'is_active'         => 1,
+                'sorting'           => 1,
+                'created_at'        => date('Y-m-d H:i:s')
+            ],
+            [
+                'name'              => 'Pricing',
+                'type'              => 'Route',
+                'slug'              => 'admin/subscription-plans',
+                'color'             => NULL,
+                'icon'              => 'fa fa-tags',
+                'parent_id'         => 13,
+                'is_active'         => 1,
+                'sorting'           => 2,
                 'created_at'        => date('Y-m-d H:i:s')
             ],
         ];

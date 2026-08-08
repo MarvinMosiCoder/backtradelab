@@ -188,6 +188,9 @@ class SettingsController extends Controller{
     }
     public function getApplogo(){
         $logo = AdmSettings::where('name','logo')->pluck('content')->first();
+        if ($logo && !str_starts_with($logo, '/') && !str_starts_with($logo, 'http')) {
+            $logo = '/'.$logo;
+        }
         return json_encode(['app_logo'=>$logo]);
     }
 

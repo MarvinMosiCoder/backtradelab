@@ -12,6 +12,8 @@ import getAppLogo from "../../Components/SystemSettings/ApplicationLogo";
 import Modal from "../../Components/Modal/Modal";
 import useThemeSwalColor from "../../Hooks/useThemeSwalColor";
 import { marketCategoryLabel } from "../../utils/marketLabels";
+import AvatarBadge from "../../Components/Profile/AvatarBadge";
+import { getAvatarFromFileName } from "../../Components/Profile/avatarCatalog";
 const AppNavbar = () => {
     const { title } = useContext(NavbarContext);
     const { auth } = usePage().props;
@@ -193,8 +195,11 @@ const AppNavbar = () => {
     };
 
     // Get the initial for the color mapping
-    const initials = getInitials(auth.user.name);
-    const backgroundColor = colorMap[initials.charAt(0)] || theme;
+    const displayIdentity = auth.user.username || auth.user.name;
+    const initials = getInitials(displayIdentity);
+    const backgroundColor = colorMap[initials.charAt(0)] || 'bg-slate-300';
+    const navFileName = profile ?? auth.profile?.file_name;
+    const navAvatar = getAvatarFromFileName(navFileName);
 
     //DARK MODE
     const handleDarkMode = () => {
@@ -416,17 +421,21 @@ const AppNavbar = () => {
                                 zIndex: "999999999",
                             }}
                         >
-                            {(profile ?? auth.profile) ? (
+                            {navAvatar ? (
+                                <div className={`w-11 h-11 rounded-full overflow-hidden shadow-md`}>
+                                    <AvatarBadge avatar={navAvatar} sizeClassName="text-xl"/>
+                                </div>
+                            ) : (profile ?? auth.profile) ? (
                                 <div className={`w-11 h-11 border-2 border-gray-400 rounded-full overflow-hidden shadow-md`}>
-                                    <img src={`/images/profile/` + (profile ?? auth.profile.file_name)} alt="User Avatar" className="w-full h-full object-cover" />
+                                    <img src={`/images/profile/` + navFileName} alt="User Avatar" className="w-full h-full object-cover" />
                                 </div>
                             ) : (
                                 <div className={`${backgroundColor} p-[20px] border-2 border-gray-300 cursor-pointer rounded-full w-[35px] h-[35px] flex items-center justify-center`}>
-                                    <p className={`${theme === "bg-skin-white" ? textColor : textColorActive} text-center text-[18px] m-0 p-0`}>{getInitials(auth.user.name)}</p>
+                                    <p className="text-center text-[18px] m-0 p-0 text-slate-800">{getInitials(displayIdentity)}</p>
                                 </div>
                             )}
                             <p className={`font-poppins ${theme === "bg-skin-white" ? textColor : textColorActive} hidden lg:block`}>
-                                <span className="font-poppins text-[15px]">{auth.user.name}</span>
+                                <span className="font-poppins text-[15px]">{displayIdentity}</span>
                             </p>
                             <img src="/images/navigation/arrow-down-white.png" className={`w-3 ml-2 hidden  lg:block ${showMenu && "rotate-180"}`} />
                         </div>
@@ -434,15 +443,17 @@ const AppNavbar = () => {
                     {showMenu && (
                         <div className={`absolute z-90 right-1 top-[113px] md:lg:top-[65px] lg:top-[65px] ${theme === "bg-skin-black" ? "bg-skin-black" : "bg-white"} py-3 rounded-[5px] pop-up-boxshadow z-[100] w-[332px]`}>
                             <div className="flex items-center justify-center gap-3 border-b-[1px] px-5 pb-2 ">
-                                {(profile ?? auth.profile) ? (
-                                    <img src={`/images/profile/` + (profile ?? auth.profile.file_name)} alt="User Avatar" className="w-20 h-20 border-2 border-gray-400 rounded-full object-cover" />
+                                {navAvatar ? (
+                                    <div className="w-20 h-20 rounded-full overflow-hidden"><AvatarBadge avatar={navAvatar} sizeClassName="text-4xl"/></div>
+                                ) : (profile ?? auth.profile) ? (
+                                    <img src={`/images/profile/` + navFileName} alt="User Avatar" className="w-20 h-20 border-2 border-gray-400 rounded-full object-cover" />
                                 ) : (
                                     <div className={`${backgroundColor} p-[32px] cursor-pointer rounded-full border-2 border-gray-300  w-[40px] h-[40px] flex items-center justify-center`}>
-                                        <p className={`${theme === "bg-skin-white" ? textColor : textColorActive} text-center text-[30px] m-0 p-0`}>{getInitials(auth.user.name)}</p>
+                                        <p className="text-center text-[30px] m-0 p-0 text-slate-800">{getInitials(displayIdentity)}</p>
                                     </div>
                                 )}
                                 <p className={`font-poppins ${!["bg-skin-black"].includes(theme) ? textColor : textColorActive}`}>
-                                    <span className="font-semibold text-[15px]">{auth.user.name}</span>
+                                    <span className="font-semibold text-[15px]">{displayIdentity}</span>
                                     <span className="text-[13px]"> {auth.user.email}</span>
                                 </p>
                             </div>

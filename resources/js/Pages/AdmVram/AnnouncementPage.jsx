@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
+import axios from 'axios';
 import ContentPanel from '../../Components/Table/ContentPanel';
 import TopPanel from '../../Components/Table/TopPanel';
 import TableSearch from '../../Components/Table/TableSearch';
@@ -11,26 +12,51 @@ import TableHeader from '../../Components/Table/TableHeader';
 import Tbody from '../../Components/Table/Tbody';
 import RowData from '../../Components/Table/RowData';
 import Pagination from '../../Components/Table/Pagination';
-import moment from 'moment';
 import { useTheme } from '../../Context/ThemeContext';
 import Filters from '../../Components/Table/Buttons/Filters';
-import WyswygTextEditor from '../../Components/Forms/WyswygTextEditor';
 import Button from '../../Components/Table/Buttons/Button';
+import RowActions from '../../Components/Table/RowActions';
 import RowAction from '../../Components/Table/RowAction';
 import useThemeStyles from '../../Hooks/useThemeStyles';
+import useSwalColor from '../../Hooks/useThemeSwalColor';
+import { useToast } from '../../Context/ToastContext';
 
 const AnnouncementPage = ({ announcements, queryParams }) => {
-    const {theme} = useTheme();
+    const { theme } = useTheme();
     const [loading, setLoading] = useState(false);
     const { textColor, primayActiveColor } = useThemeStyles(theme);
-    
+    const swalColor = useSwalColor(theme);
+    const { handleToast } = useToast();
+
+    const handleDelete = (id) => {
+        Swal.fire({
+            title: '<p class="font-poppins">Delete this announcement?</p>',
+            text: 'This cannot be undone.',
+            showCancelButton: true,
+            confirmButtonText: 'Delete',
+            confirmButtonColor: '#dc2626',
+            icon: 'warning',
+            iconColor: swalColor,
+            reverseButtons: true,
+        }).then(async (result) => {
+            if (!result.isConfirmed) return;
+            try {
+                const response = await axios.post(`/announcements/delete-announcement/${id}`);
+                if (response.data.status == 'success') {
+                    handleToast(response.data.message, response.data.status);
+                    router.reload();
+                }
+            } catch (error) {}
+        });
+    };
+
     return (
         <>
             <Head title="Announcements" />
                 <ContentPanel>
                     <TopPanel>
                         <Button
-                            href="announcement/add-announcement"
+                            href="/announcements/add-announcement"
                             extendClass={(theme === 'bg-skin-white' ? primayActiveColor : theme)+" p-2"}
                             type="link"
                             fontColor={theme === 'bg-skin-white' ? 'text-white' : textColor}
@@ -48,27 +74,37 @@ const AnnouncementPage = ({ announcements, queryParams }) => {
                         <Thead>
                             <Row>
                                 <TableHeader
-                                    name="description"
+                                    name="title"
                                     queryParams={queryParams}
-                                    width="xl"
+                                    width="lg"
                                 >
                                     Title
                                 </TableHeader>
 
                                 <TableHeader
-                                    name="id_adm_users"
+                                    name="message"
                                     queryParams={queryParams}
-                                    width="lg"
+                                    sortable={false}
+                                    width="xl"
                                 >
                                     Message
                                 </TableHeader>
 
                                 <TableHeader
-                                    name="created_at"
+                                    name="status"
                                     queryParams={queryParams}
-                                    width="xl"
+                                    width="sm"
                                 >
                                     Status
+                                </TableHeader>
+
+                                <TableHeader
+                                    name="actions"
+                                    sortable={false}
+                                    width="sm"
+                                    justify="center"
+                                >
+                                    Actions
                                 </TableHeader>
                             </Row>
                         </Thead>
@@ -79,21 +115,25 @@ const AnnouncementPage = ({ announcements, queryParams }) => {
                                         <RowData isLoading={loading}>
                                             {item.title}
                                         </RowData>
-                                        <div style={{ paddingLeft: '20px' }}>
-                                            <div 
-                                                dangerouslySetInnerHTML={{ __html: item.message }} 
-                                                style={{ listStyleType: 'disc' }}
-                                            />
-                                        </div>
                                         <RowData isLoading={loading}>
-                                            {item.status}  
+                                            {item.excerpt}
+                                        </RowData>
+                                        <RowData isLoading={loading}>
+                                            {item.status}
                                         </RowData>
                                         <RowData center>
-                                            <RowAction
-                                                as="button"
-                                                action="edit"
-                                                href={`announcement/edit-announcement/${item.id}`}
-                                            ></RowAction>
+                                            <RowActions>
+                                                <RowAction
+                                                    as="button"
+                                                    action="edit"
+                                                    href={`/announcements/edit-announcement/${item.id}`}
+                                                />
+                                                <RowAction
+                                                    type="button"
+                                                    action="delete"
+                                                    onClick={() => handleDelete(item.id)}
+                                                />
+                                            </RowActions>
                                         </RowData>
                                     </Row>
                                 ))}

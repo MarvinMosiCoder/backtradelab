@@ -2,6 +2,7 @@
 
 namespace App\Exceptions;
 
+use App\Services\SystemErrorLogger;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Throwable;
 
@@ -23,8 +24,11 @@ class Handler extends ExceptionHandler
      */
     public function register(): void
     {
+        // Laravel already excludes routine exceptions (validation, 404s, auth, etc.) from
+        // reaching reportable() via its own $dontReport/internalDontReport lists, so this
+        // callback only sees exceptions worth surfacing to admins.
         $this->reportable(function (Throwable $e) {
-            //
+            app(SystemErrorLogger::class)->log($e, request());
         });
     }
 }

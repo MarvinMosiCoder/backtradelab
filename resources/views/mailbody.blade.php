@@ -57,7 +57,7 @@
             <p>If you did not request a password reset, you can safely ignore this email. Only a person with access to your email can reset your account password.</p>
         </div>
         <div class="footer">
-            <p>&copy; {{ date('Y') }} VRAM. All rights reserved.</p>
+            <p>&copy; {{ date('Y') }} {{ $systemName ?? config('app.name') }}. All rights reserved.</p>
         </div>
     </div>
 </body>

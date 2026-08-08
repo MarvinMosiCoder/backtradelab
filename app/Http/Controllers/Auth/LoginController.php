@@ -237,7 +237,7 @@ class LoginController extends Controller
 
         $now = now();
         $userId = DB::table('adm_users')->insertGetId([
-            'name' => $pending['name'], 'email' => $pending['email'], 'email_verified_at' => $now,
+            'name' => $pending['name'], 'username' => AdmUser::generateUniqueUsername(), 'email' => $pending['email'], 'email_verified_at' => $now,
             'password' => Hash::make(Str::random(64)), 'id_adm_privileges' => $defaultPrivilegeId,
             'status' => 'ACTIVE', 'social_provider' => $pending['provider'],
             'social_provider_id' => $pending['provider_id'], 'password_login_enabled' => false,
@@ -385,11 +385,12 @@ class LoginController extends Controller
     public function logout(Request $request): RedirectResponse
     {
         CommonHelpers::insertLog(trans("adm_default.log_logout", ['email' => Auth::user()->email, 'ip' => $request->server('REMOTE_ADDR')]));
+        $isAdmin = $this->adminAccess->isAdmin(Auth::user());
         Auth::logout();
         $request->session()->invalidate();
-    
+
         $request->session()->regenerateToken();
-        return redirect('login');
+        return redirect($isAdmin ? route('admin.login') : route('login'));
     }
 
     public function endSession(Request $request){

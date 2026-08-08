@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
 import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 
 export default function AdminLogin() {
@@ -10,9 +10,17 @@ export default function AdminLogin() {
     const [showPassword, setShowPassword] = useState(false);
     const [processing, setProcessing] = useState(false);
     const [logo, setLogo] = useState('');
+    const [theme, setTheme] = useState('dark');
+    const isDark = theme === 'dark';
 
     useEffect(() => {
         getAppLogo().then(setLogo).catch(() => {});
+        try {
+            const storedTheme = localStorage.getItem('backtradelab-theme');
+            if (storedTheme === 'dark' || storedTheme === 'white') {
+                setTheme(storedTheme);
+            }
+        } catch {}
         const stopStart = router.on('start', () => setProcessing(true));
         const stopFinish = router.on('finish', () => setProcessing(false));
         return () => { stopStart(); stopFinish(); };
@@ -27,50 +35,113 @@ export default function AdminLogin() {
     };
 
     return (
-        <main className="min-h-screen bg-[#070a10] px-4 py-10 text-white">
+        <div className={`relative min-h-screen overflow-hidden px-4 py-6 ${isDark ? 'bg-black-screen-color text-white' : 'bg-slate-50 text-slate-950'}`}>
             <Head title="Administrator sign in" />
-            <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-md items-center">
-                <section className="w-full rounded-2xl border border-slate-800 bg-[#131722] p-7 shadow-2xl shadow-black/40 sm:p-9">
-                    <div className="mb-7 text-center">
-                        <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-blue-400/30 bg-blue-500/10">
-                            {logo ? <img src={logo} alt="" className="h-full w-full object-contain p-2" /> : <ShieldCheck className="h-7 w-7 text-blue-400" />}
+
+            <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+                <div className="absolute -left-24 top-0 h-72 w-72 animate-floatY rounded-full bg-[#2962ff]/10 blur-3xl [animation-duration:10s]" />
+                <div className="absolute -right-24 bottom-0 h-72 w-72 animate-floatY rounded-full bg-blue-500/10 blur-3xl [animation-duration:12s]" />
+            </div>
+
+            <div className="mx-auto flex max-w-6xl animate-fadeInUp items-center justify-between">
+                <Link href="/" className={`group inline-flex items-center gap-2 text-sm font-semibold transition-colors ${isDark ? 'text-slate-300 hover:text-white' : 'text-slate-600 hover:text-slate-950'}`}>
+                    <ArrowLeft size={16} className="transition-transform duration-200 group-hover:-translate-x-1" />
+                    Back to home
+                </Link>
+                <div className="flex items-center gap-3">
+                    <div className={`flex h-9 w-9 items-center justify-center overflow-hidden rounded-md border ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-300 bg-white'}`}>
+                        {logo ? (
+                            <img src={logo} className="h-full w-full object-contain p-1" alt="BacktradeLab logo" />
+                        ) : (
+                            <span className={`text-xs font-bold ${isDark ? 'text-gray-200' : 'text-slate-800'}`}>BT</span>
+                        )}
+                    </div>
+                    <span className="font-poppins text-sm font-bold">BacktradeLab</span>
+                </div>
+            </div>
+
+            <main className="mx-auto flex min-h-[calc(100vh-84px)] max-w-md items-center justify-center py-8">
+                <section className={`w-full animate-fadeInUp rounded-xl border p-6 shadow-2xl sm:p-8 ${isDark ? 'border-[#2a2e39] bg-[#131722] shadow-blue-950/10' : 'border-slate-200 bg-white shadow-slate-200/60'}`} style={{ animationDelay: '80ms' }}>
+                    <div className="mb-6 text-center">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-[#5b8cff]/30 bg-[#2962ff]/10 shadow-[0_0_30px_rgba(41,98,255,.18)]">
+                            {logo ? <img src={logo} alt="" className="h-full w-full object-contain p-2" /> : <ShieldCheck className="h-7 w-7 text-[#5b8cff]" />}
                         </div>
-                        <h1 className="mt-4 text-2xl font-bold">Administrator sign in</h1>
-                        <p className="mt-2 text-sm text-slate-400">Authorized BacktradeLab staff accounts only</p>
+                        <h1 className={`mt-4 font-poppins text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-950'}`}>Administrator sign in</h1>
+                        <p className={`mt-2 text-sm leading-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Authorized BacktradeLab staff accounts only</p>
                     </div>
 
-                    {errors.message && <div role="alert" className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">{errors.message}</div>}
+                    {errors.message && (
+                        <div role="alert" className={`mb-5 rounded-lg border px-4 py-3 text-sm ${isDark ? 'border-red-500/30 bg-red-500/10 text-red-200' : 'border-red-200 bg-red-50 text-red-700'}`}>
+                            {errors.message}
+                        </div>
+                    )}
 
-                    <form onSubmit={submit} className="space-y-5">
-                        <label className="block text-sm font-medium text-slate-200">
-                            Email address
-                            <span className="mt-2 flex items-center rounded-lg border border-slate-700 bg-[#0d111a] focus-within:border-blue-500">
-                                <Mail className="ml-3 h-4 w-4 text-slate-500" />
-                                <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border-0 bg-transparent px-3 py-3 text-white outline-none ring-0" />
-                            </span>
-                            {errors.email && <span className="mt-1 block text-xs text-red-300">{errors.email}</span>}
-                        </label>
+                    <form onSubmit={submit} className="space-y-4">
+                        <div className="block">
+                            <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Email address</span>
+                            <div className={`group flex h-11 items-center rounded-md border transition-colors focus-within:border-[#2962ff] focus-within:ring-1 focus-within:ring-[#2962ff]/30 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                                <div className={`flex h-full w-11 items-center justify-center border-r transition-colors group-focus-within:border-[#2962ff]/40 group-focus-within:text-[#2962ff] ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
+                                    <Mail size={17} />
+                                </div>
+                                <input
+                                    type="email"
+                                    autoComplete="username"
+                                    autoFocus
+                                    required
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    className={`min-w-0 flex-1 border-0 bg-transparent px-3 text-sm outline-none ring-0 placeholder:text-slate-500 focus:border-0 focus:outline-none focus:ring-0 ${isDark ? 'text-white' : 'text-slate-950'}`}
+                                />
+                            </div>
+                            {errors.email && <span className={`mt-1 block text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>{errors.email}</span>}
+                        </div>
 
-                        <label className="block text-sm font-medium text-slate-200">
-                            Password
-                            <span className="mt-2 flex items-center rounded-lg border border-slate-700 bg-[#0d111a] focus-within:border-blue-500">
-                                <LockKeyhole className="ml-3 h-4 w-4 text-slate-500" />
-                                <input type={showPassword ? 'text' : 'password'} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border-0 bg-transparent px-3 py-3 text-white outline-none ring-0" />
-                                <button type="button" onClick={() => setShowPassword((value) => !value)} className="mr-3 text-slate-400 hover:text-white" aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        <div className="block">
+                            <span className={`mb-1 block text-sm font-semibold ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>Password</span>
+                            <div className={`group flex h-11 items-center rounded-md border transition-colors focus-within:border-[#2962ff] focus-within:ring-1 focus-within:ring-[#2962ff]/30 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+                                <div className={`flex h-full w-11 items-center justify-center border-r transition-colors group-focus-within:border-[#2962ff]/40 group-focus-within:text-[#2962ff] ${isDark ? 'border-gray-700 text-gray-400' : 'border-slate-200 text-slate-500'}`}>
+                                    <LockKeyhole size={17} />
+                                </div>
+                                <input
+                                    type={showPassword ? 'text' : 'password'}
+                                    autoComplete="current-password"
+                                    required
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className={`min-w-0 flex-1 border-0 bg-transparent px-3 text-sm outline-none ring-0 placeholder:text-slate-500 focus:border-0 focus:outline-none focus:ring-0 ${isDark ? 'text-white' : 'text-slate-950'}`}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword((value) => !value)}
+                                    className={`flex h-full w-11 items-center justify-center transition-colors ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-950'}`}
+                                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                >
+                                    {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                                 </button>
-                            </span>
-                            {errors.password && <span className="mt-1 block text-xs text-red-300">{errors.password}</span>}
-                        </label>
+                            </div>
+                            {errors.password && <span className={`mt-1 block text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>{errors.password}</span>}
+                        </div>
 
-                        <div className="flex justify-end"><Link href="/reset_password" className="text-sm text-blue-400 hover:text-blue-300">Forgot password?</Link></div>
-                        <button type="submit" disabled={processing} className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-60">
+                        <div className="flex justify-end">
+                            <Link href="/reset_password" className="text-sm font-semibold text-[#5b8cff] transition-colors hover:text-[#2962ff] hover:underline">
+                                Forgot password?
+                            </Link>
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={processing}
+                            className={`mt-1 h-11 w-full rounded-md px-4 font-poppins text-sm font-bold transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-blue-950/30 disabled:pointer-events-none disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none ${isDark ? 'bg-white text-skin-black hover:bg-gray-200' : 'bg-skin-black text-white hover:bg-skin-black-light'}`}
+                        >
                             {processing ? 'Signing in…' : 'Sign in to administration'}
                         </button>
                     </form>
 
+                    <p className={`mt-5 text-center text-xs leading-5 ${isDark ? 'text-slate-500' : 'text-slate-500'}`}>
+                        Not an administrator? <Link href="/login" className="font-semibold text-[#5b8cff] hover:underline">Trader sign in</Link>
+                    </p>
                 </section>
-            </div>
-        </main>
+            </main>
+        </div>
     );
 }

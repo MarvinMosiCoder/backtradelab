@@ -18,9 +18,6 @@ class CheckUserForceChangePassword
         if(Session::get('check_user')){
             return redirect()->route('show-change-force-password')->send();
         }
-        if(Session::get('unread-announcement') === true){
-            return redirect()->route('show-announcement')->send();
-        }
         return $next($request);
     }
 }

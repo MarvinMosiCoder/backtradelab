@@ -10,7 +10,9 @@ class UserFeedback extends Model
 {
     protected $fillable = [
         'adm_user_id',
+        'subscription_request_id',
         'category',
+        'payment_reason_code',
         'title',
         'description',
         'page_url',
@@ -38,5 +40,10 @@ class UserFeedback extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(UserFeedbackMessage::class, 'user_feedback_id');
+    }
+
+    public function subscriptionRequest(): BelongsTo
+    {
+        return $this->belongsTo(SubscriptionRequest::class);
     }
 }

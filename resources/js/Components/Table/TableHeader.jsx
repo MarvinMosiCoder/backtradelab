@@ -4,7 +4,6 @@ import DescIcon from './Icons/DescIcon';
 import SortIcon from './Icons/SortIcon';
 import AscIcon from './Icons/AscIcon';
 import { useTheme } from '../../Context/ThemeContext';
-import useThemeStyles from '../../Hooks/useThemeStyles';
 
 const TableHeader = ({
   name,
@@ -16,6 +15,7 @@ const TableHeader = ({
   sticky
 }) => {
   const {theme} = useTheme();
+  const isDark = theme === 'bg-skin-black';
   const sort_field = queryParams?.sortBy;
   const sort_direction = queryParams?.sortDir;
   const path = window.location.pathname;
@@ -54,18 +54,18 @@ const TableHeader = ({
   }[justify];
 
   const stickyClass = {
-    left: 'sticky left-0 after:absolute after:top-0 after:right-0  after:h-full after:w-[0.60px]',
-    right: 'sticky right-0 before:absolute before:top-0 before:left-0  before:h-full before:w-[0.60px]',
+    left: `sticky left-0 z-20 ${isDark ? 'bg-[#131722]' : 'bg-slate-50'}`,
+    right: `sticky right-0 z-20 ${isDark ? 'bg-[#131722]' : 'bg-slate-50'}`,
   }[sticky];
 
   return (
 		<th
 			onClick={sortable ? (() => handleSort(name)) : undefined}
-			className={`${theme === 'bg-skin-black' ? theme+' text-gray-400' : 'bg-custom-gray text-customTextGray'} border-r-[1px] border-secondary last:border-r-0 font-poppins text-[12px]  ${widthClass} ${stickyClass}`}>
-			<div className={`px-3 py-1.5 flex items-center gap-3  left- ${sortable && "cursor-pointer"} ${justifyClass}`}>
+			className={`text-[11px] font-bold uppercase tracking-wide ${isDark ? 'text-[#787b86]' : 'text-slate-500'} ${widthClass} ${stickyClass ?? ''}`}>
+			<div className={`px-3 py-3 flex items-center gap-2 ${sortable && "cursor-pointer select-none"} ${justifyClass}`}>
 				{children}
 				{sortable && (
-					<div>
+					<div className="shrink-0 opacity-70">
 						{sort_field &&
 						sort_direction &&
 						//  DESCENDING

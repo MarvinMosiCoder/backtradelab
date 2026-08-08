@@ -203,7 +203,7 @@ const LoginPage = () => {
                                     />
                                 </div>
                                 {errors.email && (
-                                    <span className="mt-1 block text-sm text-red-400">{errors.email}</span>
+                                    <span className={`mt-1 block text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>{errors.email}</span>
                                 )}
                             </div>}
 
@@ -241,10 +241,10 @@ const LoginPage = () => {
                                     </button>
                                 </div>
                                 {errors.password && (
-                                    <span className="mt-1 block text-sm text-red-400">{errors.password}</span>
+                                    <span className={`mt-1 block text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>{errors.password}</span>
                                 )}
                                 {errors.message && (
-                                    <span className="mt-1 block text-sm text-red-400">{errors.message}</span>
+                                    <span className={`mt-1 block text-sm ${isDark ? 'text-red-400' : 'text-red-600'}`}>{errors.message}</span>
                                 )}
                             </div>}
                             </div>

@@ -4,6 +4,7 @@ import SidebarMenuCardMultiple from './SidebarMenuCardMultiple'
 import { NavbarContext } from "../../Context/NavbarContext";
 import { usePage } from '@inertiajs/react';
 import { useSidebar } from '../../Context/SidebarContext';
+import { useTheme } from '../../Context/ThemeContext';
 
 
 const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChildMenu, handleMenuClickToggle}) => {
@@ -11,8 +12,10 @@ const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChil
     const { setTitle } = useContext(NavbarContext);
     const page = usePage();
     const { isSidebarOpen } = useSidebar();
+    const { theme } = useTheme();
+    const isDark = theme === 'bg-skin-black';
     const { auth } = page.props;
-    const admin_menus  = auth.sessions.admin_menus;    
+    const admin_menus  = auth.sessions.admin_menus;
 
     const handleMenuClick = (menuTitle, type) => {
         if (type === 'Route'){
@@ -33,7 +36,7 @@ const AdminSidebar = ({activeMenu, setActiveMenu, activeChildMenu, setActiveChil
     };
 
   return (
-    <div className='border-t border-[#2a2e39] p-2 pt-3'>
+    <div className={`border-t p-2 pt-3 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
         {isSidebarOpen && <p className='mb-2 px-3 text-[10px] font-bold uppercase tracking-[.16em] text-[#787b86] text-nowrap'>ADMIN MENU</p>}
         <div className='space-y-1'>
             <SidebarMenuCard

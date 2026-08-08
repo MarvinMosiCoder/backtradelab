@@ -22,7 +22,9 @@ class AdmUser extends Authenticatable
     
     protected $fillable = [
         'name',
+        'name_changed_at',
         'username',
+        'username_changed_at',
         'email',
         'password',
         'status',
@@ -85,7 +87,22 @@ class AdmUser extends Authenticatable
         'alert_sound_enabled' => 'boolean',
         'terms_accepted_at' => 'datetime',
         'privacy_accepted_at' => 'datetime',
+        'username_changed_at' => 'datetime',
+        'name_changed_at' => 'datetime',
     ];
+
+    /**
+     * Generates a unique placeholder handle (e.g. "User482913") for a new account, so every
+     * user has a username from creation instead of it sitting null until they set one.
+     */
+    public static function generateUniqueUsername(): string
+    {
+        do {
+            $candidate = 'User'.random_int(100000, 999999);
+        } while (self::where('username', $candidate)->exists());
+
+        return $candidate;
+    }
 
     public function scopeGetData($query){
         return $query->leftJoin('adm_privileges','adm_users.id_adm_privileges','adm_privileges.id')

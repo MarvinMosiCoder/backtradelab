@@ -7,6 +7,8 @@ use App\Models\SubscriptionMessage;
 use App\Models\SubscriptionPlan;
 use App\Models\SubscriptionRequest;
 use App\Services\Payments\PayMongoCheckoutService;
+use App\Services\Payments\PaymentActivityLogger;
+use App\Services\Payments\SubscriptionEntitlementService;
 use App\Services\AdminAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +22,8 @@ class ReplayAccessController extends Controller
     public function __construct(
         private readonly PayMongoCheckoutService $checkouts,
         private readonly AdminAccessService $adminAccess,
+        private readonly SubscriptionEntitlementService $entitlements,
+        private readonly PaymentActivityLogger $activityLog,
     ) {}
 
     public function plans(Request $request)
@@ -84,6 +88,24 @@ class ReplayAccessController extends Controller
         ]);
     }
 
+    public function myRequests(Request $request)
+    {
+        $items = SubscriptionRequest::where('adm_user_id', $request->user()->id)
+            ->whereNotIn('status', ['creating'])
+            ->latest()
+            ->limit(50)
+            ->get(['id', 'plan', 'amount', 'currency', 'status', 'paid_at', 'created_at']);
+
+        return response()->json(['requests' => $items->map(fn (SubscriptionRequest $item) => [
+            'id' => $item->id,
+            'plan' => $item->plan,
+            'amount' => $item->amount,
+            'currency' => $item->currency ?: 'PHP',
+            'status' => $item->status,
+            'date' => optional($item->paid_at ?? $item->created_at)->toIso8601String(),
+        ])]);
+    }
+
     public function status(Request $request)
     {
         $user = $request->user();
@@ -134,6 +156,9 @@ class ReplayAccessController extends Controller
             ], $active ? 200 : 409);
         }
 
+        $this->activityLog->log(null, $user, 'trial_activated',
+            'Free 7-day trial activated, ends '.$user->replay_trial_ends_at->format('M j, Y g:i A').'.');
+
         return response()->json([
             'success' => true, 'message' => 'Your free seven-day trial is now active.', 'allowed' => true,
             'trialAvailable' => false,
@@ -144,6 +169,7 @@ class ReplayAccessController extends Controller
 
     public function createCheckout(Request $request)
     {
+        $this->checkouts->expireStalePending($request->user());
         if ($this->activeAccessPayload($request->user())) {
             return response()->json(['message' => 'Your replay access is already active. You can choose another plan after it expires.'], 409);
         }
@@ -177,7 +203,7 @@ class ReplayAccessController extends Controller
             report($exception);
         }
 
-        return redirect()->route('subscription.index', ['payment' => $result]);
+        return redirect()->route('subscription.index', ['payment' => $result, 'ref' => $payment->id]);
     }
 
     public function checkoutStatus(Request $request, SubscriptionRequest $subscriptionRequest)
@@ -206,6 +232,14 @@ class ReplayAccessController extends Controller
         if ($request->filled('provider')) $query->where('provider', $request->string('provider')->toString());
         if ($request->filled('status')) $query->where('status', $request->string('status')->toString());
         if ($request->filled('mode')) $query->where('livemode', $request->string('mode')->toString() === 'live');
+        if ($request->filled('search')) {
+            $search = $request->string('search')->toString();
+            $query->where(function ($nested) use ($search) {
+                $nested->where('payment_reference', 'like', "%{$search}%")
+                    ->orWhere('provider_checkout_id', 'like', "%{$search}%")
+                    ->orWhereHas('user', fn ($userQuery) => $userQuery->where('name', 'like', "%{$search}%")->orWhere('email', 'like', "%{$search}%"));
+            });
+        }
 
         return $query->paginate(30)->through(fn ($payment) => $this->paymentPayload($payment, true));
     }
@@ -235,6 +269,22 @@ class ReplayAccessController extends Controller
         } catch (Throwable $exception) {
             report($exception);
             return response()->json(['message' => $exception->getMessage() ?: 'Unable to refund this payment.'], 422);
+        }
+    }
+
+    public function adminRestoreAccess(Request $request, SubscriptionRequest $subscriptionRequest)
+    {
+        $this->requireAdmin($request);
+        $data = $request->validate([
+            'days' => 'required|integer|min:1|max:3650',
+            'reason' => 'required|string|min:10|max:500',
+        ]);
+        try {
+            $payment = $this->entitlements->restoreAccess($subscriptionRequest, $data['days'], $data['reason'], $request->user());
+            return response()->json(['success' => true, 'payment' => $this->paymentPayload($payment, true)]);
+        } catch (Throwable $exception) {
+            report($exception);
+            return response()->json(['message' => $exception->getMessage() ?: 'Unable to restore access for this user.'], 422);
         }
     }
 

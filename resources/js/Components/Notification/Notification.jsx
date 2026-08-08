@@ -16,7 +16,7 @@ const Notification = ({ id, message, type, onClick, isRead, url, theme, created,
 
     // Get the initial for the color mapping
     const initials = getInitials(type);
-    const backgroundColor = colorMap[initials.charAt(0)] || theme; 
+    const backgroundColor = colorMap[initials.charAt(0)] || 'bg-slate-300';
 
     const timeDifference = (timestamp) => {
         const now = new Date(); // Current time

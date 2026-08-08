@@ -171,7 +171,7 @@ function FeaturedCoinCard({ coin, isDark, delay }) {
                         <div className="mt-1 text-2xl font-bold tabular-nums">{priceLabel}</div>
                     </div>
                     {change !== null && (
-                        <div className={`text-sm font-bold tabular-nums ${change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <div className={`text-sm font-bold tabular-nums ${change >= 0 ? (isDark ? 'text-emerald-400' : 'text-emerald-600') : (isDark ? 'text-red-400' : 'text-red-600')}`}>
                             {change >= 0 ? '+' : ''}{change.toFixed(2)}%
                         </div>
                     )}
@@ -448,7 +448,7 @@ export default function Home() {
                                 Explore features
                             </a>
                         </div>
-                        <div className="mt-8 grid max-w-xl grid-cols-3 gap-3 border-t border-slate-700/40 pt-5">
+                        <div className={`mt-8 grid max-w-xl grid-cols-3 gap-3 border-t pt-5 ${isDark ? 'border-slate-700/40' : 'border-slate-200'}`}>
                             {[
                                 ['Replay', 'Candle by candle'],
                                 ['Execute', 'Risk planned'],
@@ -466,7 +466,7 @@ export default function Home() {
                         <div className={`flex h-12 items-center border-b px-4 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-2 text-xs font-bold"><span className="flex h-7 w-7 items-center justify-center rounded bg-[#2962ff] text-white"><TrendingUp size={14} /></span> BTCUSDT</div>
                             <div className="ml-3 text-[10px] text-slate-500">Perpetual · 15m</div>
-                            <div className="ml-auto flex items-center gap-2 text-[10px] text-emerald-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" /> Replay ready</div>
+                            <div className={`ml-auto flex items-center gap-2 text-[10px] ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}><span className={`h-1.5 w-1.5 animate-pulse rounded-full ${isDark ? 'bg-emerald-400' : 'bg-emerald-600'}`} /> Replay ready</div>
                         </div>
                         <div className="relative h-[330px] overflow-hidden bg-[linear-gradient(rgba(120,123,134,.08)_1px,transparent_1px),linear-gradient(90deg,rgba(120,123,134,.08)_1px,transparent_1px)] bg-[size:48px_48px] sm:h-[420px]">
                             {heroImage && <img src={heroImage} alt="" className="absolute inset-0 h-full w-full object-cover opacity-[0.07]" />}

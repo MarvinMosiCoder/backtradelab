@@ -16,6 +16,7 @@ class UserFeedbackController extends Controller
     }
 
     private const CATEGORIES = ['payment', 'subscription', 'account', 'enhancement', 'feature', 'bug', 'usability', 'performance', 'other'];
+    private const PAYMENT_REASON_CODES = ['duplicate', 'payment_error', 'access_not_reflected', 'other'];
     private const STATUSES = ['submitted', 'reviewing', 'planned', 'in_progress', 'completed', 'declined'];
     private const PRIORITIES = ['low', 'normal', 'high', 'urgent'];
     private const CHAT_CATEGORIES = ['payment', 'subscription'];
@@ -37,6 +38,7 @@ class UserFeedbackController extends Controller
     {
         $items = UserFeedback::query()
             ->where('adm_user_id', $request->user()->id)
+            ->with('subscriptionRequest:id,plan,amount,currency,status')
             ->withCount(['messages', 'messages as unread_messages_count' => fn ($query) => $query
                 ->where('adm_user_id', '!=', $request->user()->id)->whereNull('read_at')])
             ->latest()
@@ -54,7 +56,17 @@ class UserFeedbackController extends Controller
             'title' => ['required', 'string', 'min:4', 'max:160'],
             'description' => ['required', 'string', 'min:10', 'max:5000'],
             'page_url' => ['nullable', 'string', 'max:500'],
+            'subscription_request_id' => [
+                'nullable', 'integer',
+                Rule::exists('subscription_requests', 'id')->where('adm_user_id', $request->user()->id),
+            ],
+            'payment_reason_code' => ['nullable', Rule::in(self::PAYMENT_REASON_CODES)],
         ]);
+
+        if ($validated['category'] !== 'payment') {
+            $validated['subscription_request_id'] = null;
+            $validated['payment_reason_code'] = null;
+        }
 
         $feedback = UserFeedback::query()->create([
             ...$validated,
@@ -63,7 +75,7 @@ class UserFeedbackController extends Controller
             'priority' => 'normal',
         ]);
 
-        $fresh = $feedback->fresh('user');
+        $fresh = $feedback->fresh(['user', 'subscriptionRequest:id,plan,amount,currency,status']);
         $fresh->loadCount([
             'messages',
             'messages as unread_messages_count' => fn ($query) => $query
@@ -88,7 +100,7 @@ class UserFeedbackController extends Controller
         ]);
 
         $items = UserFeedback::query()
-            ->with('user:id,name,email')
+            ->with(['user:id,name,email', 'subscriptionRequest:id,plan,amount,currency,status'])
             ->withCount(['messages', 'messages as unread_messages_count' => fn ($query) => $query
                 ->where('adm_user_id', '!=', $request->user()->id)->whereNull('read_at')])
             ->when($validated['status'] ?? null, fn ($query, $value) => $query->where('status', $value))
@@ -103,9 +115,8 @@ class UserFeedbackController extends Controller
             })
             ->orderByRaw("FIELD(priority, 'urgent', 'high', 'normal', 'low')")
             ->latest()
-            ->limit(250)
-            ->get()
-            ->map(fn (UserFeedback $feedback) => $this->serialize($feedback, true));
+            ->paginate(30)
+            ->through(fn (UserFeedback $feedback) => $this->serialize($feedback, true));
 
         return response()->json(['success' => true, 'feedback' => $items]);
     }
@@ -125,7 +136,7 @@ class UserFeedbackController extends Controller
             'responded_at' => now(),
         ]);
 
-        $fresh = $feedback->fresh('user');
+        $fresh = $feedback->fresh(['user', 'subscriptionRequest:id,plan,amount,currency,status']);
         $fresh->loadCount([
             'messages',
             'messages as unread_messages_count' => fn ($query) => $query
@@ -190,6 +201,7 @@ class UserFeedbackController extends Controller
         return [
             'id' => $feedback->id,
             'category' => $feedback->category,
+            'paymentReasonCode' => $feedback->payment_reason_code,
             'title' => $feedback->title,
             'description' => $feedback->description,
             'pageUrl' => $feedback->page_url,
@@ -202,6 +214,13 @@ class UserFeedbackController extends Controller
             'chatEnabled' => in_array($feedback->category, self::CHAT_CATEGORIES, true),
             'messagesCount' => (int) ($feedback->messages_count ?? 0),
             'unreadMessagesCount' => (int) ($feedback->unread_messages_count ?? 0),
+            'subscriptionRequest' => $feedback->subscriptionRequest ? [
+                'id' => $feedback->subscriptionRequest->id,
+                'plan' => $feedback->subscriptionRequest->plan,
+                'amount' => $feedback->subscriptionRequest->amount,
+                'currency' => $feedback->subscriptionRequest->currency,
+                'status' => $feedback->subscriptionRequest->status,
+            ] : null,
             'user' => $includeUser && $feedback->user ? [
                 'id' => $feedback->user->id,
                 'name' => $feedback->user->name,

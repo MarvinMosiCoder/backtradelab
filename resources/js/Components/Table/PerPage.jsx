@@ -1,10 +1,11 @@
 import { router } from '@inertiajs/react';
 import React, { useRef } from 'react'
-import DescIcon from './Icons/DescIcon';
+import { ChevronDown } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
 
 const PerPage = ({queryParams}) => {
   const {theme} = useTheme();
+  const isDark = theme === 'bg-skin-black';
   const perPage = useRef(queryParams?.perPage || 10);
   const path = window.location.pathname;
 
@@ -16,12 +17,12 @@ const PerPage = ({queryParams}) => {
   }
 
   return (
-    <div className='relative w-[58px] min-w-[50px] h-[38px] '>
-      <select 
-        className={`appearance-none pl-[10px] text-sm outline-none rounded-r-md font-poppins border border-l-0 border-secondary ${theme === 'bg-skin-black' ? theme+ ' text-gray-300' : 'bg-gray-100 text-stone-900'}  w-full h-full cursor-pointer`}  
-        name="perPage" 
-        id="perPage" 
-        value={perPage.current} 
+    <div className="relative h-9 w-16 shrink-0">
+      <select
+        className={`h-full w-full cursor-pointer appearance-none rounded-lg border pl-3 pr-6 text-xs outline-none ${isDark ? 'border-[#2a2e39] bg-[#0b0e14] text-white' : 'border-slate-200 bg-slate-50 text-slate-900'}`}
+        name="perPage"
+        id="perPage"
+        value={perPage.current}
         onChange={handleChange}
       >
           <option value="10">10</option>
@@ -31,9 +32,8 @@ const PerPage = ({queryParams}) => {
           <option value="50">50</option>
           <option value="100">100</option>
       </select>
-      {/* Icon  */}
-      <span className="absolute top-1/2 right-[8px] -translate-y-1/2  pointer-events-none">
-          <DescIcon />
+      <span className={`pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 ${isDark ? 'text-[#787b86]' : 'text-slate-400'}`}>
+          <ChevronDown size={13}/>
       </span>
     </div>
   )

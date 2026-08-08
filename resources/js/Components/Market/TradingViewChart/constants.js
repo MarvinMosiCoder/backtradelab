@@ -76,6 +76,7 @@ export const PLAYBACK_SPEEDS = [
 ];
 
 export const DRAWING_WIDTHS = [1, 2, 3, 4, 6, 8];
+export const TEXT_SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32];
 export const DRAWING_COLORS = [
   '#60a5fa',
   '#38bdf8',

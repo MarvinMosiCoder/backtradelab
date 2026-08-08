@@ -57,11 +57,25 @@ class NotificationsController extends Controller{
         return json_encode(['message'=>'Read successfully!', 'status'=>'success']);
     }
 
+    /**
+     * Hides a notification from the navbar dropdown feed only — it is never deleted.
+     * The full "view all notifications" page always shows every notification regardless
+     * of this flag, since that page is the user's permanent notification history.
+     */
+    public function dismiss(Request $request)
+    {
+        $notification = AdmNotifications::where('id', $request->integer('notification_id'))
+            ->where('adm_user_id', CommonHelpers::myId())
+            ->firstOrFail();
+        $notification->update(['dismissed_at' => now()]);
+        return response()->json(['status' => 'success', 'message' => 'Notification dismissed.']);
+    }
+
     public function getLatestNotif()
     {
         $user = Auth::user();
-        $notifications = $user->notifications()->orderBy('created_at','DESC')->limit(20)->get();
-        $unread_notifications = Auth::user()->notifications()->where('is_read', 0)->orderBy('created_at','DESC')->count();
+        $notifications = $user->notifications()->whereNull('dismissed_at')->orderBy('created_at','DESC')->limit(20)->get();
+        $unread_notifications = Auth::user()->notifications()->whereNull('dismissed_at')->where('is_read', 0)->orderBy('created_at','DESC')->count();
         $unreadAnnouncements = Announcement::where('status', 'ACTIVE')->whereDoesntHave('admUsers', fn ($query) => $query->where('adm_user_id', $user->id))->count();
         return response()->json(['notifications'=> $notifications,
                             'unread_notifications' => $unread_notifications + $unreadAnnouncements,

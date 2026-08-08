@@ -1,0 +1,55 @@
+/* Dark-theme overrides for react-quill's "snow" theme, which is hardcoded light.
+   Scoped under .wysiwyg-dark so light mode keeps Quill's stock styling untouched. */
+
+.wysiwyg-dark .ql-toolbar.ql-snow {
+    background: #131722;
+    border-color: #2a2e39;
+    border-top-left-radius: 0.5rem;
+    border-top-right-radius: 0.5rem;
+}
+
+.wysiwyg-dark .ql-container.ql-snow {
+    background: #0d111a;
+    border-color: #2a2e39;
+    color: #d1d4dc;
+    border-bottom-left-radius: 0.5rem;
+    border-bottom-right-radius: 0.5rem;
+}
+
+.wysiwyg-dark .ql-toolbar.ql-snow .ql-stroke {
+    stroke: #b2b5be;
+}
+
+.wysiwyg-dark .ql-toolbar.ql-snow .ql-fill {
+    fill: #b2b5be;
+}
+
+.wysiwyg-dark .ql-toolbar.ql-snow .ql-picker {
+    color: #b2b5be;
+}
+
+.wysiwyg-dark .ql-toolbar.ql-snow button:hover .ql-stroke,
+.wysiwyg-dark .ql-toolbar.ql-snow button.ql-active .ql-stroke {
+    stroke: #5b8cff;
+}
+
+.wysiwyg-dark .ql-toolbar.ql-snow button:hover .ql-fill,
+.wysiwyg-dark .ql-toolbar.ql-snow button.ql-active .ql-fill {
+    fill: #5b8cff;
+}
+
+.wysiwyg-dark .ql-snow .ql-picker-options {
+    background: #131722;
+    border-color: #2a2e39 !important;
+}
+
+.wysiwyg-dark .ql-editor.ql-blank::before {
+    color: #787b86;
+    font-style: normal;
+}
+
+.wysiwyg-dark .ql-snow.ql-toolbar button:hover,
+.wysiwyg-dark .ql-snow .ql-toolbar button:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+}

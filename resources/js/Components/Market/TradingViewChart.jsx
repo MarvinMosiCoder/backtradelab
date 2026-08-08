@@ -284,10 +284,11 @@ function cloneDrawingsForHistory(drawings) {
 const TWO_POINT_TOOL_TYPES = [
   'line',
   'horizontal-ray',
-  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
+  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
   'fib-retracement',
   'fib-extension',
-  'rect',
+  'rect', 'circle',
+  'triangle', 'arc', 'curve', 'double-curve',
   'long-position',
   'short-position',
   'forecast',
@@ -296,20 +297,25 @@ const TWO_POINT_TOOL_TYPES = [
 ];
 
 const PATH_TOOL_TYPE = 'path';
-const BOX_TOOL_TYPES = ['rect', 'price-range', 'date-range', 'price-date-range'];
+const BOX_TOOL_TYPES = ['rect', 'circle', 'price-range', 'date-range', 'price-date-range'];
+const SHAPE_TOOL_TYPES = ['triangle', 'arc', 'curve', 'double-curve'];
+const THREE_POINT_SHAPE_TYPES = ['triangle', 'curve', 'double-curve'];
+const TEXT_MARKER_TYPES = ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'];
+const PRICE_ANCHORED_MARKER_TYPES = ['price-label', 'price-note'];
 
 const PRESET_ENABLED_TOOL_TYPES = [
   'line',
   'horizontal-ray',
-  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel',
+  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
   'path',
   'fib-retracement',
   'fib-extension',
   'forecast',
   'measure',
   'price-range', 'date-range', 'price-date-range',
-  'rect',
-  'text',
+  'rect', 'circle',
+  'triangle', 'arc', 'curve', 'double-curve',
+  'text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark',
   'long-position',
   'short-position',
 ];
@@ -905,6 +911,9 @@ export default function TradingViewReplayChart({
   });
   const [selectedIndicator, setSelectedIndicator] = useState(null);
   const [indicatorSettingsPosition, setIndicatorSettingsPosition] = useState(null);
+  const [allDrawingsLocked, setAllDrawingsLocked] = useState(false);
+  const allDrawingsLockedRef = useRef(false);
+  const [hiddenLayers, setHiddenLayers] = useState({ drawings: false, indicators: false, positions: false });
   const [symbols, setSymbols] = useState([]);
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolError, setSymbolError] = useState('');
@@ -1067,6 +1076,10 @@ export default function TradingViewReplayChart({
   }, [indicators]);
 
   useEffect(() => {
+    allDrawingsLockedRef.current = allDrawingsLocked;
+  }, [allDrawingsLocked]);
+
+  useEffect(() => {
     allCandlesRef.current = allCandles;
   }, [allCandles]);
 
@@ -1128,6 +1141,11 @@ export default function TradingViewReplayChart({
     let paneIndex = 1;
     let top = mainPaneHeight;
 
+    if (indicators.volume && indicators.volumeVisible !== false) {
+      tops.volume = top;
+      top += panes[paneIndex]?.getHeight?.() ?? 0;
+      paneIndex += 1;
+    }
     if (indicators.rsi && indicators.rsiVisible !== false) {
       tops.rsi = top;
       top += panes[paneIndex]?.getHeight?.() ?? 0;
@@ -1138,7 +1156,7 @@ export default function TradingViewReplayChart({
     }
 
     return tops;
-  }, [indicators.macd, indicators.macdVisible, indicators.rsi, indicators.rsiVisible, mainPaneHeight, overlayRenderVersion]);
+  }, [indicators.volume, indicators.volumeVisible, indicators.macd, indicators.macdVisible, indicators.rsi, indicators.rsiVisible, mainPaneHeight, overlayRenderVersion]);
 
   const executionCandle = replayMode ? allCandles[replayIndex] : null;
   const executionPrice = executionCandle?.close ?? currentPrice;
@@ -1641,11 +1659,15 @@ export default function TradingViewReplayChart({
       settings.textItalic = drawing.textItalic;
     }
 
+    if (Number.isFinite(Number(drawing.textSize))) {
+      settings.textSize = Number(drawing.textSize);
+    }
+
     if (typeof drawing.labelText === 'string') {
       settings.labelText = drawing.labelText;
     }
 
-    if (drawing.type === 'text' && typeof drawing.text === 'string') {
+    if (TEXT_MARKER_TYPES.includes(drawing.type) && typeof drawing.text === 'string') {
       settings.labelText = drawing.text;
     }
 
@@ -1984,7 +2006,7 @@ export default function TradingViewReplayChart({
         return [drawing.start?.time, drawing.end?.time, drawing.stop?.time, drawing.anchor?.time];
       }
 
-      if (drawing.type === 'text') {
+      if (TEXT_MARKER_TYPES.includes(drawing.type)) {
         return [drawing.point?.time];
       }
 
@@ -2256,7 +2278,12 @@ export default function TradingViewReplayChart({
 
   const renderedDrawings = useMemo(() => {
     const all = [...drawings, ...(tempDrawing ? [tempDrawing] : [])]
-      .filter((drawing) => !drawing.visibleTimeframe || drawing.visibleTimeframe === loadedTimeframe);
+      .filter((drawing) => !drawing.visibleTimeframe || drawing.visibleTimeframe === loadedTimeframe)
+      .filter((drawing) => {
+        const isPosition = isPositionDrawing(drawing);
+        if (isPosition) return !hiddenLayers.positions;
+        return !hiddenLayers.drawings;
+      });
 
     return all.map((drawing) => {
       if (isLineLikeDrawing(drawing)) {
@@ -2271,6 +2298,20 @@ export default function TradingViewReplayChart({
         if (drawing.type === 'ray') {
           const dx = p2.x - p1.x || 1, endX = dx >= 0 ? overlaySize.width : 0;
           return { ...drawing, screen: { p1, p2, rayEnd: { x: endX, y: p1.y + ((p2.y - p1.y) * ((endX - p1.x) / dx)) } } };
+        }
+        if (drawing.type === 'extended-line') {
+          const dx = p2.x - p1.x || 1;
+          const slope = (p2.y - p1.y) / dx;
+          const leftX = 0, rightX = overlaySize.width;
+          return {
+            ...drawing,
+            screen: {
+              p1,
+              p2,
+              rayStart: { x: leftX, y: p1.y + slope * (leftX - p1.x) },
+              rayEnd: { x: rightX, y: p1.y + slope * (rightX - p1.x) },
+            },
+          };
         }
         if (isHorizontalRayDrawing(drawing)) {
           return {
@@ -2317,10 +2358,11 @@ export default function TradingViewReplayChart({
         };
       }
 
-      if (drawing.type === 'text') {
+      if (TEXT_MARKER_TYPES.includes(drawing.type)) {
         const p = toScreen(drawing.point);
         if (!p) return null;
-        return { ...drawing, screen: { p } };
+        const pRight = PRICE_ANCHORED_MARKER_TYPES.includes(drawing.type) ? { x: overlaySize.width, y: p.y } : null;
+        return { ...drawing, screen: { p, ...(pRight ? { pRight } : {}) } };
       }
 
       if (isPathDrawing(drawing)) {
@@ -2338,7 +2380,7 @@ export default function TradingViewReplayChart({
 
       return null;
     }).filter(Boolean);
-  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop, loadedTimeframe, visibleCandles]);
+  }, [drawings, tempDrawing, toScreen, replayIndex, overlaySize, overlayRenderVersion, getDefaultPositionStop, loadedTimeframe, visibleCandles, hiddenLayers.drawings, hiddenLayers.positions]);
 
   const renderedBacktestOrders = useMemo(() => {
     const series = candleSeriesRef.current;
@@ -2581,11 +2623,15 @@ export default function TradingViewReplayChart({
       const d = renderedDrawings[i];
 
       if (isLineLikeDrawing(d)) {
-        const { p1, p2, rayEnd } = d.screen;
-        if (distanceToSegment(point, p1, rayEnd ?? p2) <= 8) return d.id;
+        const { p1, p2, rayStart, rayEnd } = d.screen;
+        if (distanceToSegment(point, rayStart ?? p1, rayEnd ?? p2) <= 8) return d.id;
 
         if (d.type === 'fib-extension' && d.screen.p3 && distanceToSegment(point, p2, d.screen.p3) <= 8) {
           return d.id;
+        }
+        if (THREE_POINT_SHAPE_TYPES.includes(d.type) && d.screen.p3) {
+          if (distanceToSegment(point, p2, d.screen.p3) <= 8) return d.id;
+          if (distanceToSegment(point, p1, d.screen.p3) <= 8) return d.id;
         }
         if (d.type === 'parallel-channel' && d.screen.p3) {
           const dx = d.screen.p3.x - p2.x, dy = d.screen.p3.y - p2.y;
@@ -2630,7 +2676,7 @@ export default function TradingViewReplayChart({
         if (inside) return d.id;
       }
 
-      if (d.type === 'text') {
+      if (TEXT_MARKER_TYPES.includes(d.type)) {
         const { p } = d.screen;
         if (Math.abs(x - p.x) <= 80 && Math.abs(y - p.y) <= 24) return d.id;
       }
@@ -2680,7 +2726,7 @@ export default function TradingViewReplayChart({
     if (!selectedDrawingIdRef.current) return null;
 
     const selected = renderedDrawings.find((d) => d.id === selectedDrawingIdRef.current);
-    if (!selected || selected.type === 'text') return null;
+    if (!selected || TEXT_MARKER_TYPES.includes(selected.type)) return null;
 
     const handles = [];
 
@@ -2691,7 +2737,7 @@ export default function TradingViewReplayChart({
         handles.push({ handle: 'end', point: selected.screen.p2 });
       }
 
-      if (['fib-extension', 'parallel-channel'].includes(selected.type) && selected.screen.p3) {
+      if (['fib-extension', 'parallel-channel', ...THREE_POINT_SHAPE_TYPES].includes(selected.type) && selected.screen.p3) {
         handles.push({ handle: 'anchor', point: selected.screen.p3 });
       }
     }
@@ -2842,24 +2888,16 @@ export default function TradingViewReplayChart({
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceScaleId: '',
       priceFormat: { type: 'volume' },
       lastValueVisible: false,
       priceLineVisible: false,
-    });
+    }, 1);
     const smaSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
     const emaSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false });
-    const rsiSeries = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false }, 1);
-    const macdSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false }, 2);
-    const macdSignalSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false }, 2);
-    const macdHistogramSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, base: 0, visible: false }, 2);
-
-    volumeSeries.priceScale().applyOptions({
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0,
-      },
-    });
+    const rsiSeries = chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false }, 2);
+    const macdSeries = chart.addSeries(LineSeries, { color: '#2962ff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, visible: false }, 3);
+    const macdSignalSeries = chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, visible: false }, 3);
+    const macdHistogramSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false, base: 0, visible: false }, 3);
 
     const handleVisibleRangeChange = () => {
       if (overlayRenderFrameRef.current) {
@@ -2904,15 +2942,18 @@ export default function TradingViewReplayChart({
         if (!indicatorType && param?.point && param?.seriesData) {
           const pointY = Number(param.point.y);
           const paneIndex = Number(param.paneIndex ?? 0);
+          let nextLowerPaneForHitTest = 1;
+          const isVolumeVisible = indicatorsRef.current.volume && indicatorsRef.current.volumeVisible !== false;
+          const volumePane = isVolumeVisible ? nextLowerPaneForHitTest++ : -1;
           const isRsiVisible = indicatorsRef.current.rsi && indicatorsRef.current.rsiVisible !== false;
-          const rsiPane = isRsiVisible ? 1 : -1;
+          const rsiPane = isRsiVisible ? nextLowerPaneForHitTest++ : -1;
           const macdPane = indicatorsRef.current.macd && indicatorsRef.current.macdVisible !== false
-            ? (isRsiVisible ? 2 : 1)
+            ? nextLowerPaneForHitTest++
             : -1;
 
           const volumeSeries = volumeSeriesRef.current;
           const volumeValue = Number(param.seriesData.get(volumeSeries)?.value);
-          if (volumeSeries && indicatorsRef.current.volume && indicatorsRef.current.volumeVisible !== false && paneIndex === 0 && Number.isFinite(volumeValue)) {
+          if (volumeSeries && volumePane === paneIndex && Number.isFinite(volumeValue)) {
             const volumeY = Number(volumeSeries.priceToCoordinate(volumeValue));
             const volumeBaseY = Number(volumeSeries.priceToCoordinate(0));
             if (
@@ -3216,24 +3257,32 @@ export default function TradingViewReplayChart({
     try { localStorage.setItem(indicatorStorageKey, JSON.stringify(indicators)); } catch {}
     const volume = volumeSeriesRef.current; const sma = smaSeriesRef.current; const ema = emaSeriesRef.current; const rsi = rsiSeriesRef.current;
     const macd = macdSeriesRef.current; const macdSignal = macdSignalSeriesRef.current; const macdHistogram = macdHistogramSeriesRef.current;
-    volume?.applyOptions({ visible: indicators.volume && indicators.volumeVisible !== false });
-    const volumeSize = Math.min(45, Math.max(10, Number(indicators.volumeSize) || 20));
-    volume?.priceScale().applyOptions({ scaleMargins: { top: 1 - (volumeSize / 100), bottom: 0 } });
-    sma?.applyOptions({ visible: indicators.sma && indicators.smaVisible !== false, color: indicators.smaColor ?? '#2962ff', lineWidth: Number(indicators.smaLineWidth) || 2 });
-    ema?.applyOptions({ visible: indicators.ema && indicators.emaVisible !== false, color: indicators.emaColor ?? '#f59e0b', lineWidth: Number(indicators.emaLineWidth) || 2 });
-    const isRsiVisible = indicators.rsi && indicators.rsiVisible !== false;
-    const isMacdVisible = indicators.macd && indicators.macdVisible !== false;
+    const indicatorsGloballyHidden = Boolean(hiddenLayers.indicators);
+    const isVolumeVisible = indicators.volume && indicators.volumeVisible !== false && !indicatorsGloballyHidden;
+    volume?.applyOptions({ visible: isVolumeVisible });
+    sma?.applyOptions({ visible: indicators.sma && indicators.smaVisible !== false && !indicatorsGloballyHidden, color: indicators.smaColor ?? '#2962ff', lineWidth: Number(indicators.smaLineWidth) || 2 });
+    ema?.applyOptions({ visible: indicators.ema && indicators.emaVisible !== false && !indicatorsGloballyHidden, color: indicators.emaColor ?? '#f59e0b', lineWidth: Number(indicators.emaLineWidth) || 2 });
+    const isRsiVisible = indicators.rsi && indicators.rsiVisible !== false && !indicatorsGloballyHidden;
+    const isMacdVisible = indicators.macd && indicators.macdVisible !== false && !indicatorsGloballyHidden;
     rsi?.applyOptions({ visible: isRsiVisible, color: indicators.rsiColor ?? '#a855f7', lineWidth: Number(indicators.rsiLineWidth) || 2 });
     macd?.applyOptions({ visible: isMacdVisible, color: indicators.macdColor ?? '#2962ff', lineWidth: Number(indicators.macdLineWidth) || 2 });
     macdSignal?.applyOptions({ visible: isMacdVisible, color: indicators.macdSignalColor ?? '#f59e0b', lineWidth: Number(indicators.macdLineWidth) || 2 });
     macdHistogram?.applyOptions({ visible: isMacdVisible });
 
+    volume?.moveToPane(0);
     rsi?.moveToPane(0);
     macd?.moveToPane(0);
     macdSignal?.moveToPane(0);
     macdHistogram?.moveToPane(0);
 
     let nextLowerPane = 1;
+    if (isVolumeVisible) {
+      volume?.moveToPane(nextLowerPane);
+      const pane = chartRef.current?.panes?.()[nextLowerPane];
+      const volumeSize = Math.min(45, Math.max(10, Number(indicators.volumeSize) || 20));
+      pane?.setHeight(Math.max(60, Math.round((overlaySize.height || CHART_HEIGHT) * (volumeSize / 100))));
+      nextLowerPane += 1;
+    }
     if (isRsiVisible) {
       rsi?.moveToPane(nextLowerPane);
       const pane = chartRef.current?.panes?.()[nextLowerPane];
@@ -3248,7 +3297,7 @@ export default function TradingViewReplayChart({
       pane?.setHeight(Math.max(80, Math.round((overlaySize.height || CHART_HEIGHT) * ((Number(indicators.macdSize) || 25) / 100))));
     }
     scheduleOverlayRender();
-  }, [indicatorStorageKey, indicators, overlaySize.height, scheduleOverlayRender]);
+  }, [indicatorStorageKey, indicators, overlaySize.height, scheduleOverlayRender, hiddenLayers.indicators]);
 
   useEffect(() => {
     smaSeriesRef.current?.setData(indicators.sma ? movingAverage(visibleCandles, Number(indicators.smaPeriod) || 20) : []);
@@ -3938,7 +3987,7 @@ export default function TradingViewReplayChart({
         const drawing = drawingsRef.current.find((d) => d.id === resizeHit.drawingId);
         if (!drawing) return;
 
-        if (drawing.locked) {
+        if (drawing.locked || allDrawingsLockedRef.current) {
           event.preventDefault();
           event.stopPropagation();
           setSelectedDrawingId(resizeHit.drawingId);
@@ -3987,6 +4036,7 @@ export default function TradingViewReplayChart({
               labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
               textBold: Boolean(savedToolSettings.textBold),
               textItalic: Boolean(savedToolSettings.textItalic),
+              textSize: savedToolSettings.textSize,
             };
 
         tempDrawingRef.current = nextTemp;
@@ -4018,6 +4068,7 @@ export default function TradingViewReplayChart({
             labelHorizontal: savedToolSettings.labelHorizontal ?? 'center',
             textBold: Boolean(savedToolSettings.textBold),
             textItalic: Boolean(savedToolSettings.textItalic),
+            textSize: savedToolSettings.textSize,
           });
         } else {
           let endPoint = ['horizontal-ray', 'horizontal-line', 'date-range'].includes(currentTemp.type)
@@ -4028,7 +4079,7 @@ export default function TradingViewReplayChart({
             endPoint = normalizePositionTarget(currentTemp.type, currentTemp.start, endPoint);
           }
 
-          if (['fib-extension', 'parallel-channel'].includes(currentTemp.type) && !currentTemp.anchor) {
+          if (['fib-extension', 'parallel-channel', ...THREE_POINT_SHAPE_TYPES].includes(currentTemp.type) && !currentTemp.anchor) {
             setTempDrawing({
               ...currentTemp,
               end: endPoint,
@@ -4050,10 +4101,11 @@ export default function TradingViewReplayChart({
             labelHorizontal: currentTemp.labelHorizontal ?? 'center',
             textBold: Boolean(currentTemp.textBold),
             textItalic: Boolean(currentTemp.textItalic),
+            textSize: currentTemp.textSize,
             timeframe,
           };
 
-          if (['fib-extension', 'parallel-channel'].includes(currentTemp.type)) {
+          if (['fib-extension', 'parallel-channel', ...THREE_POINT_SHAPE_TYPES].includes(currentTemp.type)) {
             completed.end = currentTemp.end;
             completed.anchor = coords;
           }
@@ -4069,18 +4121,19 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (toolRef.current === 'text') {
+      if (TEXT_MARKER_TYPES.includes(toolRef.current)) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
         event.preventDefault();
         event.stopPropagation();
 
-        const savedToolSettings = getToolSettingsForType('text');
+        const savedToolSettings = getToolSettingsForType(toolRef.current);
         setTextInput({
           x,
           y,
           point: coords,
+          type: toolRef.current,
         });
         setTextDraft(savedToolSettings.labelText ?? '');
         return;
@@ -4096,7 +4149,7 @@ export default function TradingViewReplayChart({
 
         const coords = getChartCoordinates(x, y);
         const drawing = drawingsRef.current.find((d) => d.id === hitId);
-        if (drawing?.locked) {
+        if (drawing?.locked || allDrawingsLockedRef.current) {
           dragDrawingRef.current = null;
           restoreChartMouseInteractions();
           return;
@@ -4107,7 +4160,7 @@ export default function TradingViewReplayChart({
             anchor = drawing.start;
           } else if (isPathDrawing(drawing)) {
             anchor = drawing.points?.[0];
-          } else if (drawing.type === 'text') {
+          } else if (TEXT_MARKER_TYPES.includes(drawing.type)) {
             anchor = drawing.point;
           }
 
@@ -4156,7 +4209,7 @@ export default function TradingViewReplayChart({
             endPoint = normalizePositionTarget(prev.type, prev.start, endPoint);
           }
 
-          if (['fib-extension', 'parallel-channel'].includes(prev.type) && prev.anchor) {
+          if (['fib-extension', 'parallel-channel', ...THREE_POINT_SHAPE_TYPES].includes(prev.type) && prev.anchor) {
             return { ...prev, anchor: coords };
           }
 
@@ -5018,24 +5071,31 @@ export default function TradingViewReplayChart({
       return;
     }
 
-    const textSettings = getToolSettingsForType('text');
+    const markerType = textInput.type && TEXT_MARKER_TYPES.includes(textInput.type) ? textInput.type : 'text';
+    const textSettings = getToolSettingsForType(markerType);
     const drawing = {
       id: `drawing-${Date.now()}`,
-      type: 'text',
+      type: markerType,
       point: textInput.point,
       text: textDraft.trim(),
       color: textSettings.color ?? drawingColor,
       labelText: textDraft.trim(),
       textBold: Boolean(textSettings.textBold),
       textItalic: Boolean(textSettings.textItalic),
+      textSize: textSettings.textSize,
     };
 
+    if (markerType === 'signpost') {
+      drawing.signpostNumber = drawingsRef.current.filter((d) => d.type === 'signpost').length + 1;
+    }
+
     appendDrawing(drawing);
-    saveToolSettingsForType('text', {
+    saveToolSettingsForType(markerType, {
       color: drawing.color,
       labelText: drawing.text,
       textBold: drawing.textBold,
       textItalic: drawing.textItalic,
+      textSize: drawing.textSize,
     });
 
     setTextInput(null);
@@ -5080,6 +5140,20 @@ export default function TradingViewReplayChart({
     const next = drawings.filter((d) => d.id !== selectedDrawingId);
     saveDrawings(next);
     setSelectedDrawingId(null);
+  };
+
+  const handleToggleLockAllDrawings = () => {
+    setAllDrawingsLocked((current) => !current);
+  };
+
+  const handleToggleVisibility = (key) => {
+    setHiddenLayers((current) => {
+      if (key === 'all') {
+        const nextValue = !(current.drawings && current.indicators && current.positions);
+        return { drawings: nextValue, indicators: nextValue, positions: nextValue };
+      }
+      return { ...current, [key]: !current[key] };
+    });
   };
 
   const handleDrawingWidthChange = (strokeWidth) => {
@@ -5172,19 +5246,20 @@ export default function TradingViewReplayChart({
 
     if (!targetType) return;
 
-    const settingsUpdate = targetType === 'text'
+    const settingsUpdate = TEXT_MARKER_TYPES.includes(targetType)
       ? {
           ...(updates.labelText !== undefined || updates.text !== undefined
             ? { labelText: updates.labelText ?? updates.text ?? '' }
             : {}),
           ...(updates.textBold !== undefined ? { textBold: Boolean(updates.textBold) } : {}),
           ...(updates.textItalic !== undefined ? { textItalic: Boolean(updates.textItalic) } : {}),
+          ...(updates.textSize !== undefined ? { textSize: Number(updates.textSize) } : {}),
         }
       : updates;
 
     saveToolSettingsForType(targetType, settingsUpdate);
 
-    if (targetType === 'text' && typeof settingsUpdate.labelText === 'string') {
+    if (TEXT_MARKER_TYPES.includes(targetType) && typeof settingsUpdate.labelText === 'string') {
       setTextDraft(settingsUpdate.labelText);
     }
 
@@ -5197,7 +5272,7 @@ export default function TradingViewReplayChart({
     const next = drawingsRef.current.map((drawing) => {
       if (
         drawing.id !== selectedId ||
-        (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && !BOX_TOOL_TYPES.includes(drawing.type) && drawing.type !== 'text')
+        (!isLineLikeDrawing(drawing) && !isPathDrawing(drawing) && !isPositionDrawing(drawing) && !BOX_TOOL_TYPES.includes(drawing.type) && !TEXT_MARKER_TYPES.includes(drawing.type))
       ) {
         return drawing;
       }
@@ -5217,7 +5292,7 @@ export default function TradingViewReplayChart({
 
     const settings = buildToolSettingsFromDrawing(selected);
     const fallbackName = (
-      selected.type === 'text'
+      TEXT_MARKER_TYPES.includes(selected.type)
         ? selected.text
         : selected.labelText
     )?.trim();
@@ -5243,7 +5318,7 @@ export default function TradingViewReplayChart({
       setDrawingColor(settings.color);
     }
 
-    if (toolRef.current === 'text' && settings.labelText) {
+    if (TEXT_MARKER_TYPES.includes(toolRef.current) && settings.labelText) {
       setTextDraft(settings.labelText);
     }
 
@@ -5260,7 +5335,7 @@ export default function TradingViewReplayChart({
         return {
           ...drawing,
           ...settings,
-          ...(type === 'text' && settings.labelText ? { text: settings.labelText } : {}),
+          ...(TEXT_MARKER_TYPES.includes(type) && settings.labelText ? { text: settings.labelText } : {}),
         };
       });
 
@@ -6221,6 +6296,10 @@ export default function TradingViewReplayChart({
             onClearDrawings={handleClearDrawings}
             onDuplicateSelectedDrawing={handleDuplicateSelectedDrawing}
             onDeleteSelectedDrawing={handleDeleteSelectedDrawing}
+            allDrawingsLocked={allDrawingsLocked}
+            onToggleLockAllDrawings={handleToggleLockAllDrawings}
+            hiddenLayers={hiddenLayers}
+            onToggleVisibility={handleToggleVisibility}
             onStartBacktestSession={handleStartBacktestSession}
             onEndBacktestSession={handleEndBacktestSession}
             onOpenBacktestPosition={handleOpenBacktestPosition}

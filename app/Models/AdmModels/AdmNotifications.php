@@ -18,6 +18,7 @@ class AdmNotifications extends Model
         'source_type',
         'source_id',
         'metadata',
+        'dismissed_at',
     ];
 
     protected $casts = ['is_read' => 'boolean', 'metadata' => 'array'];

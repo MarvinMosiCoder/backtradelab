@@ -84,6 +84,7 @@ use Illuminate\Validation\Rule;
             AdmUser::create([
                 'email' => $data['email'],
                 'name' => $data['name'],
+                'username' => AdmUser::generateUniqueUsername(),
                 'id_adm_privileges' => $data['privilege_id'],
                 'status' => 'ACTIVE',
             ]);

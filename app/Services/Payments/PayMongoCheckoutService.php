@@ -15,6 +15,7 @@ class PayMongoCheckoutService
     public function __construct(
         private readonly PayMongoClient $client,
         private readonly SubscriptionEntitlementService $entitlements,
+        private readonly PaymentActivityLogger $activityLog,
     ) {}
 
     public function create(AdmUser $user, SubscriptionPlan $plan, string $token): SubscriptionRequest
@@ -75,14 +76,58 @@ class PayMongoCheckoutService
                 'provider_status_message' => null,
             ]);
 
-            return $payment->fresh();
+            $fresh = $payment->fresh();
+            $this->activityLog->log($fresh, $user, 'checkout_created',
+                "Checkout created for {$plan->name} plan ({$fresh->currency} ".number_format((float) $fresh->amount, 2).').');
+
+            return $fresh;
         } catch (Throwable $exception) {
             $payment->update([
                 'status' => 'failed',
                 'failed_at' => now(),
                 'provider_status_message' => $this->safeMessage($exception),
             ]);
+            $this->activityLog->log($payment, $user, 'checkout_failed', 'Checkout creation failed: '.$this->safeMessage($exception));
             throw $exception;
+        }
+    }
+
+    /**
+     * Called right before starting a new checkout. A user who abandons checkout (browser back,
+     * closes the tab) and then starts over gets a fresh submission_token every time — the modal
+     * generates a new one on mount — so create() alone has no way to recognize it's the same
+     * purchase intent and would otherwise mint an unbounded number of orphaned pending rows,
+     * each with a checkout_url the user can never get back to. This settles every existing
+     * pending PayMongo transaction for the user first: if the provider says it actually
+     * completed (or failed/expired) in the meantime, reconcile() applies that real outcome
+     * normally; if the provider still shows it open, it's abandoned locally as 'expired' since
+     * the user is choosing to start a different attempt right now.
+     */
+    public function expireStalePending(AdmUser $user): void
+    {
+        $pending = SubscriptionRequest::where('adm_user_id', $user->id)
+            ->where('provider', 'paymongo')
+            ->where('status', 'pending')
+            ->get();
+
+        foreach ($pending as $payment) {
+            try {
+                if (!$payment->provider_checkout_id) {
+                    $payment->update(['status' => 'expired', 'failed_at' => now(), 'provider_status_message' => 'Abandoned before a checkout session was created.']);
+                    continue;
+                }
+                $reconciled = $this->reconcile($payment);
+                if ($reconciled->status === 'pending') {
+                    $reconciled->update([
+                        'status' => 'expired',
+                        'failed_at' => now(),
+                        'provider_status_message' => 'Abandoned: a new checkout was started before this one completed.',
+                    ]);
+                    $this->activityLog->log($reconciled, $user, 'checkout_expired', 'Abandoned: a new checkout was started before this one completed.');
+                }
+            } catch (Throwable $exception) {
+                report($exception);
+            }
         }
     }
 
@@ -226,6 +271,8 @@ class PayMongoCheckoutService
                 'failed_at' => now(),
                 'provider_status_message' => 'PayMongo Checkout Session is '.$providerStatus.'.',
             ]);
+            $this->activityLog->log($payment, null, 'checkout_' . ($providerStatus === 'cancelled' ? 'expired' : $providerStatus),
+                'PayMongo Checkout Session is '.$providerStatus.'.');
         } elseif ($payment->status !== 'pending') {
             $payment->update(['status' => 'pending', 'provider_status_message' => null]);
         }

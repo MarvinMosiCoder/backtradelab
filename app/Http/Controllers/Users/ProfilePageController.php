@@ -71,8 +71,33 @@ class ProfilePageController extends Controller
         return response()->json(["message" => "Image uploaded!", "status" => "success"]);
     }
     
+    private const AVATAR_KEYS = ['bull', 'bear', 'ape', 'shiba', 'fox', 'wolf', 'whale', 'shark', 'lion', 'turtle', 'eagle', 'octopus'];
+
+    public function selectAvatar(Request $request)
+    {
+        $validated = $request->validate([
+            'avatar_key' => ['required', Rule::in(self::AVATAR_KEYS)],
+        ]);
+        $userId = CommonHelpers::myId();
+
+        DB::table('adm_user_profiles')->where('adm_user_id', $userId)->update([
+            'archived' => date('Y-m-d h:i:s'),
+        ]);
+
+        $profile = AdmUserProfiles::create([
+            'adm_user_id' => $userId,
+            'file_name' => 'avatar:'.$validated['avatar_key'],
+            'created_by' => $userId,
+        ]);
+
+        return response()->json(['message' => 'Avatar updated!', 'status' => 'success', 'file_name' => $profile->file_name]);
+    }
+
     public function getProfiles(){
-        $profiles = AdmUserProfiles::where('adm_user_id',CommonHelpers::myId())->get();
+        $profiles = AdmUserProfiles::where('adm_user_id',CommonHelpers::myId())
+            ->whereNotNull('file_name')
+            ->where('file_name', 'not like', 'avatar:%')
+            ->get();
         return response()->json($profiles);
     }
 
@@ -130,6 +155,8 @@ class ProfilePageController extends Controller
         
     }
 
+    private const USERNAME_CHANGE_COOLDOWN_DAYS = 30;
+
     public function updateDetails(Request $request)
     {
         $user = $request->user();
@@ -140,7 +167,30 @@ class ProfilePageController extends Controller
             'trading_experience' => ['nullable', Rule::in(['beginner', 'intermediate', 'advanced', 'professional'])],
         ]);
 
+        $nameChanged = $validated['name'] !== $user->name;
+        if ($nameChanged && $user->name_changed_at) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Your display name has already been changed once and cannot be changed again from your profile. Contact support if it needs to be corrected.',
+            ], 422);
+        }
+
+        $usernameChanged = array_key_exists('username', $validated) && $validated['username'] !== $user->username;
+        if ($usernameChanged && $user->username_changed_at) {
+            $nextChangeAllowedAt = $user->username_changed_at->copy()->addDays(self::USERNAME_CHANGE_COOLDOWN_DAYS);
+            if ($nextChangeAllowedAt->isFuture()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You can change your username again on '.$nextChangeAllowedAt->format('M j, Y').'.',
+                ], 422);
+            }
+        }
+
         $user->update($validated);
+        $timestamps = [];
+        if ($nameChanged) $timestamps['name_changed_at'] = now();
+        if ($usernameChanged) $timestamps['username_changed_at'] = now();
+        if ($timestamps) $user->forceFill($timestamps)->save();
 
         return response()->json(['status' => 'success', 'message' => 'Profile details updated.']);
     }

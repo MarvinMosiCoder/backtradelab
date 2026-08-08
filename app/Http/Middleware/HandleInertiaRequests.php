@@ -70,7 +70,7 @@ class HandleInertiaRequests extends Middleware
                 'check_user' => $request->session()->get('check_user'),
                 'announcement' => $request->session()->get('unread-announcement'),
                 'notifications' => fn () => Auth::user() ? Auth::user()->notifications()->orderBy('created_at','DESC')->get() : [],
-                'unread_notifications' => fn () => Auth::user() ? Auth::user()->notifications()->where('is_read', 0)->orderBy('created_at','DESC')->count() : [],
+                'unread_notifications' => fn () => Auth::user() ? Auth::user()->notifications()->whereNull('dismissed_at')->where('is_read', 0)->orderBy('created_at','DESC')->count() : [],
                 'profile' => fn () => Auth::user() ? AdmUserProfiles::where('adm_user_id',Auth::user()->id)->whereNull('archived')->first() : [],
             ],
            
