@@ -7,7 +7,7 @@ Live mode updates the active candle from public exchange WebSockets and falls ba
 | File | Responsibility |
 |---|---|
 | `liveCandleStream.js` | Exchange subscriptions, normalization, heartbeat/reconnect |
-| `TradingViewChart.jsx` | Lifecycle, status, fallback polling, chart updates |
+| `MarketChart.jsx` | Lifecycle, status, fallback polling, chart updates |
 | `MarketDataController.php` | REST fallback candles |
 
 ## Flow

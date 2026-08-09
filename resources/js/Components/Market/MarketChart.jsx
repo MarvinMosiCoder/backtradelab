@@ -14,14 +14,14 @@ import {
 } from 'lightweight-charts';
 import { useTheme } from '../../Context/ThemeContext';
 import { useAuth } from '../../Context/AuthContext';
-import ChartHeader from './TradingViewChart/ChartHeader';
-import ChartSettingsModal from './TradingViewChart/ChartSettingsModal';
-import ChartStage from './TradingViewChart/ChartStage';
-import ReplayPanel from './TradingViewChart/ReplayPanel';
-import SubscriptionModal from './TradingViewChart/SubscriptionModal';
-import IndicatorSettingsPanel, { IndicatorClickTargets } from './TradingViewChart/IndicatorSettingsPanel';
-import { createLiveCandleStream } from './TradingViewChart/liveCandleStream';
-import FullscreenChartHeader from './TradingViewChart/FullscreenChartHeader';
+import ChartHeader from './MarketChart/ChartHeader';
+import ChartSettingsModal from './MarketChart/ChartSettingsModal';
+import ChartStage from './MarketChart/ChartStage';
+import ReplayPanel from './MarketChart/ReplayPanel';
+import SubscriptionModal from './MarketChart/SubscriptionModal';
+import IndicatorSettingsPanel, { IndicatorClickTargets } from './MarketChart/IndicatorSettingsPanel';
+import { createLiveCandleStream } from './MarketChart/liveCandleStream';
+import FullscreenChartHeader from './MarketChart/FullscreenChartHeader';
 import WorkspaceTour from './WorkspaceTour';
 import {
   CHART_HEIGHT,
@@ -29,22 +29,27 @@ import {
   INTERVAL_MAP,
   TIMEFRAME_SECONDS,
   supportedTimeframes,
-} from './TradingViewChart/constants';
+} from './MarketChart/constants';
 import {
   buildStorageKey,
+  CYCLE_TOOL_TYPES,
   distanceToSegment,
   estimateDrawingLogicalFromTime,
   estimateTimeFromLogical,
   findNearestCandleIndex,
+  ICON_ONLY_MARKER_TYPES,
   isHorizontalRayDrawing,
   isLineLikeDrawing,
   isPathDrawing,
   isPositionDrawing,
   isTwoPointDrawing,
+  MULTI_POINT_PATTERN_LABELS,
+  MULTI_POINT_PATTERN_TYPES,
+  MULTI_POINT_TOOL_TYPES,
   normalizeApiCandles,
   normalizeVisibleRect,
   offsetDrawing,
-} from './TradingViewChart/utils';
+} from './MarketChart/utils';
 
 const DEFAULT_CANDLE_COLORS = {
   up: '#089981',
@@ -230,22 +235,17 @@ function ChartMarketLegend({ symbol, exchange, timeframe, candle, isTimeframeLoa
   return (
     <div
       data-chart-ui="market-legend"
-      className="pointer-events-none absolute left-2 top-1.5 z-30 select-none text-[11px] font-semibold leading-5 sm:left-3 sm:top-2 sm:text-xs"
+      className="pointer-events-none absolute left-2 top-1.5 z-30 flex min-w-0 select-none flex-wrap items-center gap-x-1 whitespace-nowrap text-[11px] font-semibold leading-5 sm:left-3 sm:top-2 sm:text-xs"
       style={{ color: chartTheme.text, maxWidth: 'calc(100% - 4.5rem)' }}
     >
       <div
-        className={`pointer-events-auto -mx-1.5 -my-0.5 flex min-w-0 flex-wrap items-center gap-x-1 whitespace-nowrap rounded border px-1.5 py-0.5 transition-colors ${isActive ? (chartTheme.mode === 'dark' ? 'border-[#2962ff]/50 bg-black/30' : 'border-[#2962ff]/50 bg-white/70') : 'border-transparent'}`}
+        className={`pointer-events-auto -mx-1.5 -my-0.5 flex min-w-0 shrink-0 items-center gap-x-1 whitespace-nowrap rounded border px-1.5 py-0.5 transition-colors ${isActive ? (chartTheme.mode === 'dark' ? 'border-[#2962ff]/50 bg-black/30' : 'border-[#2962ff]/50 bg-white/70') : 'border-transparent'}`}
       >
         {showSymbol && <span className="font-bold">{symbol}</span>}
         {showSymbol && <span className="text-[#787b86]">·</span>}
         <span>{timeframeLabel}</span>
         {showExchange && <span className="text-[#787b86]">·</span>}
         {showExchange && <span className="text-[#787b86]">Last price {exchangeLabel}</span>}
-        {showOhlc && <span className="ml-0.5" style={{ color: valueColor }}><span className="text-[#787b86]">O</span> {hasCandle ? formatOverlayPrice(open) : '---'}</span>}
-        {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">H</span> {hasCandle ? formatOverlayPrice(high) : '---'}</span>}
-        {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">L</span> {hasCandle ? formatOverlayPrice(low) : '---'}</span>}
-        {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">C</span> {hasCandle ? formatOverlayPrice(close) : '---'}</span>}
-        {showChange && <span style={{ color: valueColor }}>{signedChange} ({signedPercent})</span>}
         {isTimeframeLoading && (
           <span className="ml-1 inline-flex h-4 items-center gap-0.5" role="status" aria-label={`Loading ${timeframe} candles`}>
             {[0, 1, 2].map((dot) => (
@@ -269,6 +269,11 @@ function ChartMarketLegend({ symbol, exchange, timeframe, candle, isTimeframeLoa
           <MoreHorizontal size={13} />
         </button>
       </div>
+      {showOhlc && <span className="ml-0.5" style={{ color: valueColor }}><span className="text-[#787b86]">O</span> {hasCandle ? formatOverlayPrice(open) : '---'}</span>}
+      {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">H</span> {hasCandle ? formatOverlayPrice(high) : '---'}</span>}
+      {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">L</span> {hasCandle ? formatOverlayPrice(low) : '---'}</span>}
+      {showOhlc && <span style={{ color: valueColor }}><span className="text-[#787b86]">C</span> {hasCandle ? formatOverlayPrice(close) : '---'}</span>}
+      {showChange && <span style={{ color: valueColor }}>{signedChange} ({signedPercent})</span>}
     </div>
   );
 }
@@ -284,7 +289,7 @@ function cloneDrawingsForHistory(drawings) {
 const TWO_POINT_TOOL_TYPES = [
   'line',
   'horizontal-ray',
-  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
+  'ray', 'arrow', 'arrow-line', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
   'fib-retracement',
   'fib-extension',
   'rect', 'circle',
@@ -294,20 +299,26 @@ const TWO_POINT_TOOL_TYPES = [
   'forecast',
   'measure',
   'price-range', 'date-range', 'price-date-range',
+  ...CYCLE_TOOL_TYPES,
 ];
 
-const PATH_TOOL_TYPE = 'path';
 const BOX_TOOL_TYPES = ['rect', 'circle', 'price-range', 'date-range', 'price-date-range'];
 const SHAPE_TOOL_TYPES = ['triangle', 'arc', 'curve', 'double-curve'];
 const THREE_POINT_SHAPE_TYPES = ['triangle', 'curve', 'double-curve'];
-const TEXT_MARKER_TYPES = ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'];
+const TEXT_MARKER_TYPES = [
+  'text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark',
+  'arrow-marker', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right',
+];
 const PRICE_ANCHORED_MARKER_TYPES = ['price-label', 'price-note'];
+// Highlighter defaults to a thick stroke (rendered semi-transparent, see ChartStage.jsx)
+// so it reads as a highlighter mark rather than a thin pen line on first use.
+const DEFAULT_FREEHAND_STROKE_WIDTH = { highlighter: 14 };
 
 const PRESET_ENABLED_TOOL_TYPES = [
   'line',
   'horizontal-ray',
-  'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
-  'path',
+  'ray', 'arrow', 'arrow-line', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
+  'path', 'brush', 'highlighter',
   'fib-retracement',
   'fib-extension',
   'forecast',
@@ -316,8 +327,11 @@ const PRESET_ENABLED_TOOL_TYPES = [
   'rect', 'circle',
   'triangle', 'arc', 'curve', 'double-curve',
   'text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark',
+  'arrow-marker', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right',
   'long-position',
   'short-position',
+  ...MULTI_POINT_PATTERN_TYPES,
+  ...CYCLE_TOOL_TYPES,
 ];
 
 const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
@@ -791,7 +805,7 @@ async function captureChartSnapshot(wrapper, backgroundColor = CHART_THEMES.dark
   return canvasToBlob(output);
 }
 
-export default function TradingViewReplayChart({
+export default function MarketReplayChart({
   initialSymbol = 'BTCUSDT',
   initialExchange = 'bingx',
   initialMarketCategory = 'linear',
@@ -828,6 +842,7 @@ export default function TradingViewReplayChart({
   const allCandlesRef = useRef([]);
   const visibleCandlesRef = useRef([]);
   const resizeObserverRef = useRef(null);
+  const applyIndicatorPaneHeightsRef = useRef(() => {});
   const replayTimerRef = useRef(null);
   const isProgrammaticRangeChangeRef = useRef(false);
   const selectedPriceLineRef = useRef(null);
@@ -2839,7 +2854,12 @@ export default function TradingViewReplayChart({
         background: { color: chartTheme.background },
         textColor: chartTheme.text,
         attributionLogo: false,
-        panes: { enableResize: true, separatorColor: chartTheme.border, separatorHoverColor: '#2962ff' },
+        fontSize: 10,
+        panes: {
+          enableResize: true,
+          separatorColor: chartTheme.mode === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.12)',
+          separatorHoverColor: '#2962ff',
+        },
       },
       grid: {
         vertLines: { color: chartTheme.grid },
@@ -3074,6 +3094,11 @@ export default function TradingViewReplayChart({
         width: containerRef.current.clientWidth,
         height: containerRef.current.clientHeight || CHART_HEIGHT,
       });
+      // Changing the chart's total height can silently reset/redistribute
+      // per-pane heights set by the indicators effect (observed: volume's
+      // explicit setHeight() gets wiped out, main pane fills the gap) -
+      // reassert them right after any chart-level resize.
+      applyIndicatorPaneHeightsRef.current();
       scheduleOverlayRender();
     });
 
@@ -3238,6 +3263,7 @@ export default function TradingViewReplayChart({
         background: { color: chartTheme.background },
         textColor: chartTheme.text,
         attributionLogo: false,
+        fontSize: 10,
       },
       grid: {
         vertLines: { color: chartTheme.grid },
@@ -3276,27 +3302,61 @@ export default function TradingViewReplayChart({
     macdHistogram?.moveToPane(0);
 
     let nextLowerPane = 1;
+    const paneHeightJobs = [];
     if (isVolumeVisible) {
       volume?.moveToPane(nextLowerPane);
-      const pane = chartRef.current?.panes?.()[nextLowerPane];
       const volumeSize = Math.min(45, Math.max(10, Number(indicators.volumeSize) || 20));
-      pane?.setHeight(Math.max(60, Math.round((overlaySize.height || CHART_HEIGHT) * (volumeSize / 100))));
+      const paneIndex = nextLowerPane;
+      paneHeightJobs.push(() => chartRef.current?.panes?.()[paneIndex]?.setHeight(
+        Math.max(60, Math.round((overlaySize.height || CHART_HEIGHT) * (volumeSize / 100)))
+      ));
       nextLowerPane += 1;
     }
     if (isRsiVisible) {
       rsi?.moveToPane(nextLowerPane);
-      const pane = chartRef.current?.panes?.()[nextLowerPane];
-      pane?.setHeight(Math.max(80, Math.round((overlaySize.height || CHART_HEIGHT) * ((Number(indicators.rsiSize) || 25) / 100))));
+      const paneIndex = nextLowerPane;
+      paneHeightJobs.push(() => chartRef.current?.panes?.()[paneIndex]?.setHeight(
+        Math.max(80, Math.round((overlaySize.height || CHART_HEIGHT) * ((Number(indicators.rsiSize) || 25) / 100)))
+      ));
       nextLowerPane += 1;
     }
     if (isMacdVisible) {
       macd?.moveToPane(nextLowerPane);
       macdSignal?.moveToPane(nextLowerPane);
       macdHistogram?.moveToPane(nextLowerPane);
-      const pane = chartRef.current?.panes?.()[nextLowerPane];
-      pane?.setHeight(Math.max(80, Math.round((overlaySize.height || CHART_HEIGHT) * ((Number(indicators.macdSize) || 25) / 100))));
+      const paneIndex = nextLowerPane;
+      paneHeightJobs.push(() => chartRef.current?.panes?.()[paneIndex]?.setHeight(
+        Math.max(80, Math.round((overlaySize.height || CHART_HEIGHT) * ((Number(indicators.macdSize) || 25) / 100)))
+      ));
     }
+
+    // A pane just created by moveToPane() doesn't reliably accept setHeight()
+    // in the same synchronous tick (observed: the call silently no-ops on
+    // some mounts, leaving the pane at 0px and the main pane stretched to
+    // fill the gap). Layout can also keep shifting for a bit after mount
+    // (fonts, scrollbars, intervening container resizes - each of which can
+    // reset per-pane heights back to an even split via the container
+    // ResizeObserver's applyOptions({height}) call, see the ref below) -
+    // reasserting on a short interval for a moment reliably outlasts that
+    // instability instead of gambling on one specific retry delay.
+    const applyPaneHeights = () => paneHeightJobs.forEach((job) => job());
+    applyIndicatorPaneHeightsRef.current = applyPaneHeights;
+    applyPaneHeights();
+    const raf1 = requestAnimationFrame(applyPaneHeights);
+    let watchdogTicks = 0;
+    const watchdogInterval = setInterval(() => {
+      applyPaneHeights();
+      scheduleOverlayRender();
+      watchdogTicks += 1;
+      if (watchdogTicks >= 8) clearInterval(watchdogInterval);
+    }, 150);
+
     scheduleOverlayRender();
+
+    return () => {
+      cancelAnimationFrame(raf1);
+      clearInterval(watchdogInterval);
+    };
   }, [indicatorStorageKey, indicators, overlaySize.height, scheduleOverlayRender, hiddenLayers.indicators]);
 
   useEffect(() => {
@@ -4008,7 +4068,7 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (toolRef.current === PATH_TOOL_TYPE) {
+      if (MULTI_POINT_TOOL_TYPES.includes(toolRef.current)) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -4016,7 +4076,7 @@ export default function TradingViewReplayChart({
         event.stopPropagation();
 
         const currentTemp = tempDrawingRef.current;
-        const savedToolSettings = getToolSettingsForType(PATH_TOOL_TYPE);
+        const savedToolSettings = getToolSettingsForType(toolRef.current);
         const nextTemp = isPathDrawing(currentTemp)
           ? {
               ...currentTemp,
@@ -4025,10 +4085,10 @@ export default function TradingViewReplayChart({
             }
           : {
               id: `temp-${Date.now()}`,
-              type: PATH_TOOL_TYPE,
+              type: toolRef.current,
               points: [coords],
               previewPoint: coords,
-              strokeWidth: savedToolSettings.strokeWidth ?? 1,
+              strokeWidth: savedToolSettings.strokeWidth ?? DEFAULT_FREEHAND_STROKE_WIDTH[toolRef.current] ?? 1,
               lineStyle: savedToolSettings.lineStyle ?? 'solid',
               color: savedToolSettings.color ?? drawingColorRef.current,
               labelText: '',
@@ -4041,6 +4101,13 @@ export default function TradingViewReplayChart({
 
         tempDrawingRef.current = nextTemp;
         setTempDrawing(nextTemp);
+
+        // Pattern/wave tools have a fixed vertex count (MULTI_POINT_PATTERN_LABELS'
+        // length); 'path' itself has no entry there and stays freehand until dblclick.
+        const requiredPointCount = MULTI_POINT_PATTERN_LABELS[toolRef.current]?.length;
+        if (requiredPointCount && nextTemp.points.length >= requiredPointCount) {
+          handleFinishPathDrawing();
+        }
         return;
       }
 
@@ -4129,6 +4196,25 @@ export default function TradingViewReplayChart({
         event.stopPropagation();
 
         const savedToolSettings = getToolSettingsForType(toolRef.current);
+
+        // Arrow markers are pure icon stamps (no caption), so skip the text
+        // popover entirely and place them on a single click.
+        if (ICON_ONLY_MARKER_TYPES.includes(toolRef.current)) {
+          appendDrawing({
+            id: `drawing-${Date.now()}`,
+            type: toolRef.current,
+            point: coords,
+            text: '',
+            color: savedToolSettings.color ?? drawingColorRef.current,
+            labelText: '',
+            textBold: Boolean(savedToolSettings.textBold),
+            textItalic: Boolean(savedToolSettings.textItalic),
+            textSize: savedToolSettings.textSize,
+          });
+          setTool(null);
+          return;
+        }
+
         setTextInput({
           x,
           y,
@@ -4218,7 +4304,7 @@ export default function TradingViewReplayChart({
         return;
       }
 
-      if (toolRef.current === PATH_TOOL_TYPE && isPathDrawing(tempDrawingRef.current)) {
+      if (MULTI_POINT_TOOL_TYPES.includes(toolRef.current) && isPathDrawing(tempDrawingRef.current)) {
         const coords = getChartCoordinates(x, y);
         if (!coords) return;
 
@@ -4431,7 +4517,7 @@ export default function TradingViewReplayChart({
     };
 
     const handleDoubleClick = (event) => {
-      if (toolRef.current !== PATH_TOOL_TYPE) return;
+      if (!MULTI_POINT_TOOL_TYPES.includes(toolRef.current)) return;
       if (!isInMainPricePane(getRelativePoint(event).y)) return;
 
       event.preventDefault();
@@ -6040,7 +6126,7 @@ export default function TradingViewReplayChart({
         }}
       />
 
-      <div className="ml-12 min-h-0 flex-1">
+      <div className="ml-[52px] min-h-0 flex-1">
         <div className={`relative flex min-w-0 flex-col ${isFullscreen ? 'h-full' : ''}`}>
           <ChartStage
             wrapperRef={wrapperRef}
@@ -6137,7 +6223,7 @@ export default function TradingViewReplayChart({
               aria-live="polite"
               aria-label={`Loading ${timeframe} candles`}
               onContextMenu={(event) => event.preventDefault()}
-              className="absolute -left-12 bottom-0 right-0 top-0 z-[75] cursor-wait bg-black/25"
+              className="absolute -left-[52px] bottom-0 right-0 top-0 z-[75] cursor-wait bg-black/25"
             />
           )}
 
@@ -6245,7 +6331,7 @@ export default function TradingViewReplayChart({
           )}
 
           <ReplayPanel
-            className={isFullscreen ? 'fixed bottom-7 left-0 right-0 top-12 z-[70]' : 'absolute -left-12 bottom-7 right-0 top-0 z-50'}
+            className={isFullscreen ? 'fixed bottom-7 left-0 right-0 top-12 z-[70]' : 'absolute -left-[52px] bottom-7 right-0 top-0 z-50'}
             fullscreenDrawingOnly={isFullscreen}
             groupedWorkspaceRail={!isFullscreen}
             fullscreenEntryPanelOpen={isFullscreenEntryPanelOpen}

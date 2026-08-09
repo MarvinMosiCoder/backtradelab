@@ -12,7 +12,7 @@ Backtesting maintains a simulated account, named sessions, pending/open/closed p
 | `/market-backtest/reset` | Reset simulated account |
 | `MarketBacktestController.php` | Validation, authorization, transactional calculations |
 | `MarketBacktestAccount/Session/Position/Trade/Snapshot.php` | Domain records/relations |
-| `TradingViewChart.jsx`, `ReplayPanel.jsx`, `TraderNavbar.jsx` | Entry and account UI |
+| `MarketChart.jsx`, `ReplayPanel.jsx`, `TraderNavbar.jsx` | Entry and account UI |
 
 ## Data flow
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Head, Link, usePage } from "@inertiajs/react";
-import TradingViewChart from "../../Components/Market/TradingViewChart";
+import MarketChart from "../../Components/Market/MarketChart";
 import WatchlistPanel from "../../Components/Market/WatchlistPanel";
 import { useTheme } from "../../Context/ThemeContext";
 import { WatchlistProvider, watchlistMarketKey } from "../../Context/WatchlistContext";
@@ -74,7 +74,7 @@ const Dashboard = ({ userMetrics = {}, subscriptionMetrics = {}, feedbackMetrics
                         </div>
                         <WatchlistPanel activeSymbolKey={activeSymbolKey} onSelectSymbol={(market) => setActiveSymbol(market)} />
                         <div className={`overflow-hidden rounded-lg border p-2 shadow-2xl shadow-black/20 sm:p-3 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
-                            <TradingViewChart
+                            <MarketChart
                                 key={chartKey}
                                 initialSymbol={activeSymbol?.symbol ?? "BTCUSDT"}
                                 initialExchange={activeSymbol?.exchange ?? "bingx"}

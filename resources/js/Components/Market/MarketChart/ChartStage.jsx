@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Bookmark, Flag, FileText, MapPin, MessageCircle, Quote, Save, Signpost, StickyNote, Tag, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Bookmark, Flag, FileText, MapPin, MessageCircle, Quote, Save, Signpost, StickyNote, Tag, X } from 'lucide-react';
 import getAppLogo from '../../SystemSettings/ApplicationLogo';
 import { CHART_HEIGHT, DRAWING_COLOR, DRAWING_FILL, TIMEFRAME_SECONDS } from './constants';
 import {
   colorToRgba,
+  CYCLE_TOOL_TYPES,
   isHorizontalRayDrawing,
   isLineLikeDrawing,
   isPathDrawing,
   isPositionDrawing,
+  MULTI_POINT_PATTERN_LABELS,
   normalizeVisibleRect,
 } from './utils';
 
@@ -79,7 +81,10 @@ const FIB_RETRACEMENT_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 const BOX_TOOL_TYPES = ['rect', 'circle', 'price-range', 'date-range', 'price-date-range'];
 const SHAPE_TOOL_TYPES = ['triangle', 'arc', 'curve', 'double-curve'];
 const THREE_POINT_TYPES = ['fib-extension', 'parallel-channel', 'triangle', 'curve', 'double-curve'];
-const TEXT_MARKER_TYPES = ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'];
+const TEXT_MARKER_TYPES = [
+  'text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark',
+  'arrow-marker', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right',
+];
 const PRICE_ANCHORED_MARKER_TYPES = ['price-label', 'price-note'];
 const TEXT_MARKER_ICONS = {
   'anchored-text': MapPin,
@@ -91,6 +96,11 @@ const TEXT_MARKER_ICONS = {
   'price-note': Bookmark,
   signpost: Signpost,
   'flag-mark': Flag,
+  'arrow-marker': ArrowUpRight,
+  'arrow-mark-up': ArrowUp,
+  'arrow-mark-down': ArrowDown,
+  'arrow-mark-left': ArrowLeft,
+  'arrow-mark-right': ArrowRight,
 };
 const TEXT_MARKER_LABELS = {
   text: 'Text',
@@ -722,6 +732,11 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
               : d.lineStyle === 'dashed'
                 ? '8,5'
                 : undefined;
+            // Brush/Highlighter are freehand ink, not a click-anchored path — hide the
+            // per-vertex dots so they read as a stroke, not a connect-the-dots line.
+            // Selection still shows drag handles at each point (separate, unconditional
+            // resize-handle list in the parent), so editability isn't affected.
+            const isFreehandPaint = d.type === 'brush' || d.type === 'highlighter';
 
             return (
               <g key={d.id}>
@@ -731,12 +746,13 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     fill="none"
                     stroke={stroke}
                     strokeWidth={strokeWidth}
+                    strokeOpacity={d.type === 'highlighter' ? 0.35 : 1}
                     strokeDasharray={pathDashArray}
                     strokeLinejoin="round"
                     strokeLinecap="round"
                   />
                 )}
-                {(d.screen.points ?? []).map((point, index) => (
+                {!isFreehandPaint && (d.screen.points ?? []).map((point, index) => (
                   <circle
                     key={`${d.id}-point-${index}`}
                     cx={point.x}
@@ -747,6 +763,28 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     strokeWidth={1.5}
                   />
                 ))}
+                {MULTI_POINT_PATTERN_LABELS[d.type]?.map((vertexLabel, index) => {
+                  if (!vertexLabel) return null;
+                  const point = d.screen.points?.[index];
+                  if (!point) return null;
+                  return (
+                    <text
+                      key={`${d.id}-vertex-label-${index}`}
+                      x={point.x}
+                      y={point.y - 10}
+                      textAnchor="middle"
+                      fill="#ffffff"
+                      fontSize="11"
+                      fontWeight="700"
+                      paintOrder="stroke"
+                      stroke="rgba(15, 23, 42, 0.95)"
+                      strokeWidth="3"
+                      strokeLinejoin="round"
+                    >
+                      {vertexLabel}
+                    </text>
+                  );
+                })}
                 {labelText && !d.id.startsWith('temp-') && labelPosition && (
                   <text
                     x={labelPosition.x}
@@ -872,6 +910,86 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
               return <g key={d.id}><polygon points={`${d.screen.p1.x},${d.screen.p1.y} ${d.screen.p2.x},${d.screen.p2.y} ${d.screen.p2.x + offsetX},${d.screen.p2.y + offsetY} ${d.screen.p1.x + offsetX},${d.screen.p1.y + offsetY}`} fill={colorToRgba(stroke, .12)} stroke="none"/><line x1={d.screen.p1.x} y1={d.screen.p1.y} x2={d.screen.p2.x} y2={d.screen.p2.y} stroke={stroke} strokeWidth={strokeWidth}/><line x1={d.screen.p1.x + offsetX} y1={d.screen.p1.y + offsetY} x2={d.screen.p2.x + offsetX} y2={d.screen.p2.y + offsetY} stroke={stroke} strokeWidth={strokeWidth}/></g>;
             }
 
+            if (d.type === 'sine-line') {
+              const { p1, p2 } = d.screen;
+              const baselineY = (p1.y + p2.y) / 2;
+              const amplitude = Math.max(Math.abs(p2.y - p1.y) / 2, 20);
+              const span = p2.x - p1.x;
+              const steps = 48;
+              const sinePoints = Array.from({ length: steps + 1 }, (_, index) => {
+                const t = index / steps;
+                return {
+                  x: p1.x + span * t,
+                  y: baselineY - amplitude * Math.sin(t * Math.PI * 2),
+                };
+              });
+
+              return (
+                <g key={d.id}>
+                  <path
+                    d={buildPathData(sinePoints)}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={d.id.startsWith('temp-') ? '5,5' : (d.lineStyle === 'dashed' ? '8,5' : undefined)}
+                    strokeLinecap="round"
+                  />
+                </g>
+              );
+            }
+
+            if (d.type === 'cyclic-lines' || d.type === 'time-cycles') {
+              const { p1, p2 } = d.screen;
+              const period = Math.abs(p2.x - p1.x);
+              const isTimeCycles = d.type === 'time-cycles';
+
+              if (period < 2) {
+                return (
+                  <g key={d.id}>
+                    <line x1={p1.x} y1={0} x2={p1.x} y2={overlaySize.height} stroke={stroke} strokeWidth={strokeWidth} strokeDasharray="4,4" />
+                  </g>
+                );
+              }
+
+              const anchorX = Math.min(p1.x, p2.x);
+              const firstK = Math.ceil(-anchorX / period);
+              const lastK = Math.floor((overlaySize.width - anchorX) / period);
+              const maxRepeats = 60;
+              const lineXs = [];
+              for (let k = firstK; k <= lastK && lineXs.length < maxRepeats; k += 1) {
+                lineXs.push(anchorX + (k * period));
+              }
+
+              return (
+                <g key={d.id}>
+                  {lineXs.map((x, index) => {
+                    const isAnchor = Math.abs(x - p1.x) < 0.5 || Math.abs(x - p2.x) < 0.5;
+                    return (
+                      <line
+                        key={`${d.id}-cycle-${index}`}
+                        x1={x}
+                        y1={0}
+                        x2={x}
+                        y2={overlaySize.height}
+                        stroke={stroke}
+                        strokeWidth={isAnchor ? Math.max(strokeWidth, 1.5) : Math.max(strokeWidth - 0.5, 1)}
+                        strokeDasharray={
+                          d.id.startsWith('temp-')
+                            ? '5,5'
+                            : isTimeCycles
+                              ? '2,5'
+                              : isAnchor
+                                ? (d.lineStyle === 'dashed' ? '8,5' : undefined)
+                                : '6,6'
+                        }
+                        opacity={isAnchor ? 1 : 0.65}
+                      />
+                    );
+                  })}
+                </g>
+              );
+            }
+
             if (SHAPE_TOOL_TYPES.includes(d.type)) {
               const { p1, p2, p3 } = d.screen;
               const shapeDashArray = d.id.startsWith('temp-') ? '5,5' : (d.lineStyle === 'dashed' ? '8,5' : undefined);
@@ -961,16 +1079,25 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     strokeDasharray={lineDashArray}
                   />
                 )}
-                {(d.type === 'forecast' || d.type === 'arrow') && (
+                {(d.type === 'forecast' || d.type === 'arrow' || d.type === 'arrow-line') && (
                   <polygon
                     points={getArrowHeadPoints(d.screen.p1, d.screen.p2)}
                     fill={stroke}
                   />
                 )}
+                {d.type === 'arrow-line' && (
+                  <circle cx={d.screen.p1.x} cy={d.screen.p1.y} r={3} fill={stroke} />
+                )}
                 {d.type === 'measure' && (
                   <>
                     <circle cx={d.screen.p1.x} cy={d.screen.p1.y} r={4} fill={stroke} />
                     <circle cx={d.screen.p2.x} cy={d.screen.p2.y} r={4} fill={stroke} />
+                    {!d.id.startsWith('temp-') && d.end.price !== d.start.price && (
+                      <polygon
+                        points={getArrowHeadPoints(d.screen.p1, d.screen.p2, 8)}
+                        fill={d.end.price > d.start.price ? '#22c55e' : '#ef4444'}
+                      />
+                    )}
                   </>
                 )}
                 {isUtilityTool && !d.id.startsWith('temp-') && (
@@ -1173,7 +1300,22 @@ function DrawingOverlay({ renderedDrawings, selectedDrawingId, hoveredPositionDr
                     strokeDasharray={rectDashArray}
                   />
                 )}
-                {d.type === 'price-range' && !d.id.startsWith('temp-') && d.end.price !== d.start.price && (() => {
+                {['date-range', 'price-date-range'].includes(d.type) && !d.id.startsWith('temp-') && d.end.time !== d.start.time && (() => {
+                  const isForward = d.end.time > d.start.time;
+                  const arrowColor = d.end.price >= d.start.price ? '#22c55e' : '#ef4444';
+                  const centerY = rect.top + rect.height / 2;
+                  const left = { x: rect.left, y: centerY };
+                  const right = { x: rect.left + rect.width, y: centerY };
+                  const shaftStart = isForward ? left : right;
+                  const shaftEnd = isForward ? right : left;
+                  return (
+                    <g>
+                      <line x1={shaftStart.x} y1={shaftStart.y} x2={shaftEnd.x} y2={shaftEnd.y} stroke={arrowColor} strokeWidth="2" />
+                      <polygon points={getArrowHeadPoints(shaftStart, shaftEnd, 8)} fill={arrowColor} />
+                    </g>
+                  );
+                })()}
+                {['price-range', 'price-date-range'].includes(d.type) && !d.id.startsWith('temp-') && d.end.price !== d.start.price && (() => {
                   const isUp = d.end.price > d.start.price;
                   const arrowColor = isUp ? '#22c55e' : '#ef4444';
                   const centerX = rect.left + rect.width / 2;

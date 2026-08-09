@@ -11,7 +11,7 @@ const INDICATOR_META = {
 
 export function IndicatorClickTargets({ indicators, paneTops, onSelect, chartTheme }) {
   const isDark = chartTheme?.mode === 'dark';
-  const buttonClass = `flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-semibold shadow ${isDark ? 'bg-[#151617]/90 text-gray-200 hover:bg-[#25282e]' : 'bg-white/90 text-slate-700 hover:bg-slate-100'}`;
+  const buttonClass = `flex h-6 items-center gap-1.5 rounded px-2 text-[10px] font-semibold ${isDark ? 'bg-[#151617]/55 text-gray-200 hover:bg-[#25282e]/80' : 'bg-white/55 text-slate-700 hover:bg-slate-100/80'}`;
   const mainIndicators = ['sma', 'ema'].filter((key) => indicators[key] && indicators[`${key}Visible`] !== false);
   const paneLabel = (key) => {
     if (key === 'volume') return 'Volume';

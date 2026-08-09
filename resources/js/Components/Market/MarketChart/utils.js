@@ -252,11 +252,46 @@ function offsetPoint(point, deltaTime, deltaPrice, deltaLogical) {
   return nextPoint;
 }
 
+export const CYCLE_TOOL_TYPES = ['cyclic-lines', 'time-cycles', 'sine-line'];
+
+// Each key is a multi-point pattern/wave tool; the array is both its per-vertex
+// label sequence (empty string = no label badge at that vertex) and, via its
+// length, the fixed point count that auto-finalizes the drawing on the last click.
+export const MULTI_POINT_PATTERN_LABELS = {
+  'xabcd-pattern': ['X', 'A', 'B', 'C', 'D'],
+  'cypher-pattern': ['X', 'A', 'B', 'C', 'D'],
+  'head-and-shoulders': ['', '', '', '', '', '', ''],
+  'abcd-pattern': ['A', 'B', 'C', 'D'],
+  'triangle-pattern': ['', '', '', '', ''],
+  'three-drives-pattern': ['', '', '', '', '', '', ''],
+  'elliott-impulse-wave': ['', '1', '2', '3', '4', '5'],
+  'elliott-correction-wave': ['', 'A', 'B', 'C'],
+  'elliott-triangle-wave': ['', 'A', 'B', 'C', 'D', 'E'],
+  'elliott-double-combo-wave': ['', 'W', 'X', 'Y'],
+  'elliott-triple-combo-wave': ['', 'W', 'X', 'Y', 'Z'],
+};
+
+export const MULTI_POINT_PATTERN_TYPES = Object.keys(MULTI_POINT_PATTERN_LABELS);
+
+// 'path', 'brush', and 'highlighter' are the freehand (unbounded, dblclick-to-finish)
+// members — Brush/Highlighter are click-per-vertex just like Path, not a true
+// continuous mouse-drag trace; they differ only in default stroke width/opacity
+// (see DEFAULT_STROKE_WIDTH_BY_TYPE / highlighter opacity in ChartStage.jsx). The
+// pattern/wave types share the exact same points-array creation, render, hit-test,
+// resize, and drag-move machinery, just capped at a fixed point count.
+export const FREEHAND_TOOL_TYPES = ['path', 'brush', 'highlighter'];
+export const MULTI_POINT_TOOL_TYPES = [...FREEHAND_TOOL_TYPES, ...MULTI_POINT_PATTERN_TYPES];
+
+// Single-point icon markers that don't carry user text (unlike Signpost/Flag Mark,
+// which do) — handleSaveText (MarketChart.jsx) skips its "text required" guard
+// for these so a click alone places the icon.
+export const ICON_ONLY_MARKER_TYPES = ['arrow-marker', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right'];
+
 export function isTwoPointDrawing(drawing) {
   return [
     'line',
     'horizontal-ray',
-    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
+    'ray', 'arrow', 'arrow-line', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
     'fib-retracement',
     'fib-extension',
     'rect', 'circle',
@@ -266,6 +301,7 @@ export function isTwoPointDrawing(drawing) {
     'long-position',
     'short-position',
     'price-range', 'date-range', 'price-date-range',
+    ...CYCLE_TOOL_TYPES,
   ].includes(drawing?.type);
 }
 
@@ -273,12 +309,13 @@ export function isLineLikeDrawing(drawing) {
   return [
     'line',
     'horizontal-ray',
-    'ray', 'arrow', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
+    'ray', 'arrow', 'arrow-line', 'horizontal-line', 'vertical-line', 'parallel-channel', 'extended-line',
     'fib-retracement',
     'fib-extension',
     'triangle', 'arc', 'curve', 'double-curve',
     'measure',
     'forecast',
+    ...CYCLE_TOOL_TYPES,
   ].includes(drawing?.type);
 }
 
@@ -287,7 +324,10 @@ export function isShapeDrawing(drawing) {
 }
 
 export function isTextMarkerDrawing(drawing) {
-  return ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'].includes(drawing?.type);
+  return [
+    'text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark',
+    'arrow-marker', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right',
+  ].includes(drawing?.type);
 }
 
 export function isHorizontalRayDrawing(drawing) {
@@ -298,8 +338,11 @@ export function isPositionDrawing(drawing) {
   return ['long-position', 'short-position'].includes(drawing?.type);
 }
 
+// Covers 'path' and every fixed-count pattern/wave type in MULTI_POINT_PATTERN_TYPES
+// (they all share the same points-array data shape) — name kept for the many
+// existing call sites rather than a sweeping rename; see MULTI_POINT_TOOL_TYPES.
 export function isPathDrawing(drawing) {
-  return drawing?.type === 'path';
+  return MULTI_POINT_TOOL_TYPES.includes(drawing?.type);
 }
 
 export function offsetDrawing(drawing, deltaTime, deltaPrice, deltaLogical) {

@@ -41,7 +41,7 @@ export default function FullscreenChartHeader({
         borderColor: chartTheme?.border ?? (isDark ? '#2a2e39' : '#e2e8f0'),
       }}
     >
-      <div className="flex h-full min-w-0 shrink-0 items-center gap-2 border-r px-2 sm:px-3" style={{ borderColor: chartTheme?.border }}>
+      <div className={`flex h-full min-w-0 shrink-0 items-center gap-2 px-2 sm:px-3 ${isFullscreen ? 'border-r' : ''}`} style={{ borderColor: chartTheme?.border }}>
         {appLogo && <img src={appLogo} alt="" className="h-7 w-7 shrink-0 object-contain" draggable="false" />}
         {showAppName && (
           <span className={`hidden max-w-32 truncate text-xs font-bold sm:block ${isDark ? 'text-white' : 'text-slate-900'}`}>

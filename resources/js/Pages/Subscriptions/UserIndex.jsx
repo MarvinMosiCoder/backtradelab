@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Head, router, usePage } from '@inertiajs/react';
 import { CalendarClock, Check, ChevronDown, Clock3, CreditCard, FileImage, MessageCircle, RefreshCw, ShieldCheck, X } from 'lucide-react';
-import SubscriptionModal from '../../Components/Market/TradingViewChart/SubscriptionModal';
+import SubscriptionModal from '../../Components/Market/MarketChart/SubscriptionModal';
 import PaymentChat from '../../Components/Subscriptions/PaymentChat';
 import { tones } from '../../Components/Subscriptions/statusTones';
 import { useTheme } from '../../Context/ThemeContext';

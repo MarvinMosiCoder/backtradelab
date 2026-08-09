@@ -14,7 +14,7 @@ Users create directional market-price alerts. While the chart is open it checks 
 | `MarketPriceAlert.php` | Alert record |
 | `NotificationsController.php` / `AdmNotifications.php` | Notification UI/data |
 | `POST /notifications/dismiss` | Hide one owned `adm_notifications` row from the navbar dropdown feed only (sets `dismissed_at`, never deletes) |
-| `TradingViewChart.jsx` | Alert line/modal/open-chart checks |
+| `MarketChart.jsx` | Alert line/modal/open-chart checks |
 
 ## Flow
 

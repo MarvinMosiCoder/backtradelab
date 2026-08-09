@@ -9,7 +9,7 @@ Replay hides future candles, advances historical data at selected speeds, and re
 | `GET/PUT /market-replay-progress` | Read/write resume state |
 | `MarketReplayProgressController.php` | Validation, ownership, conflict ordering |
 | `MarketReplayProgress.php` | Per-user/per-market progress |
-| `TradingViewChart.jsx`, `ReplayPanel.jsx` | Replay selection, playback, controls |
+| `MarketChart.jsx`, `ReplayPanel.jsx` | Replay selection, playback, controls |
 | `GET /replay-access` | Entitlement gate |
 
 The update route requires replay access:

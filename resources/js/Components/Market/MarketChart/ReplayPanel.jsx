@@ -1,11 +1,19 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { usePage } from '@inertiajs/react';
 import {
+  Activity,
+  ArrowDown,
+  ArrowLeft,
   ArrowLeftRight,
+  ArrowRight,
+  ArrowUp,
+  ArrowUpRight,
   Bold,
   BoxSelect,
   Bookmark,
+  Brush,
+  ChartSpline,
   ChevronDown,
   ChevronRight,
   ChartNoAxesCombined,
@@ -19,7 +27,10 @@ import {
   Flag,
   FileText,
   Gauge,
+  GitCommitHorizontal,
+  GitFork,
   GripVertical,
+  Highlighter,
   Italic,
   LayoutGrid,
   LocateFixed,
@@ -28,25 +39,38 @@ import {
   MapPin,
   MessageCircle,
   MessageSquare,
+  Milestone,
   MoreHorizontal,
   MousePointer2,
+  Move,
+  MoveHorizontal,
   MoveRight,
+  MoveUpRight,
+  MoveVertical,
   PaintBucket,
   Palette,
   Pause,
   Pencil,
   Play,
   Quote,
-  RotateCcw,
+  Radical,
+  Repeat,
+  Repeat2,
+  Route,
   Save,
+  RotateCcw,
+  Ruler,
   Settings,
   Shapes,
+  Share2,
+  Shuffle,
   Sigma,
   Signpost,
   SkipBack,
   SkipForward,
   Slash,
   Spline,
+  Split,
   StickyNote,
   Tag,
   Trash2,
@@ -57,6 +81,8 @@ import {
   Unlock,
   Wallet,
   Waves,
+  Waypoints,
+  Workflow,
   X,
 } from 'lucide-react';
 import { DRAWING_COLORS, DRAWING_WIDTHS, PLAYBACK_SPEEDS, TEXT_SIZES } from './constants';
@@ -119,31 +145,92 @@ function getPanelStyle(chartTheme) {
   };
 }
 
-function getControlStyle(chartTheme) {
-  const isDark = chartTheme?.mode === 'dark';
-
-  return {
-    backgroundColor: chartTheme?.panelControl ?? (isDark ? '#151617' : '#f8fafc'),
-    borderColor: chartTheme?.border ?? (isDark ? '#31363F' : '#e5e7eb'),
+function useAnchoredTooltip() {
+  const anchorRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const show = () => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.top + rect.height / 2, left: rect.right + 8 });
   };
+  const hide = () => setPos(null);
+  return { anchorRef, pos, show, hide };
+}
+
+function RailTooltipPortal({ pos, label, isDark }) {
+  if (!pos || !label || typeof document === 'undefined') return null;
+  return createPortal(
+    <span
+      role="tooltip"
+      className={`pointer-events-none fixed z-[9999] -translate-y-1/2 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-medium shadow-lg ${
+        isDark ? 'border-[#363a45] bg-[#1e222d] text-white' : 'border-slate-200 bg-white text-slate-800'
+      }`}
+      style={{ top: pos.top, left: pos.left }}
+    >
+      {label}
+    </span>,
+    document.body
+  );
 }
 
 function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }) {
-  const inactiveTextClass = chartTheme?.mode === 'dark' ? 'text-white' : 'text-slate-700';
+  const isDark = chartTheme?.mode !== 'light';
+  const inactiveTextClass = isDark ? 'text-[#b2b5be]' : 'text-slate-500';
+  const hoverClass = isDark ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-100 hover:text-slate-900';
+  const { anchorRef, pos, show, hide } = useAnchoredTooltip();
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={title}
-      className={`flex h-10 w-10 items-center justify-center rounded-md border shadow-sm transition disabled:cursor-not-allowed disabled:opacity-35 ${
-        active ? 'border-white bg-white text-skin-black' : `${inactiveTextClass} hover:brightness-95`
-      }`}
-      style={active ? undefined : getControlStyle(chartTheme)}
-    >
-      <Icon size={18} />
-    </button>
+    <span className="relative flex">
+      <button
+        ref={anchorRef}
+        type="button"
+        onClick={onClick}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        disabled={disabled}
+        aria-label={title}
+        className={`flex h-9 w-9 items-center justify-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-35 ${
+          active
+            ? isDark ? 'bg-white/10 text-white' : 'bg-slate-200 text-slate-900'
+            : `${inactiveTextClass} ${hoverClass}`
+        }`}
+      >
+        <Icon size={18} />
+      </button>
+      {!disabled && <RailTooltipPortal pos={pos} label={title} isDark={isDark} />}
+    </span>
+  );
+}
+
+function ToolGroupRailItem({ group, tool, toolSettings, handleToolChange, toggleGroup, chartTheme, isDarkTheme }) {
+  const readyType = group.tools.includes(toolSettings?.readyTools?.[group.name]) ? toolSettings.readyTools[group.name] : group.tools[0];
+  const firstTool = TOOL_BUTTONS.find((item) => item.type === readyType);
+  const isGroupActive = group.tools.includes(tool);
+  const chevronTooltip = useAnchoredTooltip();
+
+  return (
+    <div className="group flex w-12 items-center justify-center">
+      <div className="relative flex items-center">
+        <RailButton icon={firstTool?.icon ?? MousePointer2} active={isGroupActive} title={`${group.name}: ${firstTool?.label}`} onClick={() => handleToolChange(readyType)} chartTheme={chartTheme}/>
+        <span className="absolute -right-2 top-0 z-10 flex h-9 w-2 items-center justify-center">
+          <button
+            ref={chevronTooltip.anchorRef}
+            type="button"
+            onClick={() => toggleGroup(`tools:${group.name}`)}
+            onMouseEnter={chevronTooltip.show}
+            onMouseLeave={chevronTooltip.hide}
+            onFocus={chevronTooltip.show}
+            onBlur={chevronTooltip.hide}
+            aria-label={`Choose ${group.name} tool`}
+            className={`pointer-events-auto flex h-9 w-2 items-center justify-center rounded-sm text-[#787b86] opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${
+              isDarkTheme ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          ><ChevronRight size={9}/></button>
+          <RailTooltipPortal pos={chevronTooltip.pos} label={`Choose ${group.name} tool`} isDark={isDarkTheme} />
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -237,10 +324,10 @@ const TOOL_BUTTONS = [
   { type: 'long-position', label: 'Long', icon: TrendingUp },
   { type: 'short-position', label: 'Short', icon: TrendingDown },
   { type: 'forecast', label: 'Forecast', icon: ChartNoAxesCombined },
-  { type: 'measure', label: 'Measure', icon: LocateFixed },
-  { type: 'price-range', label: 'Price Range', icon: LocateFixed },
-  { type: 'date-range', label: 'Date Range', icon: LocateFixed },
-  { type: 'price-date-range', label: 'Price & Date Range', icon: LocateFixed },
+  { type: 'measure', label: 'Measure', icon: Ruler },
+  { type: 'price-range', label: 'Price Range', icon: MoveVertical },
+  { type: 'date-range', label: 'Date Range', icon: MoveHorizontal },
+  { type: 'price-date-range', label: 'Price & Date Range', icon: Move },
   { type: 'rect', label: 'Box', icon: BoxSelect },
   { type: 'circle', label: 'Circle', icon: Circle },
   { type: 'triangle', label: 'Triangle', icon: Triangle },
@@ -257,17 +344,74 @@ const TOOL_BUTTONS = [
   { type: 'price-note', label: 'Price Note', icon: Bookmark },
   { type: 'signpost', label: 'Signpost', icon: Signpost },
   { type: 'flag-mark', label: 'Flag Mark', icon: Flag },
+  { type: 'xabcd-pattern', label: 'XABCD Pattern', icon: Waypoints },
+  { type: 'cypher-pattern', label: 'Cypher Pattern', icon: Share2 },
+  { type: 'head-and-shoulders', label: 'Head and Shoulders', icon: Milestone },
+  { type: 'abcd-pattern', label: 'ABCD Pattern', icon: Route },
+  { type: 'triangle-pattern', label: 'Triangle Pattern', icon: Triangle },
+  { type: 'three-drives-pattern', label: 'Three Drives Pattern', icon: Activity },
+  { type: 'elliott-impulse-wave', label: 'Elliott Impulse Wave (12345)', icon: ChartSpline },
+  { type: 'elliott-correction-wave', label: 'Elliott Correction Wave (ABC)', icon: GitCommitHorizontal },
+  { type: 'elliott-triangle-wave', label: 'Elliott Triangle Wave (ABCDE)', icon: GitFork },
+  { type: 'elliott-double-combo-wave', label: 'Elliott Double Combo Wave (WXY)', icon: Shuffle },
+  { type: 'elliott-triple-combo-wave', label: 'Elliott Triple Combo Wave (WXYZ)', icon: Split },
+  { type: 'cyclic-lines', label: 'Cyclic Lines', icon: Repeat },
+  { type: 'time-cycles', label: 'Time Cycles', icon: Repeat2 },
+  { type: 'sine-line', label: 'Sine Line', icon: Radical },
+  { type: 'brush', label: 'Brush', icon: Brush },
+  { type: 'highlighter', label: 'Highlighter', icon: Highlighter },
+  { type: 'arrow-marker', label: 'Arrow Marker', icon: ArrowUpRight },
+  { type: 'arrow-line', label: 'Arrow', icon: MoveUpRight },
+  { type: 'arrow-mark-up', label: 'Arrow Mark Up', icon: ArrowUp },
+  { type: 'arrow-mark-down', label: 'Arrow Mark Down', icon: ArrowDown },
+  { type: 'arrow-mark-left', label: 'Arrow Mark Left', icon: ArrowLeft },
+  { type: 'arrow-mark-right', label: 'Arrow Mark Right', icon: ArrowRight },
 ];
 
-const TEXT_MARKER_TYPES = ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'];
+const TEXT_MARKER_TYPES = [
+  'text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark',
+  'arrow-marker', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right',
+];
 const PRICE_ANCHORED_MARKER_TYPES = ['price-label', 'price-note'];
 
 const TOOL_GROUPS = [
   { name: 'Trend Lines', groupIcon: Spline, tools: ['line', 'ray', 'arrow', 'horizontal-line', 'vertical-line', 'horizontal-ray', 'extended-line', 'path', 'parallel-channel'] },
   { name: 'Fibonacci', groupIcon: Sigma, tools: ['fib-retracement', 'fib-extension'] },
-  { name: 'Forecasting', groupIcon: Compass, tools: ['long-position', 'short-position', 'forecast'] },
-  { name: 'Geometric Shape', groupIcon: Shapes, tools: ['measure', 'price-range', 'date-range', 'price-date-range', 'rect', 'circle', 'triangle', 'arc', 'curve', 'double-curve'] },
+  { name: 'Forecasting', groupIcon: Compass, tools: ['long-position', 'short-position', 'forecast', 'measure', 'price-range', 'date-range', 'price-date-range'] },
+  {
+    name: 'Geometric Shape',
+    groupIcon: Shapes,
+    // Same merged-flyout shape as the Patterns group below: `tools` stays flat for
+    // ready-tool tracking/active-state, `sections` only drives the flyout's divided list.
+    tools: [
+      'rect', 'circle', 'triangle', 'arc', 'curve', 'double-curve',
+      'brush', 'highlighter',
+      'arrow-marker', 'arrow-line', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right',
+    ],
+    sections: [
+      { title: 'Shapes', tools: ['rect', 'circle', 'triangle', 'arc', 'curve', 'double-curve'] },
+      { title: 'Brushes', tools: ['brush', 'highlighter'] },
+      { title: 'Arrows', tools: ['arrow-marker', 'arrow-line', 'arrow-mark-up', 'arrow-mark-down', 'arrow-mark-left', 'arrow-mark-right'] },
+    ],
+  },
   { name: 'Annotation', groupIcon: MessageSquare, tools: ['text', 'anchored-text', 'note', 'anchored-note', 'callout', 'comment', 'price-label', 'price-note', 'signpost', 'flag-mark'] },
+  {
+    name: 'Patterns',
+    groupIcon: Workflow,
+    // `tools` stays a flat list (ready-tool tracking, compact-rail active state, etc.
+    // all key off group.tools generically); `sections` is flyout-display-only, so the
+    // one merged rail icon can still show 3 divided groups inside a single flyout.
+    tools: [
+      'xabcd-pattern', 'cypher-pattern', 'head-and-shoulders', 'abcd-pattern', 'triangle-pattern', 'three-drives-pattern',
+      'elliott-impulse-wave', 'elliott-correction-wave', 'elliott-triangle-wave', 'elliott-double-combo-wave', 'elliott-triple-combo-wave',
+      'cyclic-lines', 'time-cycles', 'sine-line',
+    ],
+    sections: [
+      { title: 'Patterns', tools: ['xabcd-pattern', 'cypher-pattern', 'head-and-shoulders', 'abcd-pattern', 'triangle-pattern', 'three-drives-pattern'] },
+      { title: 'Elliott Waves', tools: ['elliott-impulse-wave', 'elliott-correction-wave', 'elliott-triangle-wave', 'elliott-double-combo-wave', 'elliott-triple-combo-wave'] },
+      { title: 'Cycles', tools: ['cyclic-lines', 'time-cycles', 'sine-line'] },
+    ],
+  },
 ];
 
 const TOOL_LABELS = TOOL_BUTTONS.reduce((labels, toolButton) => ({
@@ -597,11 +741,29 @@ function TopToolEditorBar({
   onSaveSelectedToolPreset,
   chartTheme,
   availableWidth,
+  chartBoundsRef,
 }) {
   const [hexColorDraft, setHexColorDraft] = useState(activeColor ?? '');
+  const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
 
   const toggleMenu = (menu) => {
     setOpenMenu((currentMenu) => (currentMenu === menu ? null : menu));
+  };
+
+  const handleApplyToolDefaults = () => {
+    onDrawingColorChange(DRAWING_COLORS[0]);
+    if (canEditWidth) onDrawingWidthChange(1);
+    if (canEditLineStyle) onDrawingLineStyleChange('solid');
+    if (canEditLabel || canEditText) {
+      onDrawingLabelChange({
+        textBold: false,
+        textItalic: false,
+        textSize: 12,
+        labelVertical: 'top',
+        labelHorizontal: 'center',
+      });
+    }
+    setOpenMenu(null);
   };
 
   const isDark = chartTheme?.mode !== 'light';
@@ -675,6 +837,29 @@ function TopToolEditorBar({
           />
           {openMenu === 'presets' && (
             <div className={menuPanelClass}>
+              {selectedDrawing && (
+                <div className={`mb-2 space-y-0.5 border-b pb-2 ${isDark ? 'border-gray-800' : 'border-slate-200'}`}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPresetNameDraft('');
+                      setShowSaveAsDialog(true);
+                    }}
+                    className={`flex h-9 w-full items-center gap-2 rounded px-2 text-left text-xs ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                  >
+                    <Save size={15} />
+                    Save as...
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleApplyToolDefaults}
+                    className={`flex h-9 w-full items-center gap-2 rounded px-2 text-left text-xs ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                  >
+                    <RotateCcw size={15} />
+                    Apply defaults
+                  </button>
+                </div>
+              )}
               <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Templates</div>
               <div className="max-h-44 space-y-1.5 overflow-y-auto pr-1">
                 {presetItems.map((preset) => (
@@ -707,30 +892,70 @@ function TopToolEditorBar({
                   <span className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-slate-500'}`}>No saved templates</span>
                 )}
               </div>
-
-              {selectedDrawing && (
-                <div className={`mt-3 border-t pt-3 ${isDark ? 'border-gray-800' : 'border-slate-200'}`}>
-                  <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${editorLabelClass}`}>Save Template</div>
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+            </div>
+          )}
+          {showSaveAsDialog && typeof document !== 'undefined' && chartBoundsRef?.current && createPortal(
+            <div className="pointer-events-auto absolute inset-0 z-[10031] flex items-center justify-center bg-black/40 px-3" data-chart-ui>
+              <section
+                className={`w-full max-w-sm overflow-hidden rounded-md border shadow-2xl ${
+                  isDark ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800'
+                }`}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Save drawing template as"
+              >
+                <header className="flex items-center justify-between px-6 pb-4 pt-6">
+                  <h2 className="text-lg font-semibold">Save drawing template as</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveAsDialog(false)}
+                    className={`flex h-9 w-9 items-center justify-center rounded transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                    aria-label="Close"
+                  >
+                    <X size={22} strokeWidth={1.4} />
+                  </button>
+                </header>
+                <div className="px-6 pb-6">
+                  <label className={`mb-1 block text-sm font-medium ${editorLabelClass}`}>
+                    Template name:
                     <input
+                      type="text"
+                      autoFocus
                       value={presetNameDraft}
                       onChange={(event) => setPresetNameDraft(event.target.value)}
-                      placeholder={`${editorLabel} template name`}
-                      className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${editorFieldClass}`}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && presetNameDraft.trim()) {
+                          onSavePreset();
+                          setShowSaveAsDialog(false);
+                        }
+                      }}
+                      className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${editorFieldClass}`}
                     />
-                    <ControlButton
-                      icon={Save}
-                      onClick={onSavePreset}
-                      variant="success"
-                      disabled={!presetNameDraft.trim()}
-                      chartTheme={chartTheme}
-                    >
-                      Save
-                    </ControlButton>
-                  </div>
+                  </label>
                 </div>
-              )}
-            </div>
+                <footer className={`flex items-center justify-end gap-3 border-t px-6 py-5 ${isDark ? 'border-[#363a45]' : 'border-slate-200'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveAsDialog(false)}
+                    className={`h-11 rounded-lg border px-5 text-sm font-semibold ${editorFieldClass}`}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSavePreset();
+                      setShowSaveAsDialog(false);
+                    }}
+                    disabled={!presetNameDraft.trim()}
+                    className="h-11 rounded-lg bg-emerald-400 px-5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Save
+                  </button>
+                </footer>
+              </section>
+            </div>,
+            chartBoundsRef.current,
           )}
         </div>
 
@@ -1238,6 +1463,7 @@ export default function ReplayPanel({
   const preferenceUserId = auth?.user?.id ?? 'guest';
   const displayCurrencyStorageKey = `market-backtest-display-currency:${preferenceUserId}`;
   const phpRateStorageKey = `market-backtest-php-rate:${preferenceUserId}`;
+  const panelRootRef = useRef(null);
   const [activeGroup, setActiveGroup] = useState(null);
   const [activeEditorMenu, setActiveEditorMenu] = useState(null);
   const [presetNameDraft, setPresetNameDraft] = useState('');
@@ -1552,38 +1778,44 @@ export default function ReplayPanel({
 
   return (
     <div
+      ref={panelRootRef}
       className={`pointer-events-none flex items-start ${className}`}
       style={{ '--replay-panel-content-width': `${Math.max((Number(overlayWidth) || 0) - 164, 140)}px` }}
     >
       <div
         className={`pointer-events-auto flex flex-col gap-2 border px-0.5 py-1.5 shadow-2xl backdrop-blur ${
           fullscreenDrawingOnly || groupedWorkspaceRail
-            ? 'h-full rounded-none border-b-0 border-l-0 border-t-0'
+            ? 'h-full rounded-none border-b-0 border-l-0 border-r-0 border-t-0'
             : 'rounded-lg'
+        } ${
+          fullscreenDrawingOnly || groupedWorkspaceRail ? 'overflow-y-auto overflow-x-hidden scrollbar-none' : ''
         }`}
         style={getPanelStyle(chartTheme)}
       >
         {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
-          <RailButton
-            icon={Play}
-            active={activeGroup === 'replay' || replayMode || isPlaying}
-            disabled={replayAccessStatus === 'checking-access'}
-            title={replayMode ? 'Replay Controls' : 'Start Replay'}
-            onClick={() => toggleGroup('replay')}
-            chartTheme={chartTheme}
-          />
+          <div className="flex w-12 items-center justify-center">
+            <RailButton
+              icon={Play}
+              active={activeGroup === 'replay' || replayMode || isPlaying}
+              disabled={replayAccessStatus === 'checking-access'}
+              title={replayMode ? 'Replay Controls' : 'Start Replay'}
+              onClick={() => toggleGroup('replay')}
+              chartTheme={chartTheme}
+            />
+          </div>
         )}
-        {(fullscreenDrawingOnly || groupedWorkspaceRail) ? TOOL_GROUPS.map((group) => {
-          const readyType = group.tools.includes(toolSettings?.readyTools?.[group.name]) ? toolSettings.readyTools[group.name] : group.tools[0];
-          const firstTool = TOOL_BUTTONS.find((item) => item.type === readyType);
-          const isGroupActive = group.tools.includes(tool);
-          return (
-            <div key={group.name} className="relative flex w-12 items-center">
-              <RailButton icon={firstTool?.icon ?? MousePointer2} active={isGroupActive} title={`${group.name}: ${firstTool?.label}`} onClick={() => handleToolChange(readyType)} chartTheme={chartTheme}/>
-              <button type="button" onClick={() => toggleGroup(`tools:${group.name}`)} className={`pointer-events-auto absolute left-10 top-0 z-10 flex h-10 w-2 items-center justify-center text-[#787b86] hover:text-current ${isDarkTheme ? 'hover:bg-white/10' : 'hover:bg-slate-200'}`} title={`Choose ${group.name} tool`}><ChevronRight size={10}/></button>
-            </div>
-          );
-        }) : (
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) ? TOOL_GROUPS.map((group) => (
+          <ToolGroupRailItem
+            key={group.name}
+            group={group}
+            tool={tool}
+            toolSettings={toolSettings}
+            handleToolChange={handleToolChange}
+            toggleGroup={toggleGroup}
+            chartTheme={chartTheme}
+            isDarkTheme={isDarkTheme}
+          />
+        )) : (
           <>
             <RailButton
               icon={Play}
@@ -1610,96 +1842,112 @@ export default function ReplayPanel({
           </>
         )}
         {groupedWorkspaceRail && (
-          <RailButton
-            icon={Wallet}
-            active={activeGroup === 'backtest'}
-            title="Enter Position"
-            onClick={() => toggleGroup('backtest')}
-            chartTheme={chartTheme}
-          />
+          <div className="flex w-12 items-center justify-center">
+            <RailButton
+              icon={Wallet}
+              active={activeGroup === 'backtest'}
+              title="Enter Position"
+              onClick={() => toggleGroup('backtest')}
+              chartTheme={chartTheme}
+            />
+          </div>
         )}
-        <RailButton
-          icon={Palette}
-          active={activeGroup === 'tool-editor'}
-          disabled={!hasToolEditor}
-          title="Tool Style and Templates"
-          onClick={() => toggleGroup('tool-editor')}
-          chartTheme={chartTheme}
-        />
-        {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
+        <div className={`flex items-center ${(fullscreenDrawingOnly || groupedWorkspaceRail) ? 'w-12 justify-center' : ''}`}>
           <RailButton
-            icon={allDrawingsLocked ? Lock : Unlock}
-            active={allDrawingsLocked}
-            title={allDrawingsLocked ? 'Unlock all drawings' : 'Lock all drawings'}
-            onClick={onToggleLockAllDrawings}
+            icon={Palette}
+            active={activeGroup === 'tool-editor'}
+            disabled={!hasToolEditor}
+            title="Tool Style and Templates"
+            onClick={() => toggleGroup('tool-editor')}
             chartTheme={chartTheme}
           />
-        )}
+        </div>
         {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
-          <RailButton
-            icon={(hiddenLayers?.drawings || hiddenLayers?.indicators || hiddenLayers?.positions) ? EyeOff : Eye}
-            active={activeGroup === 'visibility'}
-            title="Show/Hide"
-            onClick={() => toggleGroup('visibility')}
-            chartTheme={chartTheme}
-          />
+          <div className="flex w-12 items-center justify-center">
+            <RailButton
+              icon={allDrawingsLocked ? Lock : Unlock}
+              active={allDrawingsLocked}
+              title={allDrawingsLocked ? 'Unlock all drawings' : 'Lock all drawings'}
+              onClick={onToggleLockAllDrawings}
+              chartTheme={chartTheme}
+            />
+          </div>
         )}
         {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
-          <RailButton
-            icon={Trash2}
-            disabled={!drawings.length}
-            title="Clear Drawings"
-            onClick={onClearDrawings}
-            chartTheme={chartTheme}
-          />
+          <div className="flex w-12 items-center justify-center">
+            <RailButton
+              icon={(hiddenLayers?.drawings || hiddenLayers?.indicators || hiddenLayers?.positions) ? EyeOff : Eye}
+              active={activeGroup === 'visibility'}
+              title="Show/Hide"
+              onClick={() => toggleGroup('visibility')}
+              chartTheme={chartTheme}
+            />
+          </div>
         )}
-        <div
-          className={`h-1.5 w-full rounded-full ${
-            drawingSaveStatus === 'saving'
-              ? 'animate-pulse bg-amber-400'
-              : drawingSaveStatus === 'local'
-                ? 'bg-red-500'
-                : 'bg-emerald-500'
-          }`}
-          title={
-            drawingSaveStatus === 'saving'
-              ? 'Saving drawings'
-              : drawingSaveStatus === 'local'
-                ? 'Saved on this device; server sync failed'
-                : 'Drawings saved'
-          }
-          aria-label={
-            drawingSaveStatus === 'saving'
-              ? 'Saving drawings'
-              : drawingSaveStatus === 'local'
-                ? 'Drawings saved locally only'
-                : 'Drawings saved'
-          }
-        />
+        {(fullscreenDrawingOnly || groupedWorkspaceRail) && (
+          <div className="flex w-12 items-center justify-center">
+            <RailButton
+              icon={Trash2}
+              disabled={!drawings.length}
+              title="Clear Drawings"
+              onClick={onClearDrawings}
+              chartTheme={chartTheme}
+            />
+          </div>
+        )}
       </div>
 
       {(fullscreenDrawingOnly || groupedWorkspaceRail) && TOOL_GROUPS.map((group) => (
         activeGroup === `tools:${group.name}` ? (
           <div key={group.name} className="pointer-events-auto">
             <Flyout title={group.name} icon={group.groupIcon ?? TOOL_BUTTONS.find((item) => item.type === group.tools[0])?.icon} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
-              <div className="grid grid-cols-1 gap-2">
-                {group.tools.map((toolType) => {
-                  const item = TOOL_BUTTONS.find((candidate) => candidate.type === toolType);
-                  if (!item) return null;
-                  return (
-                    <ControlButton
-                      key={item.type}
-                      icon={item.icon}
-                      onClick={() => { onReadyToolChange?.(group.name, item.type); handleToolChange(item.type); }}
-                      active={tool === item.type}
-                      className="w-full justify-start"
-                      chartTheme={chartTheme}
-                    >
-                      {item.label}
-                    </ControlButton>
-                  );
-                })}
-              </div>
+              {group.sections ? (
+                <div className="space-y-1">
+                  {group.sections.map((section, sectionIndex) => (
+                    <React.Fragment key={section.title}>
+                      {sectionIndex > 0 && <div className={`my-2 border-t ${isDarkTheme ? 'border-gray-800' : 'border-slate-200'}`} />}
+                      <div className={`mb-2 text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>{section.title}</div>
+                      <div className="grid grid-cols-1 gap-2">
+                        {section.tools.map((toolType) => {
+                          const item = TOOL_BUTTONS.find((candidate) => candidate.type === toolType);
+                          if (!item) return null;
+                          return (
+                            <ControlButton
+                              key={item.type}
+                              icon={item.icon}
+                              onClick={() => { onReadyToolChange?.(group.name, item.type); handleToolChange(item.type); }}
+                              active={tool === item.type}
+                              className="w-full justify-start"
+                              chartTheme={chartTheme}
+                            >
+                              {item.label}
+                            </ControlButton>
+                          );
+                        })}
+                      </div>
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-2">
+                  {group.tools.map((toolType) => {
+                    const item = TOOL_BUTTONS.find((candidate) => candidate.type === toolType);
+                    if (!item) return null;
+                    return (
+                      <ControlButton
+                        key={item.type}
+                        icon={item.icon}
+                        onClick={() => { onReadyToolChange?.(group.name, item.type); handleToolChange(item.type); }}
+                        active={tool === item.type}
+                        className="w-full justify-start"
+                        chartTheme={chartTheme}
+                      >
+                        {item.label}
+                      </ControlButton>
+                    );
+                  })}
+                </div>
+              )}
             </Flyout>
           </div>
         ) : null
@@ -1829,19 +2077,47 @@ export default function ReplayPanel({
                     <summary className={`flex cursor-pointer list-none items-center justify-between text-[10px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>
                       <span className="flex items-center gap-1.5">{GroupIcon && <GroupIcon size={13}/>}{group.name}</span><ChevronDown size={13} className="transition group-open:rotate-180"/>
                     </summary>
-                    <div className="grid grid-cols-2 gap-2">
-                      {groupTools.map(({ type, label, icon }) => (
-                        <ControlButton
-                          key={type}
-                          icon={icon}
-                          onClick={() => handleToolChange(type)}
-                          active={tool === type}
-                          chartTheme={chartTheme}
-                        >
-                          {label}
-                        </ControlButton>
-                      ))}
-                    </div>
+                    {group.sections ? (
+                      <div className="space-y-2">
+                        {group.sections.map((section, sectionIndex) => (
+                          <div key={section.title}>
+                            {sectionIndex > 0 && <div className={`mb-2 border-t ${isDarkTheme ? 'border-gray-800' : 'border-slate-200'}`} />}
+                            <div className={`mb-1.5 text-[9px] font-semibold uppercase tracking-wide ${mutedTextClass}`}>{section.title}</div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {section.tools.map((toolType) => {
+                                const item = TOOL_BUTTONS.find((candidate) => candidate.type === toolType);
+                                if (!item) return null;
+                                return (
+                                  <ControlButton
+                                    key={item.type}
+                                    icon={item.icon}
+                                    onClick={() => handleToolChange(item.type)}
+                                    active={tool === item.type}
+                                    chartTheme={chartTheme}
+                                  >
+                                    {item.label}
+                                  </ControlButton>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2">
+                        {groupTools.map(({ type, label, icon }) => (
+                          <ControlButton
+                            key={type}
+                            icon={icon}
+                            onClick={() => handleToolChange(type)}
+                            active={tool === type}
+                            chartTheme={chartTheme}
+                          >
+                            {label}
+                          </ControlButton>
+                        ))}
+                      </div>
+                    )}
                   </details>
                 );
               })}
@@ -2268,6 +2544,7 @@ export default function ReplayPanel({
           onSaveSelectedToolPreset={onSaveSelectedToolPreset}
           chartTheme={chartTheme}
           availableWidth={Math.max((Number(overlayWidth) || 0) - 164, 140)}
+          chartBoundsRef={panelRootRef}
         />
       )}
 
