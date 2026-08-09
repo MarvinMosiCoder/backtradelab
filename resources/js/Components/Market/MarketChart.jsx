@@ -557,12 +557,16 @@ function formatOverlayPrice(value) {
   });
 }
 
-function formatPriceScaleValue(value) {
+const NARROW_CHART_BREAKPOINT = 480;
+
+function formatPriceScaleValue(value, compact = false) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '';
 
   const absolute = Math.abs(number);
-  const maximumFractionDigits = absolute >= 100 ? 2 : absolute >= 1 ? 6 : 8;
+  const maximumFractionDigits = compact
+    ? (absolute >= 100 ? 0 : absolute >= 1 ? 4 : 6)
+    : (absolute >= 100 ? 2 : absolute >= 1 ? 6 : 8);
 
   return number.toLocaleString(undefined, {
     minimumFractionDigits: 0,
@@ -867,6 +871,8 @@ export default function MarketReplayChart({
   const resizeDrawingRef = useRef(null);
   const dragBacktestOrderRef = useRef(null);
   const isReplayPricePickActiveRef = useRef(false);
+  const isTouchInputRef = useRef(false);
+  const isNarrowChartRef = useRef(false);
   const overlayRenderFrameRef = useRef(null);
   const autoClosedPositionRef = useRef(new Set());
   const autoTriggeredPositionRef = useRef(new Set());
@@ -2633,31 +2639,33 @@ export default function MarketReplayChart({
 
   const hitTestDrawing = useCallback((x, y) => {
     const point = { x, y };
+    const tolerance = isTouchInputRef.current ? 16 : 8;
+    const fibTolerance = isTouchInputRef.current ? 12 : 6;
 
     for (let i = renderedDrawings.length - 1; i >= 0; i -= 1) {
       const d = renderedDrawings[i];
 
       if (isLineLikeDrawing(d)) {
         const { p1, p2, rayStart, rayEnd } = d.screen;
-        if (distanceToSegment(point, rayStart ?? p1, rayEnd ?? p2) <= 8) return d.id;
+        if (distanceToSegment(point, rayStart ?? p1, rayEnd ?? p2) <= tolerance) return d.id;
 
-        if (d.type === 'fib-extension' && d.screen.p3 && distanceToSegment(point, p2, d.screen.p3) <= 8) {
+        if (d.type === 'fib-extension' && d.screen.p3 && distanceToSegment(point, p2, d.screen.p3) <= tolerance) {
           return d.id;
         }
         if (THREE_POINT_SHAPE_TYPES.includes(d.type) && d.screen.p3) {
-          if (distanceToSegment(point, p2, d.screen.p3) <= 8) return d.id;
-          if (distanceToSegment(point, p1, d.screen.p3) <= 8) return d.id;
+          if (distanceToSegment(point, p2, d.screen.p3) <= tolerance) return d.id;
+          if (distanceToSegment(point, p1, d.screen.p3) <= tolerance) return d.id;
         }
         if (d.type === 'parallel-channel' && d.screen.p3) {
           const dx = d.screen.p3.x - p2.x, dy = d.screen.p3.y - p2.y;
-          if (distanceToSegment(point, { x: p1.x + dx, y: p1.y + dy }, { x: p2.x + dx, y: p2.y + dy }) <= 8) return d.id;
+          if (distanceToSegment(point, { x: p1.x + dx, y: p1.y + dy }, { x: p2.x + dx, y: p2.y + dy }) <= tolerance) return d.id;
         }
 
         if (['fib-retracement', 'fib-extension'].includes(d.type)) {
           const hitFibLevel = getRenderedFibonacciLevels(d, overlaySize.width).some((level) => {
             const levelPointA = { x: level.x1, y: level.y };
             const levelPointB = { x: level.x2, y: level.y };
-            return distanceToSegment(point, levelPointA, levelPointB) <= 6;
+            return distanceToSegment(point, levelPointA, levelPointB) <= fibTolerance;
           });
 
           if (hitFibLevel) return d.id;
@@ -2699,10 +2707,10 @@ export default function MarketReplayChart({
       if (isPathDrawing(d)) {
         const points = d.screen.points ?? [];
         for (let index = 1; index < points.length; index += 1) {
-          if (distanceToSegment(point, points[index - 1], points[index]) <= 8) return d.id;
+          if (distanceToSegment(point, points[index - 1], points[index]) <= tolerance) return d.id;
         }
 
-        if (points.some((pathPoint) => Math.abs(x - pathPoint.x) <= 8 && Math.abs(y - pathPoint.y) <= 8)) {
+        if (points.some((pathPoint) => Math.abs(x - pathPoint.x) <= tolerance && Math.abs(y - pathPoint.y) <= tolerance)) {
           return d.id;
         }
       }
@@ -2788,8 +2796,9 @@ export default function MarketReplayChart({
       );
     }
 
+    const handleTolerance = isTouchInputRef.current ? 16 : 8;
     for (const item of handles) {
-      if (Math.abs(x - item.point.x) <= 8 && Math.abs(y - item.point.y) <= 8) {
+      if (Math.abs(x - item.point.x) <= handleTolerance && Math.abs(y - item.point.y) <= handleTolerance) {
         return { drawingId: selected.id, handle: item.handle };
       }
     }
@@ -2847,6 +2856,8 @@ export default function MarketReplayChart({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    isNarrowChartRef.current = containerRef.current.clientWidth > 0 && containerRef.current.clientWidth < NARROW_CHART_BREAKPOINT;
+
     const chart = createChart(containerRef.current, {
       width: containerRef.current.clientWidth || 800,
       height: containerRef.current.clientHeight || 0,
@@ -2854,7 +2865,7 @@ export default function MarketReplayChart({
         background: { color: chartTheme.background },
         textColor: chartTheme.text,
         attributionLogo: false,
-        fontSize: 10,
+        fontSize: isNarrowChartRef.current ? 9 : 10,
         panes: {
           enableResize: true,
           separatorColor: chartTheme.mode === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(15, 23, 42, 0.12)',
@@ -2885,7 +2896,7 @@ export default function MarketReplayChart({
       handleScroll: true,
       handleScale: true,
       localization: {
-        priceFormatter: formatPriceScaleValue,
+        priceFormatter: (value) => formatPriceScaleValue(value, isNarrowChartRef.current),
       },
     });
 
@@ -2924,7 +2935,13 @@ export default function MarketReplayChart({
         cancelAnimationFrame(overlayRenderFrameRef.current);
         overlayRenderFrameRef.current = null;
       }
-      flushSync(() => setOverlayRenderVersion((version) => version + 1));
+      // lightweight-charts can fire this synchronously from inside React's own render/commit
+      // (e.g. the initial visible-range set during the chart-creation effect, doubly so under
+      // StrictMode). Deferring to a microtask moves the flushSync outside that call stack —
+      // it still runs before the next paint, so the overlay stays lag-free during pan/zoom.
+      queueMicrotask(() => {
+        flushSync(() => setOverlayRenderVersion((version) => version + 1));
+      });
       if (isProgrammaticRangeChangeRef.current) return;
       setFollowReplay(false);
     };
@@ -3090,9 +3107,15 @@ export default function MarketReplayChart({
 
     resizeObserverRef.current = new ResizeObserver(() => {
       if (!containerRef.current || !chartRef.current) return;
+      const width = containerRef.current.clientWidth;
+      const wasNarrow = isNarrowChartRef.current;
+      isNarrowChartRef.current = width > 0 && width < NARROW_CHART_BREAKPOINT;
       chartRef.current.applyOptions({
-        width: containerRef.current.clientWidth,
+        width,
         height: containerRef.current.clientHeight || CHART_HEIGHT,
+        ...(wasNarrow !== isNarrowChartRef.current
+          ? { layout: { fontSize: isNarrowChartRef.current ? 9 : 10 } }
+          : null),
       });
       // Changing the chart's total height can silently reset/redistribute
       // per-pane heights set by the indicators effect (observed: volume's
@@ -3263,7 +3286,7 @@ export default function MarketReplayChart({
         background: { color: chartTheme.background },
         textColor: chartTheme.text,
         attributionLogo: false,
-        fontSize: 10,
+        fontSize: isNarrowChartRef.current ? 9 : 10,
       },
       grid: {
         vertLines: { color: chartTheme.grid },
@@ -4525,16 +4548,64 @@ export default function MarketReplayChart({
       handleFinishPathDrawing();
     };
 
+    // Touch devices dispatch TouchEvent, not MouseEvent, so mousedown/mousemove/mouseup
+    // never fire on tap/drag. Wrap the single active touch point into a minimal
+    // MouseEvent-shaped object (only the fields the handlers above read) and reuse the
+    // exact same logic, so tool drawing/dragging/resizing behaves identically to mouse.
+    const toMouseLikeEvent = (nativeEvent, touchPoint) => ({
+      target: nativeEvent.target,
+      clientX: touchPoint.clientX,
+      clientY: touchPoint.clientY,
+      preventDefault: () => nativeEvent.preventDefault(),
+      stopPropagation: () => nativeEvent.stopPropagation(),
+    });
+
+    const handleTouchStart = (event) => {
+      if (event.touches.length !== 1) return; // let native pinch-zoom/pan pass through untouched
+      isTouchInputRef.current = true;
+      handleMouseDown(toMouseLikeEvent(event, event.touches[0]));
+    };
+
+    const handleTouchMove = (event) => {
+      if (event.touches.length !== 1) return;
+      handleMouseMove(toMouseLikeEvent(event, event.touches[0]));
+    };
+
+    let lastTouchEndAt = 0;
+    const DOUBLE_TAP_MS = 350;
+
+    const handleTouchEnd = (event) => {
+      handleMouseUp();
+
+      const now = Date.now();
+      const isDoubleTap = now - lastTouchEndAt < DOUBLE_TAP_MS;
+      lastTouchEndAt = now;
+      if (isDoubleTap && MULTI_POINT_TOOL_TYPES.includes(toolRef.current)) {
+        lastTouchEndAt = 0;
+        handleDoubleClick(toMouseLikeEvent(event, event.changedTouches[0]));
+      }
+    };
+
     el.addEventListener('mousedown', handleMouseDown, true);
     el.addEventListener('dblclick', handleDoubleClick, true);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+
+    el.addEventListener('touchstart', handleTouchStart, { capture: true, passive: false });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
 
     return () => {
       el.removeEventListener('mousedown', handleMouseDown, true);
       el.removeEventListener('dblclick', handleDoubleClick, true);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+
+      el.removeEventListener('touchstart', handleTouchStart, { capture: true });
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
     };
   }, [appendDrawing, getChartCoordinates, getDefaultPositionStop, getToolSettingsForType, handleFinishPathDrawing, handleUpdateBacktestPositionRisk, hitTestBacktestOrder, hitTestDrawing, hitTestResizeHandle, saveDrawings, updateLocalBacktestPositionLine]);
 

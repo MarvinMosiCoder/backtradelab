@@ -223,7 +223,7 @@ function ToolGroupRailItem({ group, tool, toolSettings, handleToolChange, toggle
             onFocus={chevronTooltip.show}
             onBlur={chevronTooltip.hide}
             aria-label={`Choose ${group.name} tool`}
-            className={`pointer-events-auto flex h-9 w-2 items-center justify-center rounded-sm text-[#787b86] opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${
+            className={`pointer-events-auto flex h-9 w-3 items-center justify-center rounded-sm text-[#787b86] opacity-40 transition-opacity duration-150 hover:opacity-100 group-hover:opacity-100 ${
               isDarkTheme ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-100 hover:text-slate-900'
             }`}
           ><ChevronRight size={9}/></button>
