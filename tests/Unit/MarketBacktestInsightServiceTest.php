@@ -30,24 +30,24 @@ class MarketBacktestInsightServiceTest extends TestCase
 
     public function test_it_is_ineligible_below_the_minimum_trade_count(): void
     {
-        $positions = collect(range(1, 29))->map(fn () => $this->position(['realized_pnl' => 10]));
+        $positions = collect(range(1, 9))->map(fn () => $this->position(['realized_pnl' => 10]));
 
         $result = app(MarketBacktestInsightService::class)->build($positions);
 
         $this->assertFalse($result['eligible']);
-        $this->assertSame(30, $result['requiredTrades']);
-        $this->assertSame(29, $result['currentTrades']);
+        $this->assertSame(10, $result['requiredTrades']);
+        $this->assertSame(9, $result['currentTrades']);
         $this->assertSame([], $result['items']);
     }
 
     public function test_it_is_eligible_with_no_insights_when_no_heuristic_fires(): void
     {
-        $positions = collect(range(1, 30))->map(fn () => $this->position(['realized_pnl' => 0]));
+        $positions = collect(range(1, 10))->map(fn () => $this->position(['realized_pnl' => 0]));
 
         $result = app(MarketBacktestInsightService::class)->build($positions);
 
         $this->assertTrue($result['eligible']);
-        $this->assertSame(30, $result['currentTrades']);
+        $this->assertSame(10, $result['currentTrades']);
         $this->assertSame([], $result['items']);
     }
 

@@ -30,7 +30,7 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 
 ## Coaching insights
 
-`MarketBacktestInsightService::build(Collection $positions)` turns a set of closed positions into up to 3 rule-based coaching tips, ranked by a per-heuristic severity score. It requires at least 30 closed positions in the set it's given (`MarketBacktestInsightService::MIN_TOTAL_TRADES`) before returning anything besides `{eligible: false, currentTrades, requiredTrades: 30}` — below that, per-heuristic breakdowns (e.g. win rate on a single symbol) are too noisy to be worth surfacing.
+`MarketBacktestInsightService::build(Collection $positions)` turns a set of closed positions into up to 3 rule-based coaching tips, ranked by a per-heuristic severity score. It requires at least 10 closed positions in the set it's given (`MarketBacktestInsightService::MIN_TOTAL_TRADES`) before returning anything besides `{eligible: false, currentTrades, requiredTrades: 10}` — below that, per-heuristic breakdowns (e.g. win rate on a single symbol) are too noisy to be worth surfacing. At 10 trades, group-based heuristics (side/symbol/setup-tag win rate, each needing 5+ trades per group) can only realistically fire on a roughly even split, so early tips lean more on the risk-reward and holding-time heuristics, which don't need sub-grouping.
 
 Four heuristics run, each returning `null` if it doesn't clear its own significance bar so it's silently excluded rather than shown as a weak/noisy tip:
 
@@ -76,6 +76,6 @@ The closed-trades journal table supports client-side full-text search across sym
 - Journal save/reload and cross-user denial.
 - Search and combined filters, empty filtered results, page-size changes, and pagination boundaries.
 - Export request creates a `pending` row and returns immediately; a queue worker processing it flips it to `ready` (or `failed`) and produces a notification; the download route rejects other users' export IDs.
-- Insights: below/at/above the 30-trade threshold; each heuristic firing and not firing in isolation; more than 3 heuristics firing at once still caps at 3; `report()` and `report/insights` both reflect the same underlying data through the shared service.
+- Insights: below/at/above the 10-trade threshold; each heuristic firing and not firing in isolation; more than 3 heuristics firing at once still caps at 3; `report()` and `report/insights` both reflect the same underlying data through the shared service.
 
 Related: [Backtesting](backtesting-and-orders.md), [Testing](testing-guide.md).

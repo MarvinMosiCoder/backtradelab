@@ -8,7 +8,7 @@ use Illuminate\Support\Collection;
 
 class MarketBacktestInsightService
 {
-    public const MIN_TOTAL_TRADES = 30;
+    public const MIN_TOTAL_TRADES = 10;
 
     private const MIN_GROUP_TRADES = 5;
 
