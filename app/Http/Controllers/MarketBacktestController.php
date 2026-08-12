@@ -131,6 +131,99 @@ class MarketBacktestController extends Controller
         ]);
     }
 
+    public function orderHistory(Request $request)
+    {
+        $validated = $request->validate([
+            'session_id' => ['nullable', 'integer', 'min:1'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $account = $this->getOrCreateAccount($request);
+        $session = isset($validated['session_id'])
+            ? MarketBacktestSession::query()
+                ->where('id', $validated['session_id'])
+                ->where('market_backtest_account_id', $account->id)
+                ->first()
+            : $this->getActiveSession($request, $account);
+        $limit = $validated['limit'] ?? 50;
+
+        $trades = $account->trades()
+            ->with('position:id,order_type,leverage,stop_loss,take_profit')
+            ->when($session, fn ($query) => $query->where('market_backtest_session_id', $session->id))
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get();
+
+        $cancelledPositions = $account->positions()
+            ->where('status', 'cancelled')
+            ->when($session, fn ($query) => $query->where('market_backtest_session_id', $session->id))
+            ->orderByDesc('updated_at')
+            ->limit($limit)
+            ->get();
+
+        $tradeRows = $trades->map(function (MarketBacktestTrade $trade) {
+            $position = $trade->position;
+            $orderType = $position?->order_type ?? 'market';
+
+            return [
+                'id' => 'trade:' . $trade->id,
+                'symbol' => $trade->symbol,
+                'side' => $trade->side,
+                'action' => $trade->action,
+                'orderType' => $orderType,
+                'avgPrice' => (float) $trade->price,
+                'targetPrice' => $orderType === 'market' ? null : (float) $trade->price,
+                'quantity' => (float) $trade->quantity,
+                'filledQuantity' => (float) $trade->quantity,
+                'notional' => (float) $trade->notional,
+                'pnl' => $trade->pnl !== null ? (float) $trade->pnl : null,
+                'fee' => (float) $trade->fee,
+                'reduceOnly' => false,
+                'leverage' => $position ? $this->getPositionLeverage($position) : null,
+                'hasStopLoss' => $position?->stop_loss !== null,
+                'hasTakeProfit' => $position?->take_profit !== null,
+                'status' => 'complete',
+                'time' => $trade->executed_at_time,
+                'sortKey' => optional($trade->created_at)->timestamp ?? 0,
+            ];
+        });
+
+        $cancelledRows = $cancelledPositions->map(function (MarketBacktestPosition $position) {
+            return [
+                'id' => 'cancelled:' . $position->id,
+                'symbol' => $position->symbol,
+                'side' => $position->side,
+                'action' => 'open',
+                'orderType' => $position->order_type ?? 'limit',
+                'avgPrice' => null,
+                'targetPrice' => (float) $position->entry_price,
+                'quantity' => (float) $position->quantity,
+                'filledQuantity' => 0,
+                'notional' => null,
+                'pnl' => null,
+                'fee' => 0,
+                'reduceOnly' => false,
+                'leverage' => $this->getPositionLeverage($position),
+                'hasStopLoss' => $position->stop_loss !== null,
+                'hasTakeProfit' => $position->take_profit !== null,
+                'status' => 'cancelled',
+                'time' => $position->opened_at_time,
+                'sortKey' => optional($position->updated_at)->timestamp ?? 0,
+            ];
+        });
+
+        $orders = $tradeRows->concat($cancelledRows)
+            ->sortByDesc('sortKey')
+            ->values()
+            ->take($limit)
+            ->map(fn ($row) => collect($row)->except('sortKey')->all());
+
+        return response()->json([
+            'success' => true,
+            'orders' => $orders,
+        ]);
+    }
+
     public function report(Request $request)
     {
         $validated = $request->validate([
@@ -387,6 +480,7 @@ class MarketBacktestController extends Controller
                 'market_backtest_session_id' => $session?->id,
                 'symbol' => strtoupper($validated['symbol']),
                 'side' => $validated['side'],
+                'order_type' => $orderType,
                 'quantity' => $sizing['quantity'],
                 'entry_price' => $price,
                 'margin' => $sizing['margin'],

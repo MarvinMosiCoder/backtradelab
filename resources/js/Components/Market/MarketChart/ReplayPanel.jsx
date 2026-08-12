@@ -1394,6 +1394,107 @@ function getMaxMarginForCash(cashBalance, leverage, feeRate) {
   return cash / (1 + (leverageValue * feeRateValue));
 }
 
+function LeverageModal({
+  value,
+  min = 1,
+  max = 125,
+  availableCash,
+  currencyLabel,
+  isDark,
+  onConfirm,
+  onClose,
+}) {
+  const [draft, setDraft] = useState(() => {
+    const num = Number(value);
+    return Number.isFinite(num) && num >= min && num <= max ? Math.round(num) : min;
+  });
+
+  const clamp = (num) => Math.min(max, Math.max(min, Math.round(num)));
+  const ticks = Array.from({ length: 6 }, (_, i) => Math.round(min + ((max - min) * i) / 5));
+  const cashValue = Number(availableCash);
+  const maxPositionLabel = Number.isFinite(cashValue)
+    ? `${formatMoney(cashValue * draft, 0)} ${currencyLabel ?? 'USDT'}`
+    : '---';
+
+  const surfaceClass = isDark ? 'border-gray-700 bg-[#151617] text-white' : 'border-slate-200 bg-white text-slate-900';
+  const mutedClass = isDark ? 'text-gray-400' : 'text-slate-500';
+  const trackFillClass = isDark ? 'bg-gray-700' : 'bg-slate-200';
+  const stepperButtonClass = isDark
+    ? 'border-gray-700 bg-black-table-color text-white hover:bg-skin-black-light'
+    : 'border-slate-300 bg-white text-slate-900 hover:bg-slate-100';
+
+  return (
+    <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/40 px-3" data-chart-ui>
+      <section className={`w-full max-w-sm overflow-hidden rounded-lg border p-5 shadow-2xl ${surfaceClass}`} role="dialog" aria-modal="true" aria-label="Adjust leverage">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-base font-semibold">Adjust Leverage</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className={`flex h-8 w-8 items-center justify-center rounded transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+            aria-label="Close"
+          >
+            <X size={18} strokeWidth={1.6} />
+          </button>
+        </div>
+
+        <div className={`mb-5 flex items-center justify-between rounded-md border px-2 py-2 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-slate-200 bg-slate-50'}`}>
+          <button
+            type="button"
+            onClick={() => setDraft((current) => clamp(current - 1))}
+            disabled={draft <= min}
+            className={`flex h-9 w-9 items-center justify-center rounded border text-lg font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${stepperButtonClass}`}
+            aria-label="Decrease leverage"
+          >
+            −
+          </button>
+          <span className="text-xl font-bold">{draft}x</span>
+          <button
+            type="button"
+            onClick={() => setDraft((current) => clamp(current + 1))}
+            disabled={draft >= max}
+            className={`flex h-9 w-9 items-center justify-center rounded border text-lg font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${stepperButtonClass}`}
+            aria-label="Increase leverage"
+          >
+            +
+          </button>
+        </div>
+
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={1}
+          value={draft}
+          onChange={(event) => setDraft(clamp(Number(event.target.value)))}
+          className="mb-1.5 h-1.5 w-full cursor-pointer appearance-none rounded-full accent-amber-400"
+        />
+        <div className={`mb-5 flex items-center justify-between text-[10px] ${mutedClass}`}>
+          {ticks.map((tick) => (
+            <span key={tick}>{tick}x</span>
+          ))}
+        </div>
+
+        <ul className={`mb-5 list-disc space-y-1.5 pl-4 text-[11px] leading-relaxed ${mutedClass}`}>
+          <li>Maximum position at current leverage: {maxPositionLabel}.</li>
+          <li>Please note that leverage changing will also apply for open positions and open orders.</li>
+          <li>
+            Selecting higher leverage such as [{Math.max(max - 1, min)}x] increases your liquidation risk. Always manage your risk levels.
+          </li>
+        </ul>
+
+        <button
+          type="button"
+          onClick={() => onConfirm(draft)}
+          className="h-11 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white transition hover:bg-[#1f52e0]"
+        >
+          Confirm
+        </button>
+      </section>
+    </div>
+  );
+}
+
 export default function ReplayPanel({
   replayMode,
   replayAccessStatus = 'idle',
@@ -1469,6 +1570,7 @@ export default function ReplayPanel({
   const [presetNameDraft, setPresetNameDraft] = useState('');
   const [orderType, setOrderType] = useState('market');
   const [orderSide, setOrderSide] = useState('long');
+  const [showLeverageModal, setShowLeverageModal] = useState(false);
   const [orderNotional, setOrderNotional] = useState('1000');
   const [orderLeverage, setOrderLeverage] = useState('1');
   const [orderEntryPrice, setOrderEntryPrice] = useState('');
@@ -1652,6 +1754,12 @@ export default function ReplayPanel({
     }
   };
   const backtestMetrics = getBacktestMetrics(backtestAccount, symbol, executionPrice);
+  const handleMarginPercentClick = (pct) => {
+    const displayAmount = quoteToDisplayAmount(backtestMetrics.cashBalance * pct, displayCurrency, normalizedPhpRate);
+    if (displayAmount != null) {
+      setOrderNotional(String(Number(Math.max(displayAmount, 0).toFixed(2))));
+    }
+  };
   const currentExecutionPrice = getPositiveNumber(executionPrice);
   const customEntryPrice = getPositiveNumber(orderEntryPrice);
   const canTrade = currentExecutionPrice != null && !isBacktestLoading;
@@ -2265,34 +2373,29 @@ export default function ReplayPanel({
 
             <div className={`space-y-2 border-t pt-3 ${sectionBorderClass}`}>
               <div className={`text-xs font-semibold uppercase tracking-wide ${labelTextClass}`}>Enter Position</div>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setOrderType('market')}
-                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(orderType === 'market')}`}
-                >
-                  Market
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOrderType('limit')}
-                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(orderType === 'limit')}`}
-                >
-                  Limit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOrderType('trigger')}
-                  className={`h-8 rounded-md text-xs font-semibold ${neutralToggleClass(orderType === 'trigger')}`}
-                >
-                  Trigger
-                </button>
+              <div className={`flex items-center gap-4 border-b ${sectionBorderClass}`}>
+                {[['market', 'Market'], ['limit', 'Limit'], ['trigger', 'Trigger']].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setOrderType(value)}
+                    className={`relative -mb-px h-8 border-b-2 text-xs font-semibold transition-colors ${
+                      orderType === value
+                        ? `border-[#2962ff] ${valueTextClass}`
+                        : isDarkTheme
+                          ? `border-transparent ${mutedTextClass} hover:text-gray-300`
+                          : `border-transparent ${mutedTextClass} hover:text-slate-700`
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setOrderSide('long')}
-                  className={`h-8 rounded-md text-xs font-semibold ${
+                  className={`h-10 rounded-md text-sm font-bold transition-colors ${
                     orderSide === 'long' ? 'bg-emerald-600 text-white' : neutralToggleClass(false)
                   }`}
                 >
@@ -2301,14 +2404,14 @@ export default function ReplayPanel({
                 <button
                   type="button"
                   onClick={() => setOrderSide('short')}
-                  className={`h-8 rounded-md text-xs font-semibold ${
+                  className={`h-10 rounded-md text-sm font-bold transition-colors ${
                     orderSide === 'short' ? 'bg-red-600 text-white' : neutralToggleClass(false)
                   }`}
                 >
                   Short
                 </button>
               </div>
-              <div className="grid grid-cols-[minmax(0,1fr)_72px_auto] gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <input
                   value={orderNotional}
                   onChange={(event) => setOrderNotional(event.target.value)}
@@ -2316,25 +2419,28 @@ export default function ReplayPanel({
                   className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${fieldClass}`}
                   placeholder={`${displayCurrency} margin`}
                 />
-                <input
-                  value={orderLeverage}
-                  onChange={(event) => setOrderLeverage(event.target.value)}
-                  inputMode="decimal"
-                  className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${
+                <button
+                  type="button"
+                  onClick={() => setShowLeverageModal(true)}
+                  className={`h-8 min-w-0 rounded border px-2 text-left text-xs font-semibold outline-none ${
                     isLeverageValid ? fieldClass : invalidFieldClass
                   }`}
-                  placeholder="Lev"
                   title="Leverage, 1x to 125x"
-                />
-                <ControlButton
-                  icon={orderSide === 'long' ? TrendingUp : TrendingDown}
-                  onClick={submitBacktestOrder}
-                  disabled={!canSubmitOrder}
-                  variant={orderSide === 'long' ? 'success' : 'danger'}
-                  chartTheme={chartTheme}
                 >
-                  {isPendingOrder ? 'Place' : 'Enter'}
-                </ControlButton>
+                  {isLeverageValid ? formatLeverage(leverageValue) : (orderLeverage || 'Lev')}
+                </button>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[0.25, 0.5, 0.75, 1].map((pct) => (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => handleMarginPercentClick(pct)}
+                    className={`h-6 rounded text-[10px] font-semibold ${neutralToggleClass(false)}`}
+                  >
+                    {pct * 100}%
+                  </button>
+                ))}
               </div>
               <div className={`grid grid-cols-3 gap-2 text-[11px] ${labelTextClass}`}>
                 <span>Margin {orderPlan?.margin ? formatAccountMoney(orderPlan.margin) : '---'}</span>
@@ -2410,6 +2516,16 @@ export default function ReplayPanel({
                   Est loss {orderPlan?.estimatedLoss != null ? formatAccountMoney(orderPlan.estimatedLoss) : '---'}
                 </span>
               </div>
+              <button
+                type="button"
+                onClick={submitBacktestOrder}
+                disabled={!canSubmitOrder}
+                className={`h-11 w-full rounded-md text-sm font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  orderSide === 'long' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'
+                }`}
+              >
+                {isPendingOrder ? `Place ${orderSide === 'long' ? 'Long' : 'Short'} Order` : `Open ${orderSide === 'long' ? 'Long' : 'Short'}`}
+              </button>
               {showOrderDraft && (
                 <ControlButton icon={X} onClick={removeOrderDraft} variant="danger" className="w-full" chartTheme={chartTheme}>
                   Remove Entry / SL / TP Plan
@@ -2505,6 +2621,23 @@ export default function ReplayPanel({
           </Flyout>
         </div>
         </>
+      )}
+
+      {showLeverageModal && typeof document !== 'undefined' && createPortal(
+        <LeverageModal
+          value={orderLeverage}
+          min={1}
+          max={125}
+          availableCash={quoteToDisplayAmount(backtestMetrics.cashBalance, displayCurrency, normalizedPhpRate)}
+          currencyLabel={displayCurrency}
+          isDark={isDarkTheme}
+          onClose={() => setShowLeverageModal(false)}
+          onConfirm={(nextLeverage) => {
+            setOrderLeverage(String(nextLeverage));
+            setShowLeverageModal(false);
+          }}
+        />,
+        document.body
       )}
 
       {activeGroup === 'tool-editor' && hasToolEditor && (

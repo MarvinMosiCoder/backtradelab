@@ -15,6 +15,7 @@ The workspace chart renders candlesticks and volume with Lightweight Charts, ind
 | `ReplayPanel.jsx` | Drawing, replay, and order rail |
 | `ChartStage.jsx` | Chart container and SVG overlays |
 | `IndicatorSettingsPanel.jsx` | Indicator configuration |
+| `PositionsPanel.jsx` | Positions/Open Orders table below the chart (non-fullscreen only) — see [Backtesting and orders](backtesting-and-orders.md) |
 | `constants.js`, `utils.js` | Shared chart values and transformations |
 
 ## Flow
@@ -96,6 +97,8 @@ All three share one reset-and-reassign effect (the effect keyed on `indicators`,
 The pane separator line (`layout.panes.separatorColor` in the chart-creation options) and the `IndicatorClickTargets` pane-label pills (Volume/RSI/MACD, `buttonClass` in `IndicatorSettingsPanel.jsx`) are deliberately subtle — low-alpha `rgba()` for the separator (not `chartTheme.border` directly, which read as too solid/bright against the pane background) and a partially-transparent background with no drop shadow for the labels, tuned down from an original ~90% opacity in two rounds based on live visual feedback (first too solid, then too faint, settled at a middle value). If tuning either further, check both dark and light theme variants — the separator color branches on `chartTheme.mode`.
 
 Toggling any indicator off calls `moveToPane(0)` on it (a no-op pane visually, since it's also set `visible: false`) and closes the gap for the ones below it, since the counter just skips hidden indicators rather than leaving empty slots. `INDICATOR_META.volume` in `IndicatorSettingsPanel.jsx` only has a `sizeKey` (`volumeSize`) — no `periodKey`/`colorKey`/`widthKey` — since volume has no configurable period or line color, just Pane size / Show-Hide / Remove.
+
+**Scrolling an indicator pane's own price axis zooms that pane's own value range**, independent of the main chart. `handlePriceScaleWheel` (`MarketChart.jsx`, mount effect) used to always operate on pane 0 / `candleSeriesRef` regardless of which pane's y-coordinate the cursor was actually over; it now walks the live `chart.panes()` heights to find which pane the cursor's y falls in, then uses `findSeriesForPane(paneIndex)` (matches `paneIndex` against `candleSeriesRef`/`volumeSeriesRef`/`rsiSeriesRef`/`macdSeriesRef`/etc. via each series' own `series.getPane().paneIndex()` — not the volume→RSI→MACD ordering convention documented above, so it stays correct even if that ordering ever changes) to get the right series for `coordinateToPrice`. The zoom math itself (anchor-price-under-cursor, `zoomFactor` 0.85/1.15, `setVisibleRange`) is unchanged, just scoped to `chart.priceScale('right', paneIndex)` and the cursor's y relative to that pane's own top (`paneLocalY = y - paneTop`) instead of the whole container. Pane height itself is unaffected by scrolling — resizing a pane's pixel height is still drag-the-separator only (`layout.panes.enableResize`).
 
 ## Candle fetch rate limiting
 

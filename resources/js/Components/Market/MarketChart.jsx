@@ -18,6 +18,7 @@ import ChartHeader from './MarketChart/ChartHeader';
 import ChartSettingsModal from './MarketChart/ChartSettingsModal';
 import ChartStage from './MarketChart/ChartStage';
 import ReplayPanel from './MarketChart/ReplayPanel';
+import PositionsPanel from './MarketChart/PositionsPanel';
 import SubscriptionModal from './MarketChart/SubscriptionModal';
 import IndicatorSettingsPanel, { IndicatorClickTargets } from './MarketChart/IndicatorSettingsPanel';
 import { createLiveCandleStream } from './MarketChart/liveCandleStream';
@@ -1045,6 +1046,7 @@ export default function MarketReplayChart({
   const [tempDrawing, setTempDrawing] = useState(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState(null);
   const [hoveredPositionDrawingId, setHoveredPositionDrawingId] = useState(null);
+  const [isHoveringBacktestOrderCancel, setIsHoveringBacktestOrderCancel] = useState(false);
   const [toolSettings, setToolSettings] = useState({});
   const [backtestAccount, setBacktestAccount] = useState(null);
   const [isBacktestLoading, setIsBacktestLoading] = useState(false);
@@ -2416,13 +2418,20 @@ export default function MarketReplayChart({
 
       const kindLabel = kind === 'entry' ? (position.status === 'pending' ? 'ENTRY' : 'OPEN') : kind.toUpperCase();
       const sideLabel = position.side === 'short' ? 'SHORT' : 'LONG';
-      const positionPnl = kind === 'sl' || kind === 'tp'
-        ? estimatePositionNetPnl(position, value, backtestAccount?.feeRate)
-        : null;
-      const formattedPositionPnl = formatOverlayPnl(positionPnl);
-      const pnlLabel = formattedPositionPnl
-        ? `  PnL ${positionPnl >= 0 ? '+' : '-'}${formattedPositionPnl} ${backtestAccount?.quoteCurrency ?? 'USDT'}`
-        : '';
+
+      let pnlText = null;
+      let pnlPositive = null;
+      if (options.pnlText !== undefined) {
+        pnlText = options.pnlText;
+        pnlPositive = options.pnlPositive ?? null;
+      } else if (kind === 'sl' || kind === 'tp') {
+        const positionPnl = estimatePositionNetPnl(position, value, backtestAccount?.feeRate);
+        const formattedPositionPnl = formatOverlayPnl(positionPnl);
+        if (formattedPositionPnl) {
+          pnlPositive = positionPnl >= 0;
+          pnlText = `${pnlPositive ? '+' : '-'}${formattedPositionPnl}`;
+        }
+      }
 
       return {
         id: options.id ?? `${position.status}:${position.id}:${kind}`,
@@ -2436,7 +2445,9 @@ export default function MarketReplayChart({
         color: options.color ?? (kind === 'tp' ? '#22c55e' : kind === 'sl' ? '#ef4444' : '#f59e0b'),
         isDraft: Boolean(options.isDraft),
         canCancel: Boolean(options.canCancel),
-        label: options.label ?? `${sideLabel} ${kindLabel} ${formatOverlayPrice(value)}${pnlLabel}`,
+        label: options.label ?? `${sideLabel} ${kindLabel} ${formatOverlayPrice(value)}`,
+        pnlText,
+        pnlPositive,
       };
     };
     const draftEntryPrice = getPositiveNumber(
@@ -2460,7 +2471,6 @@ export default function MarketReplayChart({
     );
     const draftProfit = formatOverlayPnl(backtestOrderDraft?.estimatedProfit);
     const draftLoss = formatOverlayPnl(backtestOrderDraft?.estimatedLoss);
-    const draftQuoteCurrency = backtestOrderDraft?.quoteCurrency ?? 'USDT';
 
     return [
       ...(backtestOrderDraft?.visible
@@ -2494,7 +2504,9 @@ export default function MarketReplayChart({
                 id: 'draft:sl',
                 isDraft: true,
                 dashed: true,
-                label: `SL ${formatOverlayPrice(draftStopLoss)}${draftLoss ? `  PnL -${draftLoss} ${draftQuoteCurrency}` : ''}`,
+                label: `SL ${formatOverlayPrice(draftStopLoss)}`,
+                pnlText: draftLoss ? `-${draftLoss}` : null,
+                pnlPositive: draftLoss ? false : null,
               }
             ),
             buildLine(
@@ -2509,7 +2521,9 @@ export default function MarketReplayChart({
                 id: 'draft:tp',
                 isDraft: true,
                 dashed: true,
-                label: `TP ${formatOverlayPrice(draftTakeProfit)}${draftProfit ? `  PnL +${draftProfit} ${draftQuoteCurrency}` : ''}`,
+                label: `TP ${formatOverlayPrice(draftTakeProfit)}`,
+                pnlText: draftProfit ? `+${draftProfit}` : null,
+                pnlPositive: draftProfit ? true : null,
               }
             ),
           ]
@@ -3127,12 +3141,35 @@ export default function MarketReplayChart({
 
     resizeObserverRef.current.observe(containerRef.current);
 
-    const getCurrentPriceRange = () => {
-      const chart = chartRef.current;
-      const series = candleSeriesRef.current;
-      if (!series || !containerRef.current) return null;
+    const findSeriesForPane = (paneIndex) => {
+      const candidates = [
+        candleSeriesRef.current,
+        volumeSeriesRef.current,
+        rsiSeriesRef.current,
+        macdSeriesRef.current,
+        macdSignalSeriesRef.current,
+        macdHistogramSeriesRef.current,
+        smaSeriesRef.current,
+        emaSeriesRef.current,
+      ];
 
-      const visibleRange = chart?.priceScale('right').getVisibleRange();
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        try {
+          if (candidate.getPane?.()?.paneIndex?.() === paneIndex) return candidate;
+        } catch {
+          // series may already be disposed
+        }
+      }
+
+      return null;
+    };
+
+    const getCurrentPriceRange = (paneIndex, series, paneHeight) => {
+      const chart = chartRef.current;
+      if (!series) return null;
+
+      const visibleRange = chart?.priceScale('right', paneIndex)?.getVisibleRange();
       if (
         visibleRange &&
         Number.isFinite(Number(visibleRange.from)) &&
@@ -3145,9 +3182,8 @@ export default function MarketReplayChart({
         };
       }
 
-      const chartHeight = containerRef.current.clientHeight || CHART_HEIGHT;
       const topPrice = series.coordinateToPrice(0);
-      const bottomPrice = series.coordinateToPrice(chartHeight);
+      const bottomPrice = series.coordinateToPrice(paneHeight);
 
       if (
         topPrice != null &&
@@ -3161,6 +3197,8 @@ export default function MarketReplayChart({
           to: Math.max(Number(topPrice), Number(bottomPrice)),
         };
       }
+
+      if (paneIndex !== 0) return null;
 
       const prices = visibleCandlesRef.current.flatMap((candle) => [candle.high, candle.low]);
       if (!prices.length) return null;
@@ -3177,9 +3215,11 @@ export default function MarketReplayChart({
 
     const handlePriceScaleWheel = (event) => {
       const chart = chartRef.current;
-      const series = candleSeriesRef.current;
       const el = containerRef.current;
-      if (!chart || !series || !el || event.deltaY === 0) return;
+      if (!chart || !el || event.deltaY === 0) return;
+
+      const panes = chart.panes?.() ?? [];
+      if (!panes.length) return;
 
       const priceScaleWidth = chart.priceScale('right').width();
       if (!priceScaleWidth) return;
@@ -3191,13 +3231,31 @@ export default function MarketReplayChart({
 
       if (!isOnRightPriceScale || y < 0 || y > rect.height) return;
 
-      const range = getCurrentPriceRange();
+      let paneTop = 0;
+      let paneIndex = null;
+      let paneHeight = 0;
+      for (let i = 0; i < panes.length; i += 1) {
+        const height = Number(panes[i]?.getHeight?.()) || 0;
+        if (y >= paneTop && y < paneTop + height) {
+          paneIndex = i;
+          paneHeight = height;
+          break;
+        }
+        paneTop += height;
+      }
+      if (paneIndex == null) return;
+
+      const series = findSeriesForPane(paneIndex);
+      if (!series) return;
+
+      const range = getCurrentPriceRange(paneIndex, series, paneHeight);
       if (!range) return;
 
       const span = range.to - range.from;
       if (!Number.isFinite(span) || span <= 0) return;
 
-      const cursorPrice = series.coordinateToPrice(y);
+      const paneLocalY = y - paneTop;
+      const cursorPrice = series.coordinateToPrice(paneLocalY);
       const anchorPrice =
         cursorPrice != null && Number.isFinite(Number(cursorPrice))
           ? Number(cursorPrice)
@@ -3209,7 +3267,7 @@ export default function MarketReplayChart({
       event.preventDefault();
       event.stopImmediatePropagation();
 
-      chart.priceScale('right').setVisibleRange({
+      chart.priceScale('right', paneIndex).setVisibleRange({
         from: anchorPrice - nextSpan * anchorRatio,
         to: anchorPrice + nextSpan * (1 - anchorRatio),
       });
@@ -4298,6 +4356,9 @@ export default function MarketReplayChart({
         ? drawingsRef.current.find((drawing) => drawing.id === hoveredDrawingId)
         : null;
       setHoveredPositionDrawingId(isPositionDrawing(hoveredDrawing) ? hoveredDrawingId : null);
+
+      const backtestOrderHoverHit = isInsideChart ? hitTestBacktestOrder(x, y) : null;
+      setIsHoveringBacktestOrderCancel(backtestOrderHoverHit?.action === 'cancel');
 
       if (isSpacePressedRef.current || !isInsideChart) return;
 
@@ -6208,6 +6269,7 @@ export default function MarketReplayChart({
             currentPriceCoordinate={currentPriceCoordinate}
             isSpacePressed={isSpacePressed}
             isReplayPricePickActive={isReplayPricePickActive}
+            isHoveringBacktestOrderCancel={isHoveringBacktestOrderCancel}
             tool={tool}
             chartTheme={chartTheme}
             overlaySize={overlaySize}
@@ -6471,6 +6533,17 @@ export default function MarketReplayChart({
           />
         </div>
       </div>
+
+      {!isFullscreen && (
+        <PositionsPanel
+          backtestAccount={backtestAccount}
+          symbol={symbol}
+          executionPrice={executionPrice}
+          chartTheme={chartTheme}
+          onClosePosition={handleCloseBacktestPosition}
+          onCancelOrder={handleCancelBacktestPosition}
+        />
+      )}
     </div>
     </>
   );

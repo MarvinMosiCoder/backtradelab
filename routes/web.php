@@ -174,6 +174,7 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::put('/market-replay-progress', [MarketReplayProgressController::class, 'update'])->middleware('replay.access')->name('market-replay-progress.update');
     Route::get('/market-backtest/account', [MarketBacktestController::class, 'show'])->middleware(['replay.access', 'throttle:backtest-read'])->name('market-backtest.show');
     Route::get('/market-backtest/report', [MarketBacktestController::class, 'report'])->middleware('throttle:backtest-read')->name('market-backtest.report');
+    Route::get('/market-backtest/order-history', [MarketBacktestController::class, 'orderHistory'])->middleware('throttle:backtest-read')->name('market-backtest.order-history');
     Route::post('/market-backtest/report/export', [MarketBacktestController::class, 'requestReportExport'])->middleware('throttle:backtest-heavy')->name('market-backtest.report.export');
     Route::get('/market-backtest/report/export/{export}/download', [MarketBacktestController::class, 'downloadReportExport'])->middleware('throttle:backtest-read')->name('market-backtest.report.export.download');
     Route::post('/market-backtest/reset', [MarketBacktestController::class, 'reset'])->middleware(['replay.access', 'throttle:backtest-heavy'])->name('market-backtest.reset');

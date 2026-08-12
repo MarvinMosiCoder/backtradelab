@@ -565,7 +565,8 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
   const badgeFill = isDark ? 'rgba(21, 22, 23, 0.96)' : 'rgba(255, 255, 255, 0.96)';
   const textFill = isDark ? '#f8fafc' : '#0f172a';
   const priceScaleGap = 96;
-  const x2 = Math.max(overlaySize.width - priceScaleGap, 0);
+  const x2 = overlaySize.width;
+  const badgeHeight = 22;
 
   return (
     <svg
@@ -575,11 +576,23 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
       style={{ width: '100%', height: `${overlaySize.height}px` }}
     >
       {renderedBacktestOrders.map((item) => {
+        const badgeY = Math.min(Math.max(item.y - badgeHeight / 2, 4), Math.max(overlaySize.height - badgeHeight - 2, 4));
+        const groupRightEdge = item.canCancel
+          ? Math.max(overlaySize.width - priceScaleGap - 34, 8)
+          : Math.max(overlaySize.width - priceScaleGap - 8, 8);
+
+        const hasPnl = Boolean(item.pnlText);
+        const pnlWidth = hasPnl
+          ? Math.min(Math.max(item.pnlText.length * 6.4 + 16, 56), 120)
+          : 0;
+        const pnlX = hasPnl ? Math.max(groupRightEdge - pnlWidth, 8) : groupRightEdge;
+        const pnlTextColor = item.pnlPositive === false ? '#ef4444' : item.pnlPositive === true ? '#22c55e' : textFill;
+
+        const priceGroupRight = hasPnl ? Math.max(pnlX - 4, 8) : groupRightEdge;
         const estimatedTextWidth = item.label.length * 6.4;
-        const maxBadgeWidth = Math.max(40, Math.min(300, overlaySize.width - priceScaleGap - 16));
+        const maxBadgeWidth = Math.max(40, priceGroupRight - 8);
         const badgeWidth = Math.min(Math.max(estimatedTextWidth + 22, 82), maxBadgeWidth);
-        const badgeX = Math.max(8, overlaySize.width - priceScaleGap - badgeWidth - 8);
-        const badgeY = Math.min(Math.max(item.y - 11, 4), Math.max(overlaySize.height - 24, 4));
+        const badgeX = Math.max(8, priceGroupRight - badgeWidth);
         const availableTextWidth = Math.max(badgeWidth - 16, 1);
         const shouldCompressText = estimatedTextWidth > availableTextWidth;
 
@@ -591,7 +604,7 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
               x2={x2}
               y2={item.y}
               stroke={item.color}
-              strokeWidth={1}
+              strokeWidth={0.5}
               strokeDasharray={item.dashed ? '7,5' : undefined}
               opacity="0.95"
             />
@@ -599,17 +612,17 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
               x={badgeX}
               y={badgeY}
               width={badgeWidth}
-              height={22}
+              height={badgeHeight}
               rx={2}
-              fill={badgeFill}
+              fill={item.color}
               stroke={item.color}
               strokeWidth="1"
             />
             <text
               x={badgeX + badgeWidth - 8}
-              y={badgeY + 15}
+              y={badgeY + badgeHeight / 2 + 4}
               textAnchor="end"
-              fill={textFill}
+              fill="#ffffff"
               fontSize="11"
               fontWeight="700"
               textLength={shouldCompressText ? availableTextWidth : undefined}
@@ -617,6 +630,30 @@ function BacktestOrderOverlay({ renderedBacktestOrders = [], overlaySize, chartT
             >
               {item.label}
             </text>
+            {hasPnl && (
+              <>
+                <rect
+                  x={pnlX}
+                  y={badgeY}
+                  width={pnlWidth}
+                  height={badgeHeight}
+                  rx={2}
+                  fill={badgeFill}
+                  stroke={item.color}
+                  strokeWidth="1"
+                />
+                <text
+                  x={pnlX + pnlWidth - 8}
+                  y={badgeY + badgeHeight / 2 + 4}
+                  textAnchor="end"
+                  fill={pnlTextColor}
+                  fontSize="11"
+                  fontWeight="700"
+                >
+                  {item.pnlText}
+                </text>
+              </>
+            )}
             <rect
               x={Math.max(overlaySize.width - 14, 4)}
               y={item.y - 5}
@@ -1552,6 +1589,7 @@ export default function ChartStage({
   currentPriceCoordinate,
   isSpacePressed,
   isReplayPricePickActive,
+  isHoveringBacktestOrderCancel,
   tool,
   chartTheme,
   overlaySize,
@@ -1618,6 +1656,8 @@ export default function ChartStage({
           ? 'grabbing'
           : isSpacePressed
             ? 'grab'
+          : isHoveringBacktestOrderCancel
+            ? 'pointer'
           : tool || isReplayPricePickActive
             ? 'crosshair'
             : 'default',

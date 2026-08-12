@@ -11,6 +11,7 @@ class MarketBacktestPosition extends Model
         'market_backtest_session_id',
         'symbol',
         'side',
+        'order_type',
         'quantity',
         'entry_price',
         'margin',
