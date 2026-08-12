@@ -9,6 +9,7 @@ use App\Models\MarketBacktestPosition;
 use App\Models\MarketBacktestSession;
 use App\Models\MarketBacktestSnapshot;
 use App\Models\MarketBacktestTrade;
+use App\Services\MarketBacktestInsightService;
 use App\Services\MarketBacktestReportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -20,8 +21,10 @@ class MarketBacktestController extends Controller
     private const DEFAULT_BALANCE = 10000;
     private const FEE_RATE = 0.0004;
 
-    public function __construct(private MarketBacktestReportService $reportService)
-    {
+    public function __construct(
+        private MarketBacktestReportService $reportService,
+        private MarketBacktestInsightService $insightService
+    ) {
     }
 
     public function show(Request $request)
@@ -272,7 +275,19 @@ class MarketBacktestController extends Controller
                 'largestWin' => $wins->count() ? round($wins->max(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8) : 0,
                 'largestLoss' => $losses->count() ? round($losses->min(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8) : 0,
             ],
+            'insights' => $this->insightService->build($positions),
             'trades' => $positions->map(fn (MarketBacktestPosition $position) => $this->reportService->serializeReportPosition($position))->values(),
+        ]);
+    }
+
+    public function reportInsightsSummary(Request $request)
+    {
+        $account = $this->getOrCreateAccount($request);
+        $positions = $this->reportService->getReportPositions($account, null, null, 300);
+
+        return response()->json([
+            'success' => true,
+            'insights' => $this->insightService->build($positions),
         ]);
     }
 

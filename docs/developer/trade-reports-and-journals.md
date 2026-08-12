@@ -13,10 +13,12 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 | `TradeReportPage.jsx` | Report page |
 | `TradeReport.jsx` | Summaries, table, export trigger, journal UI |
 | `TradeCalendar.jsx` | Daily result visualization |
-| `MarketBacktestController.php` | Queries, ownership, export request/download, journal update |
+| `MarketBacktestController.php` | Queries, ownership, export request/download, journal update, insights |
 | `MarketBacktestReportService.php` | Shared closed-position query + row serialization, used by the controller and the export job |
+| `MarketBacktestInsightService.php` | Rule-based coaching tips computed from closed positions, shared by the report page and the dashboard widget |
 | `GenerateBacktestReportExport` (job) | Builds the CSV/JSON file and notifies the user |
 | `MarketBacktestExport` (model) | Tracks one export request's lifecycle (`pending`→`processing`→`ready`/`failed`) |
+| `TradeInsightsWidget.jsx` | Compact single-tip teaser rendered on the trader dashboard workspace, links to the full report |
 
 ## Flow
 
@@ -25,6 +27,21 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 3. Response data feeds summary cards, calendar aggregation, and rows.
 4. Journal edits update setup/freeform tags, reason, mistake, emotion, and notes on the owned closed position.
 5. Snapshot links use authorized routes/storage rather than exposing private paths.
+
+## Coaching insights
+
+`MarketBacktestInsightService::build(Collection $positions)` turns a set of closed positions into up to 3 rule-based coaching tips, ranked by a per-heuristic severity score. It requires at least 30 closed positions in the set it's given (`MarketBacktestInsightService::MIN_TOTAL_TRADES`) before returning anything besides `{eligible: false, currentTrades, requiredTrades: 30}` — below that, per-heuristic breakdowns (e.g. win rate on a single symbol) are too noisy to be worth surfacing.
+
+Four heuristics run, each returning `null` if it doesn't clear its own significance bar so it's silently excluded rather than shown as a weak/noisy tip:
+
+- **Risk-reward imbalance** — average loss vs average win, fires when one exceeds the other by ≥30%.
+- **Win rate by side / symbol** — groups closed positions by `side` and separately by `symbol` (min 5 trades/group), surfaces the single group whose win rate deviates ≥15 points from the overall rate.
+- **Holding-time pattern** — compares average hold duration (`closed_at_time - opened_at_time`) of wins vs losses; fires at a ≥1.5x ratio either direction ("cutting winners early" or "holding winners too long").
+- **Setup-tag win rate** — same grouping logic as side/symbol, but keyed on `setup_tag` normalized (trimmed, lowercased); blank tags are excluded from grouping. This one is inherently best-effort since `setup_tag` is freeform text a user may or may not tag consistently, not a fixed category.
+
+`MarketBacktestController::report()` passes its already-loaded, filter-scoped `$positions` collection into the insight service and returns the result under an `insights` key — no extra query, and insights respect whatever `symbol`/`session_id` filters were passed to `report()`. **The Trade Report page's own symbol/side/result/journal-status/search filters are applied entirely client-side in `TradeReport.jsx`** (see Maintenance below) and are never sent to `report()`, so in practice today's UI only ever requests the account-wide set — the server-side `symbol`/`session_id` scoping exists and is exercised by tests, but isn't reachable from the current UI. Wire an actual filter control to those params if per-symbol/per-session insights are wanted later.
+
+`GET /market-backtest/report/insights` (`MarketBacktestController::reportInsightsSummary`) is a second, lightweight entry point used only by the dashboard's `TradeInsightsWidget.jsx`: it queries the account's 300 most recent closed positions (unfiltered) via the same `MarketBacktestReportService::getReportPositions()` and returns just `{insights}`, not the full trade list, since the widget only ever renders the single highest-severity tip (`insights.items[0]`) as a dismissible one-line teaser above `WatchlistPanel` in the trading workspace, linking to `/trade-report` for the rest. Both entry points share one `MarketBacktestInsightService` instance so heuristic logic is never duplicated between the two surfaces.
 
 ## Export (queued)
 
@@ -47,6 +64,8 @@ The closed-trades journal table supports client-side full-text search across sym
 - Keep server and client exports consistent.
 - Define whether a statistic groups by entry or close time; current reporting is close-oriented.
 - Validate journal lengths/types and sanitize any rendered rich text.
+- `TradeReport.jsx` fetches all (up to 500) closed positions once per `refreshKey` change and does symbol/side/result/journal-status/search filtering entirely client-side over that fetched set (`filteredTrades`) — it does not send `symbol`/`session_id` to `report()`, even though the endpoint supports both. Keep this in mind before assuming a UI filter narrows what the server (or the insight service) sees.
+- Add a new coaching heuristic in `MarketBacktestInsightService` as another private `...Insight()` method returning `?array{type,tone,severity,title,message}` (or reusing `groupWinRateInsight()` for another grouping key), then add it to the `collect([...])` list in `build()`. Keep the per-heuristic significance thresholds (min group size, min deviation) — an insight that fires on noise erodes trust in the whole feature faster than one that stays silent.
 
 ## Verification
 
@@ -57,5 +76,6 @@ The closed-trades journal table supports client-side full-text search across sym
 - Journal save/reload and cross-user denial.
 - Search and combined filters, empty filtered results, page-size changes, and pagination boundaries.
 - Export request creates a `pending` row and returns immediately; a queue worker processing it flips it to `ready` (or `failed`) and produces a notification; the download route rejects other users' export IDs.
+- Insights: below/at/above the 30-trade threshold; each heuristic firing and not firing in isolation; more than 3 heuristics firing at once still caps at 3; `report()` and `report/insights` both reflect the same underlying data through the shared service.
 
 Related: [Backtesting](backtesting-and-orders.md), [Testing](testing-guide.md).

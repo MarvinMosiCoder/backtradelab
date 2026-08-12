@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Head, Link, usePage } from "@inertiajs/react";
 import MarketChart from "../../Components/Market/MarketChart";
+import TradeInsightsWidget from "../../Components/Market/TradeInsightsWidget";
 import WatchlistPanel from "../../Components/Market/WatchlistPanel";
 import { useTheme } from "../../Context/ThemeContext";
 import { WatchlistProvider, watchlistMarketKey } from "../../Context/WatchlistContext";
@@ -72,6 +73,7 @@ const Dashboard = ({ userMetrics = {}, subscriptionMetrics = {}, feedbackMetrics
                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Market data connected
                             </div>
                         </div>
+                        <TradeInsightsWidget />
                         <WatchlistPanel activeSymbolKey={activeSymbolKey} onSelectSymbol={(market) => setActiveSymbol(market)} />
                         <div className={`overflow-hidden rounded-lg border p-2 shadow-2xl shadow-black/20 sm:p-3 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
                             <MarketChart

@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Lightbulb,
   Pencil,
   RefreshCcw,
   Save,
@@ -139,6 +140,30 @@ function StatCard({ label, value, tone = 'neutral', icon: Icon, isDark }) {
   );
 }
 
+function InsightCard({ insight, isDark }) {
+  const toneClass =
+    insight.tone === 'positive'
+      ? 'border-emerald-500/30 bg-emerald-500/10'
+      : insight.tone === 'warning'
+        ? 'border-amber-500/30 bg-amber-500/10'
+        : isDark
+          ? 'border-gray-700 bg-black-table-color'
+          : 'border-slate-200 bg-slate-50';
+  const titleClass =
+    insight.tone === 'positive'
+      ? isDark ? 'text-emerald-300' : 'text-emerald-700'
+      : insight.tone === 'warning'
+        ? isDark ? 'text-amber-300' : 'text-amber-700'
+        : isDark ? 'text-white' : 'text-slate-900';
+
+  return (
+    <div className={`rounded-md border p-3 ${toneClass}`}>
+      <div className={`mb-1 text-xs font-semibold ${titleClass}`}>{insight.title}</div>
+      <div className={`text-xs leading-relaxed ${isDark ? 'text-gray-300' : 'text-slate-600'}`}>{insight.message}</div>
+    </div>
+  );
+}
+
 function normalizeTagText(value) {
   return String(value ?? '')
     .split(',')
@@ -155,7 +180,7 @@ export default function TradeReport({ refreshKey = 0 }) {
   const displayCurrencyStorageKey = `market-backtest-display-currency:${preferenceUserId}`;
   const phpRateStorageKey = `market-backtest-php-rate:${preferenceUserId}`;
   const isDark = adminTheme === 'bg-skin-black';
-  const [report, setReport] = useState({ summary: {}, trades: [] });
+  const [report, setReport] = useState({ summary: {}, trades: [], insights: null });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState(() => (
@@ -189,6 +214,7 @@ export default function TradeReport({ refreshKey = 0 }) {
         account: response.data?.account ?? null,
         summary: response.data?.summary ?? {},
         trades: Array.isArray(response.data?.trades) ? response.data.trades : [],
+        insights: response.data?.insights ?? null,
       });
     } catch (err) {
       setError(err.response?.data?.message ?? err.message ?? 'Failed to load trade report');
@@ -218,6 +244,7 @@ export default function TradeReport({ refreshKey = 0 }) {
   }, [phpRate, phpRateStorageKey]);
 
   const summary = report.summary ?? {};
+  const insights = report.insights ?? null;
   const sortedTrades = useMemo(() => {
     return [...report.trades].sort((a, b) => {
       const aTime = Number(a.closedAtTime ?? 0);
@@ -504,6 +531,28 @@ export default function TradeReport({ refreshKey = 0 }) {
         <StatCard label="Losses" value={summary.losses ?? 0} tone="loss" isDark={isDark} />
         <StatCard label="Fees" value={formatReportMoney(summary.fees)} isDark={isDark} />
       </div>
+
+      {insights && insights.eligible && insights.items.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${mutedTextClass}`}>
+            <Lightbulb size={14} />
+            <span>Coaching Insights</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {insights.items.map((insight) => (
+              <InsightCard key={insight.type} insight={insight} isDark={isDark} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {insights && !insights.eligible && (
+        <div className="px-4 pb-4">
+          <div className={`rounded-md border px-3 py-2 text-xs ${sectionClass} ${mutedTextClass}`}>
+            Close {Math.max(insights.requiredTrades - insights.currentTrades, 0)} more trades ({insights.currentTrades}/{insights.requiredTrades}) to unlock coaching insights.
+          </div>
+        </div>
+      )}
 
       <div className="px-4 pb-4">
         <section className={`overflow-hidden rounded-lg border ${sectionClass}`}>
