@@ -1,5 +1,15 @@
 # File Reference
 
+- `app/Http/Controllers/MarketBacktestPlaybookController.php` — owned strategy playbook CRUD.
+- `app/Models/MarketBacktestPlaybook.php` — playbook rules, checklist, and position relationship.
+- `resources/js/Components/Market/StrategyPlaybooks.jsx` — trader playbook management interface.
+- `database/migrations/2026_08_13_000001_create_market_backtest_playbooks_table.php` — playbooks and immutable position snapshots.
+- `app/Http/Controllers/MarketBacktestRiskSettingController.php` — trader-owned risk-limit settings.
+- `app/Services/MarketBacktestRiskGuardrailService.php` — replay-day and loss-streak enforcement calculations.
+- `resources/js/Components/Market/RiskGuardrailSettings.jsx` — risk guardrail settings interface.
+- `app/Services/MarketBacktestAdvancedAnalyticsService.php` — equity, drawdown, streak, grouped-performance, and Monte Carlo calculations.
+- `database/migrations/2026_08_13_000003_add_advanced_exit_rules_to_market_backtest_positions.php` — liquidation, managed-exit, close-reason, and original-size fields.
+
 Use this index to find the feature owner of a source file. Detailed behavior belongs in the linked guide.
 
 | Source path | Feature guide |

@@ -91,4 +91,47 @@ The line itself spans the full overlay width (`x2 = overlaySize.width`, not stop
 Related: [Reports](trade-reports-and-journals.md), [Replay](replay-and-progress.md), [System error logs and payment activity](system-error-logs-and-payment-activity.md).
 # Custom demo balance
 
+## Strategy playbooks and pre-trade checklist
+
+Authenticated traders manage owned strategy playbooks from the top of `/trade-report`. A playbook stores its name, description, entry/confirmation/invalidation/stop/target rules, up to 20 checklist items, and active/archive state.
+
+| Route/file | Responsibility |
+|---|---|
+| `GET/POST /market-backtest/playbooks` | List and create the authenticated trader's playbooks |
+| `PUT/DELETE /market-backtest/playbooks/{playbook}` | Update or archive an owned playbook |
+| `MarketBacktestPlaybookController.php` | Validation, ownership, normalization, and serialization |
+| `StrategyPlaybooks.jsx` | Playbook management UI on Trade Report |
+| `ReplayPanel.jsx` | Optional playbook selection and required checklist during order entry |
+
+When a playbook is selected, `POST /market-backtest/positions` verifies that it is active and owned by the authenticated user. Every checklist answer must be present and true. The created position stores both the nullable playbook foreign key and an immutable `playbook_snapshot` with the rules and checklist as they existed at entry, plus `checklist_answers`. Archiving or editing the source playbook therefore never changes historical trade evidence. The playbook name also seeds `setup_tag`, preserving compatibility with existing journal filters and coaching insights.
+
+Playbooks are optional so existing untagged/free-form trading remains supported. Deleting from the UI archives rather than hard-deletes; archived playbooks disappear from order entry but remain visible in the management list.
+
+## Replay-day risk guardrails
+
+Traders configure optional guardrails on `/trade-report`. Limits include maximum realized loss per replay day, opened trades per replay day, concurrent pending/open positions, and consecutive closed losses. A replay day is the UTC calendar day containing the order's `executed_at_time`; this intentionally follows historical replay time instead of the user's real-world current date.
+
+| Route/file | Responsibility |
+|---|---|
+| `GET/PUT /market-backtest/risk-settings` | Read and update the authenticated trader's single settings row |
+| `MarketBacktestRiskSettingController.php` | Owned settings defaults and validation |
+| `MarketBacktestRiskGuardrailService.php` | Replay-day metrics, loss-streak calculation, and breaches |
+| `RiskGuardrailSettings.jsx` | Warning/enforced mode and limit configuration |
+
+Warning mode returns current breaches after allowing a new order. Enforced mode rejects `POST /market-backtest/positions` with `422` before balance, position, or trade records change. Evaluation and position creation run in the same transaction, and the settings row is locked so concurrent order attempts use one consistent rule configuration. A configured maximum is considered reached when the current metric is greater than or equal to it: for example, a five-trade limit allows trades one through five and blocks the sixth.
+
+Guardrails affect new entries only. They do not prevent closing or cancelling a position, because risk-reducing actions must remain available.
+
+## Liquidation and managed exits
+
+New positions persist an isolated-margin liquidation price using a 0.5% maintenance-margin approximation. Unlike the former display-only estimate, replay candles are processed by `POST /market-backtest/positions/{position}/process-candle`; crossing liquidation closes the position with `close_reason=liquidation`. Liquidation has priority over stop loss and take profit when one candle spans multiple levels.
+
+Order entry can optionally configure:
+
+- trailing-stop distance as a percentage; `favorable_price` records the best high for longs or best low for shorts and the stop only tightens;
+- a favorable-move percentage that moves the stop to entry (break-even);
+- a partial take-profit percentage (1–99) that closes that share when TP is first reached, clears the TP, and leaves the remainder open.
+
+Partial exits proportionally release margin and allocate entry fees, append a close trade, accumulate realized PnL and exit fees, and preserve original quantity/margin/entry-fee fields for accurate final reporting. Closing snapshots continue to be captured for final exits. Manual, stop-loss, take-profit, liquidation, and partial-take-profit reasons are stored explicitly.
+
 The trader Assets panel accepts a starting balance from `1` through `1,000,000,000`. Applying it uses the existing demo reset operation and requires confirmation because it deletes positions and demo trades and resets cash, realized PnL, and fees.

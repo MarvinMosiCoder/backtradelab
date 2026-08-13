@@ -5713,6 +5713,11 @@ export default function MarketReplayChart({
     entryPrice,
     stopLoss,
     takeProfit,
+    playbookId,
+    checklistAnswers,
+    trailingStopPercent,
+    breakEvenTriggerPercent,
+    partialTakeProfitPercent,
   }) => {
     const fillPrice = getPositiveNumber(entryPrice) ?? getPositiveNumber(executionPrice);
 
@@ -5749,10 +5754,18 @@ export default function MarketReplayChart({
         executed_at_time: executionTime,
         ...(getPositiveNumber(stopLoss) != null ? { stop_loss: getPositiveNumber(stopLoss) } : {}),
         ...(getPositiveNumber(takeProfit) != null ? { take_profit: getPositiveNumber(takeProfit) } : {}),
+        ...(playbookId ? { playbook_id: playbookId, checklist_answers: checklistAnswers } : {}),
+        ...(getPositiveNumber(trailingStopPercent) != null ? { trailing_stop_percent: getPositiveNumber(trailingStopPercent) } : {}),
+        ...(getPositiveNumber(breakEvenTriggerPercent) != null ? { break_even_trigger_percent: getPositiveNumber(breakEvenTriggerPercent) } : {}),
+        ...(getPositiveNumber(partialTakeProfitPercent) != null ? { partial_take_profit_percent: getPositiveNumber(partialTakeProfitPercent) } : {}),
       });
 
       const nextAccount = response.data?.account ?? null;
       setBacktestAccount(nextAccount);
+      const riskWarnings = response.data?.riskGuardrails?.breaches ?? [];
+      if (riskWarnings.length) {
+        setBacktestError(`Risk warning: ${riskWarnings.map((item) => item.message).join(' ')}`);
+      }
 
       const createdPosition = [
         ...(nextAccount?.openPositions ?? []),
@@ -6009,8 +6022,43 @@ export default function MarketReplayChart({
 
     if (!Number.isFinite(candleHigh) || !Number.isFinite(candleLow)) return;
 
+    const managedPositions = backtestAccount.openPositions
+      .filter((position) => position.symbol === symbol)
+      .filter((position) => position.liquidationPrice || position.trailingStopPercent || position.breakEvenTriggerPercent || position.partialTakeProfitPercent)
+      .filter((position) => Number(position.openedAtTime) !== Number(candleTime));
+
+    if (managedPositions.length) {
+      let cancelled = false;
+      const processManagedPositions = async () => {
+        const snapshot = await captureBacktestSnapshot();
+        for (const position of managedPositions) {
+          const key = `${position.id}:${candleTime}:managed`;
+          if (cancelled || autoClosedPositionRef.current.has(key)) continue;
+          autoClosedPositionRef.current.add(key);
+          try {
+            const response = await axios.post(`/market-backtest/positions/${position.id}/process-candle`, {
+              high: candleHigh,
+              low: candleLow,
+              price: Number(executionCandle.close),
+              executed_at_time: candleTime,
+            });
+            const nextAccount = response.data?.account ?? null;
+            if (!cancelled) setBacktestAccount(nextAccount);
+            const remainsOpen = (nextAccount?.openPositions ?? []).some((item) => item.id === position.id);
+            if (!remainsOpen && snapshot) uploadBacktestSnapshot(position.id, 'exit', snapshot).catch(() => {});
+          } catch (err) {
+            autoClosedPositionRef.current.delete(key);
+            if (!cancelled) setBacktestError(err.response?.data?.message ?? 'Failed to process position rules');
+          }
+        }
+      };
+      processManagedPositions();
+      return () => { cancelled = true; };
+    }
+
     const triggeredPositions = backtestAccount.openPositions
       .filter((position) => position.symbol === symbol)
+      .filter((position) => !position.liquidationPrice && !position.trailingStopPercent && !position.breakEvenTriggerPercent && !position.partialTakeProfitPercent)
       .filter((position) => Number(position.openedAtTime) !== Number(candleTime))
       .map((position) => {
         const stopLoss = Number(position.stopLoss);

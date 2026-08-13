@@ -6,11 +6,15 @@ use App\Jobs\GenerateBacktestReportExport;
 use App\Models\MarketBacktestAccount;
 use App\Models\MarketBacktestExport;
 use App\Models\MarketBacktestPosition;
+use App\Models\MarketBacktestPlaybook;
 use App\Models\MarketBacktestSession;
+use App\Models\MarketBacktestRiskSetting;
 use App\Models\MarketBacktestSnapshot;
 use App\Models\MarketBacktestTrade;
 use App\Services\MarketBacktestInsightService;
 use App\Services\MarketBacktestReportService;
+use App\Services\MarketBacktestRiskGuardrailService;
+use App\Services\MarketBacktestAdvancedAnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -23,7 +27,9 @@ class MarketBacktestController extends Controller
 
     public function __construct(
         private MarketBacktestReportService $reportService,
-        private MarketBacktestInsightService $insightService
+        private MarketBacktestInsightService $insightService,
+        private MarketBacktestRiskGuardrailService $riskGuardrailService,
+        private MarketBacktestAdvancedAnalyticsService $advancedAnalyticsService
     ) {
     }
 
@@ -250,7 +256,25 @@ class MarketBacktestController extends Controller
         $grossProfit = round($wins->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
         $grossLoss = round($losses->sum(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8);
         $lossNetPnl = $grossLoss;
-        $fees = round($positions->sum(fn (MarketBacktestPosition $position) => (float) $position->entry_fee + (float) $position->exit_fee), 8);
+        $fees = round($positions->sum(fn (MarketBacktestPosition $position) => (float) ($position->original_entry_fee ?? $position->entry_fee) + (float) $position->exit_fee), 8);
+        $playbookPerformance = $positions
+            ->filter(fn (MarketBacktestPosition $position) => !empty($position->playbook_snapshot['name']))
+            ->groupBy(fn (MarketBacktestPosition $position) => $position->playbook_snapshot['name'])
+            ->map(function ($group, $name) {
+                $netPnl = round($group->sum(fn ($position) => (float) $position->realized_pnl), 8);
+                $wins = $group->filter(fn ($position) => (float) $position->realized_pnl > 0)->count();
+
+                return [
+                    'name' => $name,
+                    'trades' => $group->count(),
+                    'wins' => $wins,
+                    'winRate' => round(($wins / $group->count()) * 100, 2),
+                    'netPnl' => $netPnl,
+                    'averagePnl' => round($netPnl / $group->count(), 8),
+                ];
+            })
+            ->sortByDesc('trades')
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -276,6 +300,9 @@ class MarketBacktestController extends Controller
                 'largestLoss' => $losses->count() ? round($losses->min(fn (MarketBacktestPosition $position) => (float) $position->realized_pnl), 8) : 0,
             ],
             'insights' => $this->insightService->build($positions),
+            'playbookPerformance' => $playbookPerformance,
+            'advanced' => $this->advancedAnalyticsService->build($positions, (float) $account->starting_balance),
+            'monteCarlo' => $this->advancedAnalyticsService->monteCarlo($positions, (float) $account->starting_balance),
             'trades' => $positions->map(fn (MarketBacktestPosition $position) => $this->reportService->serializeReportPosition($position))->values(),
         ]);
     }
@@ -428,10 +455,31 @@ class MarketBacktestController extends Controller
             'executed_at_time' => ['nullable', 'integer', 'min:0'],
             'stop_loss' => ['nullable', 'numeric', 'gt:0'],
             'take_profit' => ['nullable', 'numeric', 'gt:0'],
+            'playbook_id' => ['nullable', 'integer', 'min:1'],
+            'checklist_answers' => ['nullable', 'array', 'max:20'],
+            'checklist_answers.*' => ['boolean'],
+            'trailing_stop_percent' => ['nullable', 'numeric', 'min:0.1', 'max:50'],
+            'break_even_trigger_percent' => ['nullable', 'numeric', 'min:0.1', 'max:1000'],
+            'partial_take_profit_percent' => ['nullable', 'numeric', 'min:1', 'max:99'],
         ]);
 
-        $account = DB::transaction(function () use ($request, $validated) {
+        $result = DB::transaction(function () use ($request, $validated) {
             $account = $this->getOrCreateAccount($request, true);
+            $riskSettings = MarketBacktestRiskSetting::query()
+                ->where('adm_user_id', $request->user()->id)
+                ->lockForUpdate()
+                ->first();
+            $riskEvaluation = $riskSettings
+                ? $this->riskGuardrailService->evaluate($account, $riskSettings, $validated['executed_at_time'] ?? null)
+                : null;
+
+            if ($riskEvaluation && $riskEvaluation['blocked']) {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => $riskEvaluation['breaches'][0]['message'].' New entries are blocked by your enforced risk guardrails.',
+                    'riskGuardrails' => $riskEvaluation,
+                ], 422));
+            }
             $session = $this->resolveSessionForTrade($request, $account, $validated);
             $requestedMargin = round((float) $validated['notional'], 8);
             $leverage = round((float) ($validated['leverage'] ?? 1), 2);
@@ -440,6 +488,25 @@ class MarketBacktestController extends Controller
             $takeProfit = isset($validated['take_profit']) ? (float) $validated['take_profit'] : null;
             $orderType = $validated['order_type'] ?? 'market';
             $isPendingOrder = in_array($orderType, ['conditional', 'limit', 'trigger'], true);
+            $playbook = null;
+            $checklistAnswers = [];
+
+            if (isset($validated['playbook_id'])) {
+                $playbook = MarketBacktestPlaybook::query()
+                    ->where('id', $validated['playbook_id'])
+                    ->where('adm_user_id', $request->user()->id)
+                    ->where('is_active', true)
+                    ->firstOrFail();
+                $checklist = array_values($playbook->checklist ?? []);
+                $checklistAnswers = array_values($validated['checklist_answers'] ?? []);
+
+                if (count($checklistAnswers) !== count($checklist) || collect($checklistAnswers)->contains(false)) {
+                    abort(response()->json([
+                        'success' => false,
+                        'message' => 'Complete every playbook checklist item before placing the trade.',
+                    ], 422));
+                }
+            }
 
             if ($validated['side'] === 'long') {
                 if ($stopLoss !== null && $stopLoss >= $price) {
@@ -493,22 +560,44 @@ class MarketBacktestController extends Controller
             $position = MarketBacktestPosition::query()->create([
                 'market_backtest_account_id' => $account->id,
                 'market_backtest_session_id' => $session?->id,
+                'market_backtest_playbook_id' => $playbook?->id,
                 'symbol' => strtoupper($validated['symbol']),
                 'side' => $validated['side'],
                 'order_type' => $orderType,
                 'quantity' => $sizing['quantity'],
+                'original_quantity' => $sizing['quantity'],
                 'entry_price' => $price,
                 'margin' => $sizing['margin'],
+                'original_margin' => $sizing['margin'],
                 'leverage' => $leverage,
                 'entry_fee' => $sizing['entryFee'],
+                'original_entry_fee' => $sizing['entryFee'],
                 'opened_at_time' => $validated['executed_at_time'] ?? null,
                 'stop_loss' => $stopLoss,
                 'take_profit' => $takeProfit,
+                'liquidation_price' => $this->liquidationPrice($validated['side'], $price, $leverage),
+                'trailing_stop_percent' => $validated['trailing_stop_percent'] ?? null,
+                'break_even_trigger_percent' => $validated['break_even_trigger_percent'] ?? null,
+                'partial_take_profit_percent' => $validated['partial_take_profit_percent'] ?? null,
+                'favorable_price' => $price,
                 'status' => $isPendingOrder ? 'pending' : 'open',
+                'setup_tag' => $playbook?->name,
+                'playbook_snapshot' => $playbook ? [
+                    'id' => $playbook->id,
+                    'name' => $playbook->name,
+                    'description' => $playbook->description,
+                    'entryRules' => $playbook->entry_rules,
+                    'confirmationRules' => $playbook->confirmation_rules,
+                    'invalidationRules' => $playbook->invalidation_rules,
+                    'stopRules' => $playbook->stop_rules,
+                    'targetRules' => $playbook->target_rules,
+                    'checklist' => array_values($playbook->checklist ?? []),
+                ] : null,
+                'checklist_answers' => $playbook ? $checklistAnswers : null,
             ]);
 
             if ($isPendingOrder) {
-                return $account->fresh();
+                return ['account' => $account->fresh(), 'riskGuardrails' => $riskEvaluation];
             }
 
             MarketBacktestTrade::query()->create([
@@ -530,8 +619,10 @@ class MarketBacktestController extends Controller
                 'fees_paid' => round((float) $account->fees_paid + $sizing['entryFee'], 8),
             ]);
 
-            return $account->fresh();
+            return ['account' => $account->fresh(), 'riskGuardrails' => $riskEvaluation];
         });
+
+        $account = $result['account'];
 
         return response()->json([
             'success' => true,
@@ -541,6 +632,7 @@ class MarketBacktestController extends Controller
                 (float) $validated['price'],
                 $this->getActiveSession($request, $account)
             ),
+            'riskGuardrails' => $result['riskGuardrails'],
         ]);
     }
 
@@ -780,6 +872,8 @@ class MarketBacktestController extends Controller
         $validated = $request->validate([
             'price' => ['required', 'numeric', 'gt:0'],
             'executed_at_time' => ['nullable', 'integer', 'min:0'],
+            'close_reason' => ['nullable', Rule::in(['manual', 'stop_loss', 'take_profit', 'liquidation', 'partial_take_profit'])],
+            'quantity_percent' => ['nullable', 'numeric', 'min:1', 'max:100'],
         ]);
 
         $account = DB::transaction(function () use ($request, $position, $validated) {
@@ -797,19 +891,31 @@ class MarketBacktestController extends Controller
 
             $exitPrice = (float) $validated['price'];
             $quantity = (float) $position->quantity;
-            $exitNotional = round($quantity * $exitPrice, 8);
+            $quantityPercent = (float) ($validated['quantity_percent'] ?? 100);
+            $closeQuantity = round($quantity * ($quantityPercent / 100), 10);
+            $isPartial = $closeQuantity < $quantity;
+            $fraction = $closeQuantity / $quantity;
+            $exitNotional = round($closeQuantity * $exitPrice, 8);
             $exitFee = round($exitNotional * self::FEE_RATE, 8);
             $grossPnl = $position->side === 'long'
-                ? round(($exitPrice - (float) $position->entry_price) * $quantity, 8)
-                : round(((float) $position->entry_price - $exitPrice) * $quantity, 8);
-            $netPnl = round($grossPnl - (float) $position->entry_fee - $exitFee, 8);
+                ? round(($exitPrice - (float) $position->entry_price) * $closeQuantity, 8)
+                : round(((float) $position->entry_price - $exitPrice) * $closeQuantity, 8);
+            $entryFeePortion = round((float) $position->entry_fee * $fraction, 8);
+            $netPnl = round($grossPnl - $entryFeePortion - $exitFee, 8);
+            $marginPortion = round((float) $position->margin * $fraction, 8);
 
             $position->update([
+                'quantity' => $isPartial ? round($quantity - $closeQuantity, 10) : $quantity,
+                'margin' => $isPartial ? round((float) $position->margin - $marginPortion, 8) : $position->margin,
+                'entry_fee' => $isPartial ? round((float) $position->entry_fee - $entryFeePortion, 8) : $position->entry_fee,
                 'exit_price' => $exitPrice,
-                'exit_fee' => $exitFee,
-                'realized_pnl' => $netPnl,
-                'closed_at_time' => $validated['executed_at_time'] ?? null,
-                'status' => 'closed',
+                'exit_fee' => round((float) $position->exit_fee + $exitFee, 8),
+                'realized_pnl' => round((float) $position->realized_pnl + $netPnl, 8),
+                'closed_at_time' => $isPartial ? null : ($validated['executed_at_time'] ?? null),
+                'status' => $isPartial ? 'open' : 'closed',
+                'close_reason' => $isPartial ? null : ($validated['close_reason'] ?? 'manual'),
+                'partial_take_profit_executed' => $isPartial ? true : $position->partial_take_profit_executed,
+                'take_profit' => $isPartial ? null : $position->take_profit,
             ]);
 
             MarketBacktestTrade::query()->create([
@@ -819,7 +925,7 @@ class MarketBacktestController extends Controller
                 'symbol' => $position->symbol,
                 'side' => $position->side,
                 'action' => 'close',
-                'quantity' => $quantity,
+                'quantity' => $closeQuantity,
                 'price' => $exitPrice,
                 'notional' => $exitNotional,
                 'fee' => $exitFee,
@@ -828,7 +934,7 @@ class MarketBacktestController extends Controller
             ]);
 
             $account->update([
-                'cash_balance' => round((float) $account->cash_balance + (float) $position->margin + $grossPnl - $exitFee, 8),
+                'cash_balance' => round((float) $account->cash_balance + $marginPortion + $grossPnl - $exitFee, 8),
                 'realized_pnl' => round((float) $account->realized_pnl + $netPnl, 8),
                 'fees_paid' => round((float) $account->fees_paid + $exitFee, 8),
             ]);
@@ -840,6 +946,57 @@ class MarketBacktestController extends Controller
             'success' => true,
             'account' => $this->buildPayload($account, $position->symbol, (float) $validated['price'], $this->getActiveSession($request, $account)),
         ]);
+    }
+
+    public function processPositionCandle(Request $request, MarketBacktestPosition $position)
+    {
+        $validated = $request->validate([
+            'high' => ['required', 'numeric', 'gt:0'],
+            'low' => ['required', 'numeric', 'gt:0'],
+            'price' => ['required', 'numeric', 'gt:0'],
+            'executed_at_time' => ['required', 'integer', 'min:0'],
+        ]);
+
+        $account = $this->getOrCreateAccount($request);
+        $position = MarketBacktestPosition::query()->where('id', $position->id)
+            ->where('market_backtest_account_id', $account->id)->where('status', 'open')->firstOrFail();
+        $high = (float) $validated['high'];
+        $low = (float) $validated['low'];
+        $favorable = $position->side === 'long'
+            ? max((float) ($position->favorable_price ?: $position->entry_price), $high)
+            : min((float) ($position->favorable_price ?: $position->entry_price), $low);
+        $updates = ['favorable_price' => $favorable];
+
+        if ($position->trailing_stop_percent !== null) {
+            $distance = (float) $position->trailing_stop_percent / 100;
+            $trailingStop = $position->side === 'long' ? $favorable * (1 - $distance) : $favorable * (1 + $distance);
+            $currentStop = $position->stop_loss !== null ? (float) $position->stop_loss : null;
+            $updates['stop_loss'] = $currentStop === null ? $trailingStop : ($position->side === 'long' ? max($currentStop, $trailingStop) : min($currentStop, $trailingStop));
+        }
+
+        if ($position->break_even_trigger_percent !== null) {
+            $trigger = (float) $position->break_even_trigger_percent / 100;
+            $reached = $position->side === 'long' ? $high >= (float) $position->entry_price * (1 + $trigger) : $low <= (float) $position->entry_price * (1 - $trigger);
+            if ($reached) $updates['stop_loss'] = (float) $position->entry_price;
+        }
+        $position->update($updates);
+        $position->refresh();
+
+        $exitPrice = null; $reason = null; $quantityPercent = 100;
+        if ($position->liquidation_price !== null && (($position->side === 'long' && $low <= (float) $position->liquidation_price) || ($position->side === 'short' && $high >= (float) $position->liquidation_price))) {
+            $exitPrice = (float) $position->liquidation_price; $reason = 'liquidation';
+        } elseif ($position->stop_loss !== null && (($position->side === 'long' && $low <= (float) $position->stop_loss) || ($position->side === 'short' && $high >= (float) $position->stop_loss))) {
+            $exitPrice = (float) $position->stop_loss; $reason = 'stop_loss';
+        } elseif ($position->take_profit !== null && (($position->side === 'long' && $high >= (float) $position->take_profit) || ($position->side === 'short' && $low <= (float) $position->take_profit))) {
+            $exitPrice = (float) $position->take_profit;
+            if ($position->partial_take_profit_percent !== null && !$position->partial_take_profit_executed) {
+                $reason = 'partial_take_profit'; $quantityPercent = (float) $position->partial_take_profit_percent;
+            } else $reason = 'take_profit';
+        }
+
+        if ($exitPrice === null) return response()->json(['success' => true, 'triggered' => false, 'account' => $this->buildPayload($account, $position->symbol, (float) $validated['price'], $this->getActiveSession($request, $account))]);
+        $request->merge(['price' => $exitPrice, 'close_reason' => $reason, 'quantity_percent' => $quantityPercent]);
+        return $this->closePosition($request, $position);
     }
 
     private function getActiveSession(Request $request, MarketBacktestAccount $account): ?MarketBacktestSession
@@ -974,6 +1131,17 @@ class MarketBacktestController extends Controller
         return round((float) $position->margin * $this->getPositionLeverage($position), 8);
     }
 
+    private function liquidationPrice(string $side, float $entryPrice, float $leverage): float
+    {
+        $maintenanceMarginRate = 0.005;
+        $distance = 1 / max($leverage, 1);
+        $price = $side === 'long'
+            ? $entryPrice * max($maintenanceMarginRate, 1 - $distance + $maintenanceMarginRate)
+            : $entryPrice * (1 + $distance - $maintenanceMarginRate);
+
+        return round(max($price, 0.00000001), 8);
+    }
+
     private function resolveEntrySizing(float $requestedMargin, float $leverage, float $price, float $cashBalance): ?array
     {
         $margin = round($requestedMargin, 8);
@@ -1086,6 +1254,15 @@ class MarketBacktestController extends Controller
                 'openedAtTime' => $position->opened_at_time,
                 'stopLoss' => $position->stop_loss !== null ? (float) $position->stop_loss : null,
                 'takeProfit' => $position->take_profit !== null ? (float) $position->take_profit : null,
+                'liquidationPrice' => $position->liquidation_price !== null ? (float) $position->liquidation_price : null,
+                'trailingStopPercent' => $position->trailing_stop_percent !== null ? (float) $position->trailing_stop_percent : null,
+                'breakEvenTriggerPercent' => $position->break_even_trigger_percent !== null ? (float) $position->break_even_trigger_percent : null,
+                'partialTakeProfitPercent' => $position->partial_take_profit_percent !== null ? (float) $position->partial_take_profit_percent : null,
+                'playbookName' => $position->playbook_snapshot['name'] ?? null,
+                'checklistComplete' => $position->playbook_snapshot
+                    ? count($position->checklist_answers ?? []) === count($position->playbook_snapshot['checklist'] ?? [])
+                        && !in_array(false, $position->checklist_answers ?? [], true)
+                    : null,
                 'unrealizedPnl' => $price && $symbol === $position->symbol
                     ? round($position->side === 'long'
                         ? ($price - (float) $position->entry_price) * (float) $position->quantity
@@ -1107,6 +1284,15 @@ class MarketBacktestController extends Controller
                 'openedAtTime' => $position->opened_at_time,
                 'stopLoss' => $position->stop_loss !== null ? (float) $position->stop_loss : null,
                 'takeProfit' => $position->take_profit !== null ? (float) $position->take_profit : null,
+                'liquidationPrice' => $position->liquidation_price !== null ? (float) $position->liquidation_price : null,
+                'trailingStopPercent' => $position->trailing_stop_percent !== null ? (float) $position->trailing_stop_percent : null,
+                'breakEvenTriggerPercent' => $position->break_even_trigger_percent !== null ? (float) $position->break_even_trigger_percent : null,
+                'partialTakeProfitPercent' => $position->partial_take_profit_percent !== null ? (float) $position->partial_take_profit_percent : null,
+                'playbookName' => $position->playbook_snapshot['name'] ?? null,
+                'checklistComplete' => $position->playbook_snapshot
+                    ? count($position->checklist_answers ?? []) === count($position->playbook_snapshot['checklist'] ?? [])
+                        && !in_array(false, $position->checklist_answers ?? [], true)
+                    : null,
             ])->values(),
             'trades' => $trades->map(fn (MarketBacktestTrade $trade) => [
                 'id' => $trade->id,

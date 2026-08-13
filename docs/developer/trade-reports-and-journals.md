@@ -30,6 +30,14 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 
 ## Coaching insights
 
+The report response also includes `playbookPerformance`, grouped from immutable position snapshots rather than the current editable playbook record. Each row contains trade count, wins, win rate, net PnL, and average PnL. Serialized trades include `playbook`, `checklistAnswers`, and `checklistComplete`; the existing `setupTag` remains populated with the selected playbook name for compatibility.
+
+## Advanced analytics and Monte Carlo
+
+`MarketBacktestAdvancedAnalyticsService` calculates expectancy, profit factor, maximum absolute/percentage drawdown, recovery factor, maximum win/loss streaks, equity-curve points, and weekday/hour UTC breakdowns from the owned closed-position collection. The Trade Report displays the headline statistics.
+
+With at least five closed positions, the same response includes a 500-run bootstrap Monte Carlo simulation. Each run samples historical trade PnL with replacement for the original trade count and returns 10th/50th/90th-percentile ending balances, median/90th-percentile drawdown, and the percentage of runs that touched half the starting balance. This is a risk estimate from the user's sample, not a forecast or investment advice.
+
 `MarketBacktestInsightService::build(Collection $positions)` turns a set of closed positions into up to 3 rule-based coaching tips, ranked by a per-heuristic severity score. It requires at least 10 closed positions in the set it's given (`MarketBacktestInsightService::MIN_TOTAL_TRADES`) before returning anything besides `{eligible: false, currentTrades, requiredTrades: 10}` — below that, per-heuristic breakdowns (e.g. win rate on a single symbol) are too noisy to be worth surfacing. At 10 trades, group-based heuristics (side/symbol/setup-tag win rate, each needing 5+ trades per group) can only realistically fire on a roughly even split, so early tips lean more on the risk-reward and holding-time heuristics, which don't need sub-grouping.
 
 Four heuristics run, each returning `null` if it doesn't clear its own significance bar so it's silently excluded rather than shown as a weak/noisy tip:

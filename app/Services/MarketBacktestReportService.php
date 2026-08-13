@@ -28,7 +28,7 @@ class MarketBacktestReportService
     public function serializeReportPosition(MarketBacktestPosition $position): array
     {
         $pnl = (float) $position->realized_pnl;
-        $margin = (float) $position->margin;
+        $margin = (float) ($position->original_margin ?? $position->margin);
         $leverage = $this->getPositionLeverage($position);
         $snapshots = $position->relationLoaded('snapshots')
             ? $position->snapshots
@@ -41,13 +41,13 @@ class MarketBacktestReportService
             'sessionId' => $position->market_backtest_session_id,
             'symbol' => $position->symbol,
             'side' => $position->side,
-            'quantity' => (float) $position->quantity,
+            'quantity' => (float) ($position->original_quantity ?? $position->quantity),
             'margin' => $margin,
             'leverage' => $leverage,
-            'notional' => $this->getPositionNotional($position),
+            'notional' => round($margin * $leverage, 8),
             'entryPrice' => (float) $position->entry_price,
             'exitPrice' => $position->exit_price !== null ? (float) $position->exit_price : null,
-            'entryFee' => (float) $position->entry_fee,
+            'entryFee' => (float) ($position->original_entry_fee ?? $position->entry_fee),
             'exitFee' => (float) $position->exit_fee,
             'fee' => round((float) $position->entry_fee + (float) $position->exit_fee, 8),
             'pnl' => $pnl,
@@ -60,6 +60,14 @@ class MarketBacktestReportService
             'mistake' => $position->mistake,
             'emotion' => $position->emotion,
             'journalNotes' => $position->journal_notes,
+            'closeReason' => $position->close_reason,
+            'playbookId' => $position->market_backtest_playbook_id,
+            'playbook' => $position->playbook_snapshot,
+            'checklistAnswers' => array_values($position->checklist_answers ?? []),
+            'checklistComplete' => $position->playbook_snapshot
+                ? !in_array(false, array_values($position->checklist_answers ?? []), true)
+                    && count($position->checklist_answers ?? []) === count($position->playbook_snapshot['checklist'] ?? [])
+                : null,
             'entrySnapshotUrl' => $this->getSnapshotUrl($entrySnapshot),
             'exitSnapshotUrl' => $this->getSnapshotUrl($exitSnapshot),
             'openedAtTime' => $position->opened_at_time,

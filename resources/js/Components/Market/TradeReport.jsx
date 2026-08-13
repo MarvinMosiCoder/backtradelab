@@ -180,7 +180,7 @@ export default function TradeReport({ refreshKey = 0 }) {
   const displayCurrencyStorageKey = `market-backtest-display-currency:${preferenceUserId}`;
   const phpRateStorageKey = `market-backtest-php-rate:${preferenceUserId}`;
   const isDark = adminTheme === 'bg-skin-black';
-  const [report, setReport] = useState({ summary: {}, trades: [], insights: null });
+  const [report, setReport] = useState({ summary: {}, trades: [], insights: null, playbookPerformance: [], advanced: {}, monteCarlo: {} });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [displayCurrency, setDisplayCurrency] = useState(() => (
@@ -215,6 +215,9 @@ export default function TradeReport({ refreshKey = 0 }) {
         summary: response.data?.summary ?? {},
         trades: Array.isArray(response.data?.trades) ? response.data.trades : [],
         insights: response.data?.insights ?? null,
+        playbookPerformance: response.data?.playbookPerformance ?? [],
+        advanced: response.data?.advanced ?? {},
+        monteCarlo: response.data?.monteCarlo ?? {},
       });
     } catch (err) {
       setError(err.response?.data?.message ?? err.message ?? 'Failed to load trade report');
@@ -245,6 +248,9 @@ export default function TradeReport({ refreshKey = 0 }) {
 
   const summary = report.summary ?? {};
   const insights = report.insights ?? null;
+  const playbookPerformance = report.playbookPerformance ?? [];
+  const advanced = report.advanced ?? {};
+  const monteCarlo = report.monteCarlo ?? {};
   const sortedTrades = useMemo(() => {
     return [...report.trades].sort((a, b) => {
       const aTime = Number(a.closedAtTime ?? 0);
@@ -550,6 +556,50 @@ export default function TradeReport({ refreshKey = 0 }) {
         <div className="px-4 pb-4">
           <div className={`rounded-md border px-3 py-2 text-xs ${sectionClass} ${mutedTextClass}`}>
             Close {Math.max(insights.requiredTrades - insights.currentTrades, 0)} more trades ({insights.currentTrades}/{insights.requiredTrades}) to unlock coaching insights.
+          </div>
+        </div>
+      )}
+
+      {playbookPerformance.length > 0 && (
+        <div className="px-4 pb-4">
+          <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${mutedTextClass}`}>Playbook Performance</div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {playbookPerformance.map((item) => (
+              <div key={item.name} className={`rounded-md border p-3 ${sectionClass}`}>
+                <div className="text-sm font-semibold">{item.name}</div>
+                <div className={`mt-2 grid grid-cols-2 gap-1 text-xs ${mutedTextClass}`}>
+                  <span>{item.trades} trades</span>
+                  <span>{formatPercent(item.winRate)} wins</span>
+                  <span className={Number(item.netPnl) >= 0 ? longTextClass : shortTextClass}>{formatReportMoney(item.netPnl)}</span>
+                  <span>Avg {formatReportMoney(item.averagePnl)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {Number(summary.totalTrades ?? 0) > 0 && (
+        <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard label="Expectancy" value={formatReportMoney(advanced.expectancy)} tone={Number(advanced.expectancy) >= 0 ? 'win' : 'loss'} isDark={isDark} />
+          <StatCard label="Profit Factor" value={advanced.profitFactor == null ? '∞' : Number(advanced.profitFactor).toFixed(2)} isDark={isDark} />
+          <StatCard label="Max Drawdown" value={`${formatReportMoney(advanced.maxDrawdown)} (${formatPercent(advanced.maxDrawdownPercent)})`} tone="loss" isDark={isDark} />
+          <StatCard label="Win / Loss Streak" value={`${advanced.maxWinStreak ?? 0} / ${advanced.maxLossStreak ?? 0}`} isDark={isDark} />
+        </div>
+      )}
+
+      {monteCarlo.eligible && (
+        <div className="px-4 pb-4">
+          <div className={`rounded-lg border p-3 ${sectionClass}`}>
+            <div className="text-xs font-semibold uppercase tracking-wide">Monte Carlo Risk · {monteCarlo.iterations} runs</div>
+            <div className={`mt-3 grid gap-2 text-xs sm:grid-cols-3 lg:grid-cols-6 ${mutedTextClass}`}>
+              <span>P10 balance<br/><b className={valueTextClass}>{formatReportMoney(monteCarlo.endingBalanceP10)}</b></span>
+              <span>Median balance<br/><b className={valueTextClass}>{formatReportMoney(monteCarlo.endingBalanceMedian)}</b></span>
+              <span>P90 balance<br/><b className={valueTextClass}>{formatReportMoney(monteCarlo.endingBalanceP90)}</b></span>
+              <span>Median drawdown<br/><b className={valueTextClass}>{formatPercent(monteCarlo.drawdownMedianPercent)}</b></span>
+              <span>P90 drawdown<br/><b className={valueTextClass}>{formatPercent(monteCarlo.drawdownP90Percent)}</b></span>
+              <span>Half-balance risk<br/><b className={Number(monteCarlo.riskOfHalfBalancePercent) > 0 ? shortTextClass : valueTextClass}>{formatPercent(monteCarlo.riskOfHalfBalancePercent)}</b></span>
+            </div>
           </div>
         </div>
       )}

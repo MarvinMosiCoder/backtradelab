@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import axios from 'axios';
 import { createPortal } from 'react-dom';
 import { usePage } from '@inertiajs/react';
 import {
@@ -1576,12 +1577,36 @@ export default function ReplayPanel({
   const [orderEntryPrice, setOrderEntryPrice] = useState('');
   const [orderStopLoss, setOrderStopLoss] = useState('');
   const [orderTakeProfit, setOrderTakeProfit] = useState('');
+  const [playbooks, setPlaybooks] = useState([]);
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState('');
+  const [checklistAnswers, setChecklistAnswers] = useState([]);
+  const [trailingStopPercent, setTrailingStopPercent] = useState('');
+  const [breakEvenTriggerPercent, setBreakEvenTriggerPercent] = useState('');
+  const [partialTakeProfitPercent, setPartialTakeProfitPercent] = useState('');
   const [showOrderDraft, setShowOrderDraft] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState(() => (
     getStoredValue(displayCurrencyStorageKey, 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
   const [phpRate, setPhpRate] = useState(() => getStoredValue(phpRateStorageKey, '58'));
   const wasFullscreenDrawingOnlyRef = React.useRef(fullscreenDrawingOnly);
+
+  useEffect(() => {
+    let cancelled = false;
+    axios.get('/market-backtest/playbooks', { headers: { Accept: 'application/json' } })
+      .then((response) => {
+        if (!cancelled) setPlaybooks(response.data?.playbooks ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setPlaybooks([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const selectedPlaybook = playbooks.find((item) => String(item.id) === String(selectedPlaybookId)) ?? null;
+
+  useEffect(() => {
+    setChecklistAnswers((selectedPlaybook?.checklist ?? []).map(() => false));
+  }, [selectedPlaybookId]);
 
   useEffect(() => {
     if (!fullscreenDrawingOnly) {
@@ -1806,7 +1831,9 @@ export default function ReplayPanel({
     orderPlan.requiredCash <= backtestMetrics.cashBalance + 0.00000001 &&
     (!isPendingOrder || hasCustomEntryPrice) &&
     (orderPlan?.isStopValid ?? true) &&
-    (orderPlan?.isTargetValid ?? true);
+    (orderPlan?.isTargetValid ?? true) &&
+    (!selectedPlaybook || checklistAnswers.length === selectedPlaybook.checklist.length) &&
+    (!selectedPlaybook || checklistAnswers.every(Boolean));
 
   const submitBacktestOrder = () => {
     const notional = Number(quoteNotional);
@@ -1820,7 +1847,13 @@ export default function ReplayPanel({
       entryPrice: effectiveEntryPrice,
       stopLoss: plannedStopLoss,
       takeProfit: plannedTakeProfit,
+      playbookId: selectedPlaybook?.id ?? null,
+      checklistAnswers,
+      trailingStopPercent,
+      breakEvenTriggerPercent,
+      partialTakeProfitPercent,
     });
+    setChecklistAnswers((current) => current.map(() => false));
     setShowOrderDraft(false);
   };
   const removeOrderDraft = () => {
@@ -2411,6 +2444,37 @@ export default function ReplayPanel({
                   Short
                 </button>
               </div>
+              <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
+                <label className="block">
+                  <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Strategy playbook</span>
+                  <select
+                    value={selectedPlaybookId}
+                    onChange={(event) => setSelectedPlaybookId(event.target.value)}
+                    className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
+                  >
+                    <option value="">No playbook</option>
+                    {playbooks.map((playbook) => (
+                      <option key={playbook.id} value={playbook.id}>{playbook.name}</option>
+                    ))}
+                  </select>
+                </label>
+                {selectedPlaybook && (
+                  <div className="mt-2 space-y-1.5">
+                    {selectedPlaybook.description && <p className={`text-[11px] ${labelTextClass}`}>{selectedPlaybook.description}</p>}
+                    {selectedPlaybook.checklist.length ? selectedPlaybook.checklist.map((item, index) => (
+                      <label key={`${selectedPlaybook.id}:${index}`} className={`flex items-start gap-2 text-[11px] ${valueTextClass}`}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(checklistAnswers[index])}
+                          onChange={(event) => setChecklistAnswers((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.checked : value))}
+                          className="mt-0.5"
+                        />
+                        <span>{item}</span>
+                      </label>
+                    )) : <p className={`text-[11px] ${mutedTextClass}`}>This playbook has no required checklist.</p>}
+                  </div>
+                )}
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <input
                   value={orderNotional}
@@ -2446,6 +2510,11 @@ export default function ReplayPanel({
                 <span>Margin {orderPlan?.margin ? formatAccountMoney(orderPlan.margin) : '---'}</span>
                 <span>Value {orderPlan?.positionNotional ? formatAccountMoney(orderPlan.positionNotional) : '---'}</span>
                 <span>Lev {isLeverageValid ? formatLeverage(leverageValue) : '---'}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <label className="block"><span className={`mb-1 block text-[10px] uppercase ${mutedTextClass}`}>Trail %</span><input value={trailingStopPercent} onChange={(e) => setTrailingStopPercent(e.target.value)} inputMode="decimal" placeholder="Off" className={`h-8 w-full rounded border px-2 text-xs ${fieldClass}`} /></label>
+                <label className="block"><span className={`mb-1 block text-[10px] uppercase ${mutedTextClass}`}>Break-even %</span><input value={breakEvenTriggerPercent} onChange={(e) => setBreakEvenTriggerPercent(e.target.value)} inputMode="decimal" placeholder="Off" className={`h-8 w-full rounded border px-2 text-xs ${fieldClass}`} /></label>
+                <label className="block"><span className={`mb-1 block text-[10px] uppercase ${mutedTextClass}`}>Partial TP %</span><input value={partialTakeProfitPercent} onChange={(e) => setPartialTakeProfitPercent(e.target.value)} inputMode="decimal" placeholder="Off" className={`h-8 w-full rounded border px-2 text-xs ${fieldClass}`} /></label>
               </div>
               <div className={`grid grid-cols-2 gap-2 text-[11px] ${labelTextClass}`}>
                 <span>Entry fee {orderPlan?.entryFee ? formatAccountMoney(orderPlan.entryFee) : '---'}</span>
@@ -2598,6 +2667,8 @@ export default function ReplayPanel({
                           <span>Lev {formatLeverage(position.leverage)}</span>
                           <span>SL {position.stopLoss ? formatMoney(position.stopLoss) : '---'}</span>
                           <span>TP {position.takeProfit ? formatMoney(position.takeProfit) : '---'}</span>
+                          <span>Liq {position.liquidationPrice ? formatMoney(position.liquidationPrice) : '---'}</span>
+                          <span>{position.trailingStopPercent ? `Trail ${position.trailingStopPercent}%` : position.breakEvenTriggerPercent ? `BE ${position.breakEvenTriggerPercent}%` : 'Managed exits off'}</span>
                         </div>
                         <ControlButton
                           icon={X}
