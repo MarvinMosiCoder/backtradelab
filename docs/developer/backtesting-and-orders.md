@@ -134,4 +134,6 @@ Order entry can optionally configure:
 
 Partial exits proportionally release margin and allocate entry fees, append a close trade, accumulate realized PnL and exit fees, and preserve original quantity/margin/entry-fee fields for accurate final reporting. Closing snapshots continue to be captured for final exits. Manual, stop-loss, take-profit, liquidation, and partial-take-profit reasons are stored explicitly.
 
+Each candle also updates `adverse_price`, a mirrored running-worst-price tracker seeded at entry and updated identically to `favorable_price` — the worst low for longs or worst high for shorts — except it only ever moves against the position. Neither field is touched by `closePosition()`, so both freeze at their last processed value once a position closes, and that frozen pair becomes the excursion data point the trade report's MAE/MFE analytics feed on.
+
 The trader Assets panel accepts a starting balance from `1` through `1,000,000,000`. Applying it uses the existing demo reset operation and requires confirmation because it deletes positions and demo trades and resets cash, realized PnL, and fees.

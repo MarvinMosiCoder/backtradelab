@@ -117,10 +117,25 @@ class AdmUser extends Authenticatable
     public static function boot(){
         parent::boot();
         static::creating(function($model){
-            $model->email = request()->input('email');
-            $model->name = request()->input('name');
-            $model->id_adm_privileges = request()->input('privilege_id');
-            $model->password = 'qwerty';
+            // Only fall back to the current request when the caller didn't already
+            // provide a value via create()/fill() — this hook previously overwrote
+            // explicitly-passed attributes unconditionally, which broke every caller
+            // whose request shape didn't happen to carry 'email'/'name'/'privilege_id'
+            // (e.g. social registration bypasses Eloquent create() entirely to dodge
+            // this) and any direct AdmUser::create() call outside a real HTTP request
+            // (tests, console, jobs).
+            if (is_null($model->email) && request()->filled('email')) {
+                $model->email = request()->input('email');
+            }
+            if (is_null($model->name) && request()->filled('name')) {
+                $model->name = request()->input('name');
+            }
+            if (is_null($model->id_adm_privileges) && request()->filled('privilege_id')) {
+                $model->id_adm_privileges = request()->input('privilege_id');
+            }
+            if (is_null($model->password)) {
+                $model->password = 'qwerty';
+            }
         });
     }
 

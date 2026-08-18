@@ -13,9 +13,11 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\ResetPasswordController;
 use App\Http\Controllers\Dashboard\DashboardController;
+use App\Http\Controllers\ImportedTradeController;
 use App\Http\Controllers\MarketBacktestController;
 use App\Http\Controllers\MarketBacktestPlaybookController;
 use App\Http\Controllers\MarketBacktestRiskSettingController;
+use App\Http\Controllers\MarketBacktestShareLinkController;
 use App\Http\Controllers\MarketDrawingController;
 use App\Http\Controllers\MarketDataController;
 use App\Http\Controllers\MarketOverviewController;
@@ -23,9 +25,11 @@ use App\Http\Controllers\MarketReplayProgressController;
 use App\Http\Controllers\MarketToolSettingController;
 use App\Http\Controllers\MarketWatchlistController;
 use App\Http\Controllers\MarketPriceAlertController;
+use App\Http\Controllers\MentorReviewController;
 use App\Http\Controllers\PaymentActivityLogController;
 use App\Http\Controllers\ReplayAccessController;
 use App\Http\Controllers\SystemErrorLogController;
+use App\Http\Controllers\TrainingChallengeController;
 use App\Http\Controllers\UserFeedbackController;
 use App\Http\Controllers\PayMongoWebhookController;
 use App\Http\Controllers\Users\ChangePasswordController;
@@ -60,6 +64,10 @@ Route::get('/privacy-policy', fn () => Inertia::render('Public/PrivacyPolicy', [
 Route::get('/terms-of-service', fn () => Inertia::render('Public/TermsOfService', [
     'legal' => config('legal'),
 ]))->name('terms-of-service');
+Route::get('/mentor-review/{token}', [MentorReviewController::class, 'show'])
+    ->where('token', '[A-Za-z0-9]{48}')
+    ->middleware('throttle:mentor-review-public')
+    ->name('mentor-review.show');
 Route::get('login', [LoginController::class, 'index'])->name('login');
 Route::get('/admin/login', [LoginController::class, 'adminIndex'])->name('admin.login');
 Route::post('/admin/login', [LoginController::class, 'adminAuthenticate'])
@@ -124,6 +132,12 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('trade-report', function () {
         return Inertia::render('Market/TradeReportPage');
     })->name('trade-report');
+    Route::get('mentor-review', function () {
+        return Inertia::render('Market/MentorReviewManagePage');
+    })->name('mentor-review.index');
+    Route::get('training-challenges', function () {
+        return Inertia::render('Market/TrainingChallengesPage');
+    })->name('training-challenges');
     Route::get('/help', fn () => Inertia::render('Help/Index'))->name('help');
     Route::get('/market-drawings', [MarketDrawingController::class, 'show'])->name('market-drawings.show');
     Route::get('/market-symbols', [MarketDataController::class, 'symbols'])->name('market-symbols.index');
@@ -197,6 +211,26 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::post('/market-backtest/positions/{position}/process-candle', [MarketBacktestController::class, 'processPositionCandle'])->middleware(['replay.access', 'throttle:backtest-write'])->name('market-backtest.positions.process-candle');
     Route::post('/market-backtest/positions/{position}/snapshot', [MarketBacktestController::class, 'uploadPositionSnapshot'])->middleware(['replay.access', 'throttle:backtest-heavy'])->name('market-backtest.positions.snapshot');
     Route::put('/market-backtest/trades/{position}/journal', [MarketBacktestController::class, 'updateTradeJournal'])->middleware('throttle:backtest-write')->name('market-backtest.trades.journal');
+
+    // Imported (real) trades — a separate dataset from simulated backtest trades.
+    Route::post('/imported-trades/batches/preview', [ImportedTradeController::class, 'preview'])->middleware('throttle:backtest-heavy')->name('imported-trades.preview');
+    Route::post('/imported-trades/batches/{batch}/commit', [ImportedTradeController::class, 'commit'])->middleware('throttle:backtest-heavy')->name('imported-trades.commit');
+    Route::get('/imported-trades/batches', [ImportedTradeController::class, 'batches'])->middleware('throttle:backtest-read')->name('imported-trades.batches');
+    Route::delete('/imported-trades/batches/{batch}', [ImportedTradeController::class, 'destroyBatch'])->middleware('throttle:backtest-write')->name('imported-trades.batches.destroy');
+    Route::get('/imported-trades/items', [ImportedTradeController::class, 'items'])->middleware('throttle:backtest-read')->name('imported-trades.items');
+
+    // Shareable mentor review links (management side; public viewer route is registered above the auth group).
+    Route::get('/market-backtest/share-links', [MarketBacktestShareLinkController::class, 'index'])->middleware('throttle:backtest-read')->name('market-backtest.share-links.index');
+    Route::post('/market-backtest/share-links', [MarketBacktestShareLinkController::class, 'store'])->middleware('throttle:backtest-write')->name('market-backtest.share-links.store');
+    Route::delete('/market-backtest/share-links/{shareLink}', [MarketBacktestShareLinkController::class, 'destroy'])->middleware('throttle:backtest-write')->name('market-backtest.share-links.destroy');
+
+    // Structured training challenges.
+    Route::get('/training-challenges/catalog', [TrainingChallengeController::class, 'index'])->middleware('throttle:backtest-read')->name('training-challenges.catalog');
+    Route::post('/training-challenges/{challenge}/attempts', [TrainingChallengeController::class, 'startAttempt'])->middleware('throttle:backtest-write')->name('training-challenges.attempts.start');
+    Route::get('/training-challenges/attempts', [TrainingChallengeController::class, 'listMyAttempts'])->middleware('throttle:backtest-read')->name('training-challenges.attempts.index');
+    Route::get('/training-challenges/attempts/{attempt}', [TrainingChallengeController::class, 'showAttempt'])->middleware('throttle:backtest-read')->name('training-challenges.attempts.show');
+    Route::post('/training-challenges/attempts/{attempt}/abandon', [TrainingChallengeController::class, 'abandonAttempt'])->middleware('throttle:backtest-write')->name('training-challenges.attempts.abandon');
+
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/sidebar', [MenusController::class, 'sidebarMenu'])->name('sidebar');
     //USERS

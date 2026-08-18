@@ -72,6 +72,10 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(6)->by($request->user()?->id ?: $request->ip());
         });
 
+        RateLimiter::for('mentor-review-public', function (Request $request) {
+            return Limit::perMinute(20)->by($request->ip());
+        });
+
         RateLimiter::for('login', function (Request $request) {
             $ip = $request->ip();
             $identity = Str::lower(trim((string) $request->input('email')));

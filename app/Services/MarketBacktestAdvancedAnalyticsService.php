@@ -53,6 +53,8 @@ class MarketBacktestAdvancedAnalyticsService
             'equityCurve' => $curve,
             'byWeekday' => $this->groupPerformance($positions, fn ($position) => gmdate('D', (int) ($position->closed_at_time ?: 0))),
             'byHourUtc' => $this->groupPerformance($positions, fn ($position) => gmdate('H:00', (int) ($position->closed_at_time ?: 0))),
+            'maeMfe' => $this->maeMfe($positions),
+            'byTradingSession' => $this->groupPerformance($positions, fn ($position) => $this->tradingSession((int) ($position->closed_at_time ?: 0))),
         ];
     }
 
@@ -100,6 +102,47 @@ class MarketBacktestAdvancedAnalyticsService
             $wins = $group->filter(fn ($position) => (float) $position->realized_pnl > 0)->count();
             return ['label' => $label, 'trades' => $group->count(), 'winRate' => round(($wins / $group->count()) * 100, 2), 'netPnl' => round($group->sum('realized_pnl'), 8)];
         })->values()->all();
+    }
+
+    private function maeMfe(Collection $positions): array
+    {
+        $rows = $positions->filter(fn ($p) => $p->favorable_price !== null && $p->adverse_price !== null && (float) $p->entry_price > 0);
+        if ($rows->isEmpty()) {
+            return ['eligible' => false, 'sampledTrades' => 0];
+        }
+        $mfePercents = []; $maePercents = []; $mfeAmounts = []; $maeAmounts = [];
+        foreach ($rows as $position) {
+            $entry = (float) $position->entry_price;
+            $quantity = (float) ($position->original_quantity ?? $position->quantity);
+            $isLong = $position->side === 'long';
+            $mfeDistance = $isLong ? max(0, (float) $position->favorable_price - $entry) : max(0, $entry - (float) $position->favorable_price);
+            $maeDistance = $isLong ? max(0, $entry - (float) $position->adverse_price) : max(0, (float) $position->adverse_price - $entry);
+            $mfePercents[] = ($mfeDistance / $entry) * 100;
+            $maePercents[] = ($maeDistance / $entry) * 100;
+            $mfeAmounts[] = $mfeDistance * $quantity;
+            $maeAmounts[] = $maeDistance * $quantity;
+        }
+        $count = count($mfePercents);
+        return [
+            'eligible' => true,
+            'sampledTrades' => $count,
+            'avgMfePercent' => round(array_sum($mfePercents) / $count, 4),
+            'avgMaePercent' => round(array_sum($maePercents) / $count, 4),
+            'avgMfeAmount' => round(array_sum($mfeAmounts) / $count, 8),
+            'avgMaeAmount' => round(array_sum($maeAmounts) / $count, 8),
+            'edgeRatio' => array_sum($maePercents) > 0 ? round(array_sum($mfePercents) / array_sum($maePercents), 4) : null,
+        ];
+    }
+
+    private function tradingSession(int $timestamp): string
+    {
+        $hour = (int) gmdate('G', $timestamp);
+        return match (true) {
+            $hour >= 0 && $hour < 8 => 'Asian',
+            $hour >= 8 && $hour < 13 => 'London',
+            $hour >= 13 && $hour < 21 => 'New York',
+            default => 'Late/Off-session',
+        };
     }
 
     private function percentile(array $values, int $percentile): float

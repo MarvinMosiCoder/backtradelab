@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, usePage } from '@inertiajs/react';
-import { BarChart3, BookOpen, CandlestickChart, ChevronLeft, CircleHelp, CreditCard, KeyRound, LayoutDashboard, MessageSquarePlus, UserRound } from 'lucide-react';
+import { BarChart3, BookOpen, CandlestickChart, ChevronLeft, CircleHelp, CreditCard, KeyRound, LayoutDashboard, MessageSquarePlus, Share2, Target, UserRound } from 'lucide-react';
 import { useSidebar } from '../../Context/SidebarContext';
 import { useTheme } from '../../Context/ThemeContext';
 
@@ -8,6 +8,8 @@ const items = [
     { label: 'Market Summary', href: '/market', icon: CandlestickChart },
     { label: 'Workspace', href: '/workspace', icon: LayoutDashboard },
     { label: 'Trade journal', href: '/trade-report', icon: BookOpen },
+    { label: 'Mentor review', href: '/mentor-review', icon: Share2 },
+    { label: 'Training challenges', href: '/training-challenges', icon: Target },
     { label: 'Subscription', href: '/subscription', icon: CreditCard },
     { label: 'Feedback & Customer Support', href: '/feedback', icon: MessageSquarePlus },
     { label: 'Profile', href: '/profile', icon: UserRound },

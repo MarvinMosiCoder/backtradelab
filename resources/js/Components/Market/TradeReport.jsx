@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
+import StatCard from './StatCard';
 
 const DEFAULT_TRADES_PER_PAGE = 10;
 
@@ -117,27 +118,6 @@ function getPnlClass(value, isDark) {
   if (number > 0) return isDark ? 'text-emerald-300' : 'text-emerald-700';
   if (number < 0) return isDark ? 'text-red-300' : 'text-red-700';
   return isDark ? 'text-gray-300' : 'text-slate-600';
-}
-
-function StatCard({ label, value, tone = 'neutral', icon: Icon, isDark }) {
-  const toneClass =
-    tone === 'win'
-      ? 'border-emerald-500/30 bg-emerald-500/10'
-      : tone === 'loss'
-        ? 'border-red-500/30 bg-red-500/10'
-        : isDark
-          ? 'border-gray-700 bg-black-table-color'
-          : 'border-slate-200 bg-slate-50';
-
-  return (
-    <div className={`rounded-md border p-3 ${toneClass}`}>
-      <div className={`mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
-        {Icon && <Icon size={14} />}
-        <span>{label}</span>
-      </div>
-      <div className={`text-lg font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>{value}</div>
-    </div>
-  );
 }
 
 function InsightCard({ insight, isDark }) {
@@ -442,6 +422,48 @@ export default function TradeReport({ refreshKey = 0 }) {
   const longTextClass = isDark ? 'text-emerald-300' : 'text-emerald-700';
   const shortTextClass = isDark ? 'text-red-300' : 'text-red-700';
 
+  const renderBreakdownPanel = (title, buckets) => {
+    const rows = Array.isArray(buckets) ? buckets : [];
+    const maxAbsPnl = Math.max(1e-9, ...rows.map((bucket) => Math.abs(Number(bucket.netPnl ?? 0))));
+
+    return (
+      <div key={title} className={`rounded-md border p-3 ${sectionClass}`}>
+        <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${mutedTextClass}`}>{title}</div>
+        {rows.length ? (
+          <div className="space-y-2">
+            {rows.map((bucket) => {
+              const netPnl = Number(bucket.netPnl ?? 0);
+              const barWidthPercent = Math.max(2, (Math.abs(netPnl) / maxAbsPnl) * 100);
+              const isPositive = netPnl >= 0;
+
+              return (
+                <div key={bucket.label}>
+                  <div className={`flex items-center justify-between gap-2 text-[11px] ${valueTextClass}`}>
+                    <span className="font-semibold">{bucket.label}</span>
+                    <span className={mutedTextClass}>{bucket.trades} trades · {formatPercent(bucket.winRate)} wins</span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <div className={`h-1.5 flex-1 overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-200'}`}>
+                      <div
+                        className={`h-full rounded-full ${isPositive ? 'bg-emerald-500 bg-opacity-60' : 'bg-red-500 bg-opacity-60'}`}
+                        style={{ width: `${barWidthPercent}%` }}
+                      />
+                    </div>
+                    <span className={`w-20 shrink-0 text-right text-[11px] font-semibold ${isPositive ? longTextClass : shortTextClass}`}>
+                      {formatReportMoney(netPnl)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className={`text-[11px] ${mutedTextClass}`}>No closed trades yet.</div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className={`rounded-lg border ${shellClass}`}>
       <div className={`flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 ${borderClass}`}>
@@ -580,11 +602,25 @@ export default function TradeReport({ refreshKey = 0 }) {
       )}
 
       {Number(summary.totalTrades ?? 0) > 0 && (
-        <div className="grid gap-3 px-4 pb-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Expectancy" value={formatReportMoney(advanced.expectancy)} tone={Number(advanced.expectancy) >= 0 ? 'win' : 'loss'} isDark={isDark} />
-          <StatCard label="Profit Factor" value={advanced.profitFactor == null ? '∞' : Number(advanced.profitFactor).toFixed(2)} isDark={isDark} />
-          <StatCard label="Max Drawdown" value={`${formatReportMoney(advanced.maxDrawdown)} (${formatPercent(advanced.maxDrawdownPercent)})`} tone="loss" isDark={isDark} />
-          <StatCard label="Win / Loss Streak" value={`${advanced.maxWinStreak ?? 0} / ${advanced.maxLossStreak ?? 0}`} isDark={isDark} />
+        <div className="px-4 pb-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Expectancy" value={formatReportMoney(advanced.expectancy)} tone={Number(advanced.expectancy) >= 0 ? 'win' : 'loss'} isDark={isDark} />
+            <StatCard label="Profit Factor" value={advanced.profitFactor == null ? '∞' : Number(advanced.profitFactor).toFixed(2)} isDark={isDark} />
+            <StatCard label="Max Drawdown" value={`${formatReportMoney(advanced.maxDrawdown)} (${formatPercent(advanced.maxDrawdownPercent)})`} tone="loss" isDark={isDark} />
+            <StatCard label="Win / Loss Streak" value={`${advanced.maxWinStreak ?? 0} / ${advanced.maxLossStreak ?? 0}`} isDark={isDark} />
+            {advanced.maeMfe?.eligible && (
+              <>
+                <StatCard label="Avg MFE %" value={formatPercent(advanced.maeMfe.avgMfePercent)} tone="win" isDark={isDark} />
+                <StatCard label="Avg MAE %" value={formatPercent(advanced.maeMfe.avgMaePercent)} tone="loss" isDark={isDark} />
+                <StatCard label="Edge Ratio" value={advanced.maeMfe.edgeRatio == null ? '—' : Number(advanced.maeMfe.edgeRatio).toFixed(2)} tone="neutral" isDark={isDark} />
+              </>
+            )}
+          </div>
+          {advanced.maeMfe?.eligible && Number(advanced.maeMfe.sampledTrades) < Number(summary.totalTrades ?? 0) && (
+            <p className={`mt-2 text-[11px] ${mutedTextClass}`}>
+              MAE/MFE based on {advanced.maeMfe.sampledTrades} of {summary.totalTrades} trades (excludes trades opened before this feature).
+            </p>
+          )}
         </div>
       )}
 
@@ -600,6 +636,17 @@ export default function TradeReport({ refreshKey = 0 }) {
               <span>P90 drawdown<br/><b className={valueTextClass}>{formatPercent(monteCarlo.drawdownP90Percent)}</b></span>
               <span>Half-balance risk<br/><b className={Number(monteCarlo.riskOfHalfBalancePercent) > 0 ? shortTextClass : valueTextClass}>{formatPercent(monteCarlo.riskOfHalfBalancePercent)}</b></span>
             </div>
+          </div>
+        </div>
+      )}
+
+      {Number(summary.totalTrades ?? 0) > 0 && (
+        <div className="px-4 pb-4">
+          <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${mutedTextClass}`}>Performance Breakdown</div>
+          <div className="grid gap-3 sm:grid-cols-1 lg:grid-cols-3">
+            {renderBreakdownPanel('By Weekday', advanced.byWeekday)}
+            {renderBreakdownPanel('By Hour (UTC)', advanced.byHourUtc)}
+            {renderBreakdownPanel('By Trading Session', advanced.byTradingSession)}
           </div>
         </div>
       )}

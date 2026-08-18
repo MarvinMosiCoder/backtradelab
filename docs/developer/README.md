@@ -27,6 +27,9 @@ This handbook documents the application by feature. Each guide names the respons
 | Candle replay and resume state | [Replay and progress](replay-and-progress.md) |
 | Simulated accounts, sessions, orders | [Backtesting and orders](backtesting-and-orders.md) |
 | PnL, calendar, exports, journal | [Trade reports and journals](trade-reports-and-journals.md) |
+| Real trade CSV import, separate from simulated data | [Imported trades](imported-trades.md) |
+| Revocable public trade-review links | [Mentor review sharing](mentor-review-sharing.md) |
+| Rule-scored practice exercises | [Training challenges](training-challenges.md) |
 | Price triggers and notifications | [Price alerts and notifications](price-alerts-and-notifications.md) |
 | Trial, plans, checkout, webhook | [Subscriptions, trials, and PayMongo](subscriptions-trials-and-paymongo.md) |
 | User/admin feedback workflow | [Feedback](feedback.md) |

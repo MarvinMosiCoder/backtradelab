@@ -580,6 +580,7 @@ class MarketBacktestController extends Controller
                 'break_even_trigger_percent' => $validated['break_even_trigger_percent'] ?? null,
                 'partial_take_profit_percent' => $validated['partial_take_profit_percent'] ?? null,
                 'favorable_price' => $price,
+                'adverse_price' => $price,
                 'status' => $isPendingOrder ? 'pending' : 'open',
                 'setup_tag' => $playbook?->name,
                 'playbook_snapshot' => $playbook ? [
@@ -966,6 +967,11 @@ class MarketBacktestController extends Controller
             ? max((float) ($position->favorable_price ?: $position->entry_price), $high)
             : min((float) ($position->favorable_price ?: $position->entry_price), $low);
         $updates = ['favorable_price' => $favorable];
+
+        $adverse = $position->side === 'long'
+            ? min((float) ($position->adverse_price ?: $position->entry_price), $low)
+            : max((float) ($position->adverse_price ?: $position->entry_price), $high);
+        $updates['adverse_price'] = $adverse;
 
         if ($position->trailing_stop_percent !== null) {
             $distance = (float) $position->trailing_stop_percent / 100;

@@ -4,6 +4,7 @@ import TradeCalendar from '../../Components/Market/TradeCalendar';
 import TradeReport from '../../Components/Market/TradeReport';
 import StrategyPlaybooks from '../../Components/Market/StrategyPlaybooks';
 import RiskGuardrailSettings from '../../Components/Market/RiskGuardrailSettings';
+import ImportedTrades from '../../Components/Market/ImportedTrades';
 import ContentPanel from '../../Components/Table/ContentPanel';
 
 const TradeReportPage = () => {
@@ -29,6 +30,11 @@ const TradeReportPage = () => {
                 <ContentPanel marginBottom={2}>
                     <div className="p-4">
                         <TradeReport />
+                    </div>
+                </ContentPanel>
+                <ContentPanel marginBottom={2}>
+                    <div className="p-4">
+                        <ImportedTrades />
                     </div>
                 </ContentPanel>
             </div>
