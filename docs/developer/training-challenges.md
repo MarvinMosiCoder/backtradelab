@@ -82,6 +82,12 @@ Violations are not all equally terminal:
 
 The reasoning: a single over-risked trade or one trade without a playbook shouldn't instantly end a 20-trade challenge — the trader should be able to see the mark against them and finish the exercise (failing to pass, but not being cut off). Blowing a hard loss-streak limit is different in kind — it represents a live discipline breakdown worth stopping the exercise for, so it ends the attempt rather than just tainting the eventual result.
 
+## Spotlight tour
+
+`TrainingChallengesPage.jsx` owns a `WorkspaceTour.jsx` instance (the fourth in this app — see [Trading chart](trading-chart.md), [Trade reports and journals](trade-reports-and-journals.md), and [Mentor review sharing](mentor-review-sharing.md) for the other three), a short two-step tour matching how small this page actually is rather than padding it out: the header/description (`data-tour="training-intro"`, what a challenge measures and how progress is scored), then a single wrapping `data-tour="training-list"` div around `TrainingChallengeCatalog.jsx`'s three-way loading/catalog/empty conditional — covering the progress bar, PnL/win-rate stats, violation badges, and Start/Abandon/Try-again buttons in one step, since those are per-card and conditionally rendered (a step targeting one specific card's button could hit the "unavailable" fallback depending on the trader's own attempt history, which the always-present wrapping div avoids).
+
+Independent of the other three tours: separate nullable `training_tour_completed_at` timestamp on `adm_users`, separate `POST /training-tour/complete` (`TrainingChallengeController::completeTour()`), same idempotent stamp-once pattern, same `auth.user.training_tour_completed_at` seed and `?tour=1` restart convention, same header "Take the tour" button placement as the other three pages.
+
 ## Maintenance
 
 - Keep scoring server-authoritative and purely a function of `(challenge.rules, attempt.starting_balance_snapshot, attempt.started_at, attempt.completed_at, closed positions in that window)` — no other stored state.
@@ -100,5 +106,6 @@ The reasoning: a single over-risked trade or one trade without a playbook should
 - Reaching `requiredTrades` with zero violations flips the attempt to `completed` and freezes `result_snapshot`.
 - `abandonAttempt()` only succeeds while `active`; abandoning a finished attempt is rejected.
 - Cross-user `showAttempt`/`abandonAttempt` on another user's attempt returns `404`.
+- A first-time visit to `/training-challenges` (no `training_tour_completed_at` yet) opens the spotlight tour automatically; finishing or skipping it posts `/training-tour/complete` and it does not reopen on the next visit. `?tour=1` reopens it regardless of completion state.
 
 Related: [Backtesting and orders](backtesting-and-orders.md), [Trade reports and journals](trade-reports-and-journals.md).

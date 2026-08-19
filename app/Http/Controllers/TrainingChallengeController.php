@@ -144,6 +144,15 @@ class TrainingChallengeController extends Controller
         ]);
     }
 
+    public function completeTour(Request $request)
+    {
+        if (!$request->user()->training_tour_completed_at) {
+            $request->user()->forceFill(['training_tour_completed_at' => now()])->save();
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     public function abandonAttempt(Request $request, TrainingChallengeAttempt $attempt)
     {
         $attempt = $this->owned($request, $attempt);

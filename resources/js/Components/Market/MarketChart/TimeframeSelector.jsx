@@ -1,0 +1,125 @@
+import React, { useState } from 'react';
+import { ChevronDown, Star } from 'lucide-react';
+
+export const MAX_TIMEFRAME_FAVORITES = 10;
+export const DEFAULT_TIMEFRAME_FAVORITES = ['1m', '5m', '15m', '30m', '1h', '4h'];
+
+/**
+ * Quick-access favorite pills (e.g. "1m 5m 15m 30m 1h 4h") plus a chevron that opens a
+ * "Select period" grid of every timeframe this exchange actually supports, each with a
+ * star to add/remove it from the pill row. Replaces the plain native <select> the header
+ * used before. Deliberately limited to this app's real, exchange-native intervals — no
+ * custom/arbitrary periods (e.g. "27m"), since those would need candle resampling this
+ * app doesn't implement, not just a UI change.
+ */
+export default function TimeframeSelector({ timeframe, timeframeOptions, favorites, onTimeframeChange, onFavoritesChange, chartTheme }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const isDark = chartTheme?.mode === 'dark';
+
+  const favoriteSet = new Set(favorites);
+  const pillTimeframes = timeframeOptions.filter((tf) => favoriteSet.has(tf.value));
+  const isCurrentSupported = timeframeOptions.some((tf) => tf.value === timeframe);
+  const isCurrentFavorited = pillTimeframes.some((tf) => tf.value === timeframe);
+  // The active timeframe always stays visible in the row even if it isn't starred —
+  // otherwise switching to a non-favorite via the grid would look like nothing is selected.
+  const displayedTimeframes = !isCurrentSupported || isCurrentFavorited
+    ? pillTimeframes
+    : [...pillTimeframes, timeframeOptions.find((tf) => tf.value === timeframe)].filter(Boolean);
+
+  const toggleFavorite = (value) => {
+    if (favoriteSet.has(value)) {
+      onFavoritesChange(favorites.filter((item) => item !== value));
+      return;
+    }
+    if (favorites.length >= MAX_TIMEFRAME_FAVORITES) return;
+    onFavoritesChange([...favorites, value]);
+  };
+
+  const shellClass = isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-slate-200 bg-white text-slate-900';
+  const mutedClass = isDark ? 'text-gray-400' : 'text-slate-500';
+
+  return (
+    <div className="relative flex min-w-0 items-center gap-0.5">
+      <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto scrollbar-none">
+        {displayedTimeframes.map((tf) => {
+          const isActive = tf.value === timeframe;
+          return (
+            <button
+              key={tf.value}
+              type="button"
+              onClick={() => onTimeframeChange(tf.value)}
+              title={tf.label}
+              className={`flex h-7 shrink-0 items-center justify-center rounded px-2 text-xs font-semibold transition-colors ${
+                isActive
+                  ? 'text-emerald-500'
+                  : isDark ? 'text-gray-300 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              {tf.value}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        onClick={() => setIsOpen((value) => !value)}
+        className={`flex h-7 w-6 shrink-0 items-center justify-center rounded ${isDark ? 'text-gray-400 hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+        aria-label="Select period"
+        aria-expanded={isOpen}
+        title="Select period"
+      >
+        <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <>
+          <button type="button" className="fixed inset-0 z-[99] cursor-default" aria-label="Close period selector" onClick={() => setIsOpen(false)} />
+          <div className={`absolute left-0 top-full z-[100] mt-2 w-[280px] rounded-lg border p-3 shadow-2xl ${shellClass}`} role="dialog" aria-label="Select period">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold">Select period</span>
+              <span className={`text-xs font-semibold ${mutedClass}`}>{favorites.length}/{MAX_TIMEFRAME_FAVORITES}</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {timeframeOptions.map((tf) => {
+                const isFav = favoriteSet.has(tf.value);
+                const isActive = tf.value === timeframe;
+                return (
+                  <div
+                    key={tf.value}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { onTimeframeChange(tf.value); setIsOpen(false); }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return;
+                      event.preventDefault();
+                      onTimeframeChange(tf.value);
+                      setIsOpen(false);
+                    }}
+                    title={tf.label}
+                    className={`relative flex h-10 cursor-pointer items-center justify-center rounded text-xs font-semibold outline-none ${
+                      isActive
+                        ? 'bg-[#2962ff] text-white'
+                        : isDark ? 'bg-white/5 text-gray-200 hover:bg-white/10' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tf.value}
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); toggleFavorite(tf.value); }}
+                      className={`absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full ${
+                        isFav ? 'text-amber-400' : isActive ? 'text-white/60 hover:text-amber-300' : isDark ? 'text-gray-600 hover:text-amber-400' : 'text-slate-300 hover:text-amber-500'
+                      }`}
+                      aria-label={isFav ? `Remove ${tf.label} from favorites` : `Add ${tf.label} to favorites`}
+                    >
+                      <Star size={11} fill={isFav ? 'currentColor' : 'none'} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

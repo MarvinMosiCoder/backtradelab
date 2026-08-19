@@ -98,11 +98,12 @@ export default function TrainingChallengeCatalog() {
 
   return (
     <div className={`rounded-lg border p-4 ${surface}`}>
-      <div className="mb-4">
+      <div className="mb-4" data-tour="training-intro">
         <h2 className="text-sm font-semibold">Training Challenges</h2>
         <p className={`mt-1 text-xs ${muted}`}>Measurable practice exercises scored on both profitability and rule adherence. Progress is computed from your closed trades since the attempt started.</p>
       </div>
       {error && <div className="mb-3 rounded border border-red-800 bg-red-950/50 p-2 text-xs text-red-200">{error}</div>}
+      <div data-tour="training-list">
       {loading ? (
         <p className={`text-xs ${muted}`}>Loading challenges…</p>
       ) : challenges.length ? (
@@ -202,6 +203,7 @@ export default function TrainingChallengeCatalog() {
       ) : (
         <p className={`text-xs ${muted}`}>No training challenges are available right now.</p>
       )}
+      </div>
     </div>
   );
 }

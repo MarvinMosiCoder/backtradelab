@@ -84,7 +84,7 @@ export default function RiskGuardrailSettings() {
   const isSuccess = message.includes('saved');
 
   return (
-    <form onSubmit={save} className={`rounded-lg border p-4 ${surface}`}>
+    <form onSubmit={save} data-tour="journal-risk" className={`rounded-lg border p-4 ${surface}`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">

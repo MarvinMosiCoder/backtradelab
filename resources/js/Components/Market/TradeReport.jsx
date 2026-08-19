@@ -287,6 +287,7 @@ export default function TradeReport({ refreshKey = 0 }) {
   const pageStart = totalTrades ? (safeCurrentPage - 1) * tradesPerPage : 0;
   const pageEnd = Math.min(pageStart + tradesPerPage, totalTrades);
   const paginatedTrades = filteredTrades.slice(pageStart, pageEnd);
+  const editingTrade = sortedTrades.find((trade) => trade.id === editingTradeId) ?? null;
   const visiblePageNumbers = useMemo(() => {
     const windowSize = 5;
     let start = Math.max(safeCurrentPage - 2, 1);
@@ -415,7 +416,6 @@ export default function TradeReport({ refreshKey = 0 }) {
     ? 'bg-skin-black text-gray-400'
     : 'bg-white text-slate-500';
   const rowHoverClass = isDark ? 'hover:bg-skin-black-light/60' : 'hover:bg-white';
-  const editRowClass = isDark ? 'bg-skin-black/70' : 'bg-white';
   const inactivePillClass = isDark
     ? 'bg-black-table-color text-gray-600'
     : 'bg-slate-100 text-slate-400';
@@ -473,7 +473,7 @@ export default function TradeReport({ refreshKey = 0 }) {
           </div>
           <p className={`mt-1 text-xs ${mutedTextClass}`}>Closed replay trades, grouped like exchange history.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2" data-tour="journal-export">
           <button
             type="button"
             onClick={() => exportReport('csv')}
@@ -539,7 +539,7 @@ export default function TradeReport({ refreshKey = 0 }) {
         </div>
       )}
 
-      <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6" data-tour="journal-summary">
         <StatCard
           label="Net PnL"
           value={formatReportMoney(summary.netPnl)}
@@ -652,7 +652,7 @@ export default function TradeReport({ refreshKey = 0 }) {
       )}
 
       <div className="px-4 pb-4">
-        <section className={`overflow-hidden rounded-lg border ${sectionClass}`}>
+        <section data-tour="journal-table" className={`overflow-hidden rounded-lg border ${sectionClass}`}>
           <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2 ${borderClass}`}>
             <div className="text-sm font-semibold">Closed Trades</div>
             <div className={`text-xs ${mutedTextClass}`}>
@@ -795,75 +795,6 @@ export default function TradeReport({ refreshKey = 0 }) {
                             </span>
                           </td>
                         </tr>
-                        {editingTradeId === trade.id && (
-                          <tr className={editRowClass}>
-                            <td colSpan={13} className="px-3 py-3">
-                              <div className="grid gap-3 md:grid-cols-3">
-                                <input
-                                  value={journalDraft.setupTag ?? ''}
-                                  onChange={(event) => updateJournalDraft('setupTag', event.target.value)}
-                                  className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
-                                  placeholder="Setup tag"
-                                />
-                                <input
-                                  value={journalDraft.tags ?? ''}
-                                  onChange={(event) => updateJournalDraft('tags', event.target.value)}
-                                  className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
-                                  placeholder="Tags, comma separated"
-                                />
-                                <input
-                                  value={journalDraft.emotion ?? ''}
-                                  onChange={(event) => updateJournalDraft('emotion', event.target.value)}
-                                  className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
-                                  placeholder="Emotion"
-                                />
-                                <textarea
-                                  value={journalDraft.entryReason ?? ''}
-                                  onChange={(event) => updateJournalDraft('entryReason', event.target.value)}
-                                  className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
-                                  placeholder="Entry reason"
-                                />
-                                <textarea
-                                  value={journalDraft.exitReason ?? ''}
-                                  onChange={(event) => updateJournalDraft('exitReason', event.target.value)}
-                                  className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
-                                  placeholder="Exit reason"
-                                />
-                                <textarea
-                                  value={journalDraft.mistake ?? ''}
-                                  onChange={(event) => updateJournalDraft('mistake', event.target.value)}
-                                  className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
-                                  placeholder="Mistake / improvement"
-                                />
-                                <textarea
-                                  value={journalDraft.journalNotes ?? ''}
-                                  onChange={(event) => updateJournalDraft('journalNotes', event.target.value)}
-                                  className={`min-h-24 rounded-md border px-3 py-2 text-xs outline-none md:col-span-3 ${fieldClass}`}
-                                  placeholder="Journal notes"
-                                />
-                              </div>
-                              <div className="mt-3 flex gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => saveJournal(trade.id)}
-                                  disabled={journalSaving}
-                                  className="inline-flex h-8 items-center gap-2 rounded-md bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-                                >
-                                  <Save size={14} />
-                                  Save
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelJournalEdit}
-                                  className={`inline-flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold ${buttonClass}`}
-                                >
-                                  <X size={14} />
-                                  Cancel
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
                       </React.Fragment>
                     );
                   })
@@ -941,6 +872,106 @@ export default function TradeReport({ refreshKey = 0 }) {
             </div>
           </div>
         </section>
+
+        {editingTrade && (
+          <div
+            className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            onMouseDown={(event) => event.target === event.currentTarget && cancelJournalEdit()}
+          >
+            <div
+              className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border shadow-2xl ${shellClass}`}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="journal-modal-title"
+            >
+              <div className={`flex items-center justify-between border-b px-5 py-4 ${borderClass}`}>
+                <div className="min-w-0">
+                  <h2 id="journal-modal-title" className="text-sm font-bold">Journal · {editingTrade.symbol}</h2>
+                  <p className={`mt-0.5 text-xs ${mutedTextClass}`}>
+                    <span className={editingTrade.side === 'long' ? longTextClass : shortTextClass}>
+                      {String(editingTrade.side ?? '').toUpperCase()}
+                    </span>
+                    {' · '}{formatTradeDate(editingTrade)}
+                    {' · '}
+                    <span className={`font-semibold ${getPnlClass(Number(editingTrade.pnl ?? 0), isDark)}`}>
+                      {Number(editingTrade.pnl ?? 0) > 0 ? '+' : ''}{formatReportMoney(editingTrade.pnl)}
+                    </span>
+                  </p>
+                </div>
+                <button type="button" onClick={cancelJournalEdit} className={`rounded-md p-1.5 ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`} aria-label="Close">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <input
+                    value={journalDraft.setupTag ?? ''}
+                    onChange={(event) => updateJournalDraft('setupTag', event.target.value)}
+                    className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
+                    placeholder="Setup tag"
+                  />
+                  <input
+                    value={journalDraft.tags ?? ''}
+                    onChange={(event) => updateJournalDraft('tags', event.target.value)}
+                    className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
+                    placeholder="Tags, comma separated"
+                  />
+                  <input
+                    value={journalDraft.emotion ?? ''}
+                    onChange={(event) => updateJournalDraft('emotion', event.target.value)}
+                    className={`h-9 rounded-md border px-3 text-xs outline-none ${fieldClass}`}
+                    placeholder="Emotion"
+                  />
+                  <textarea
+                    value={journalDraft.entryReason ?? ''}
+                    onChange={(event) => updateJournalDraft('entryReason', event.target.value)}
+                    className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
+                    placeholder="Entry reason"
+                  />
+                  <textarea
+                    value={journalDraft.exitReason ?? ''}
+                    onChange={(event) => updateJournalDraft('exitReason', event.target.value)}
+                    className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
+                    placeholder="Exit reason"
+                  />
+                  <textarea
+                    value={journalDraft.mistake ?? ''}
+                    onChange={(event) => updateJournalDraft('mistake', event.target.value)}
+                    className={`min-h-20 rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
+                    placeholder="Mistake / improvement"
+                  />
+                </div>
+                <textarea
+                  value={journalDraft.journalNotes ?? ''}
+                  onChange={(event) => updateJournalDraft('journalNotes', event.target.value)}
+                  className={`min-h-24 w-full rounded-md border px-3 py-2 text-xs outline-none ${fieldClass}`}
+                  placeholder="Journal notes"
+                />
+              </div>
+
+              <div className={`flex justify-end gap-2 border-t px-5 py-4 ${borderClass}`}>
+                <button
+                  type="button"
+                  onClick={cancelJournalEdit}
+                  className={`inline-flex h-9 items-center gap-2 rounded-md px-4 text-xs font-semibold ${buttonClass}`}
+                >
+                  <X size={14} />
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveJournal(editingTrade.id)}
+                  disabled={journalSaving}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-4 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                >
+                  <Save size={14} />
+                  {journalSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

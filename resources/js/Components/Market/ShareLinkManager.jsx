@@ -147,7 +147,7 @@ export default function ShareLinkManager() {
 
   return (
     <div className={`rounded-lg border p-4 ${surface}`}>
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2" data-tour="mentor-intro">
         <Link2 size={18} />
         <div>
           <h2 className="text-sm font-semibold">Mentor Review Links</h2>
@@ -191,7 +191,7 @@ export default function ShareLinkManager() {
           className={`h-9 w-full rounded border px-3 text-sm md:col-span-2 ${field}`}
         />
 
-        <div className="md:col-span-2">
+        <div className="md:col-span-2" data-tour="mentor-scope">
           <span className={`mb-1 block text-[11px] uppercase tracking-wide ${muted}`}>Scope</span>
           <div className="flex flex-wrap gap-3">
             {[
@@ -271,7 +271,7 @@ export default function ShareLinkManager() {
           />
         </label>
 
-        <div className="flex flex-wrap items-center gap-4 md:col-span-2">
+        <div className="flex flex-wrap items-center gap-4 md:col-span-2" data-tour="mentor-includes">
           <ToggleSwitch checked={form.includeJournal} onChange={(e) => updateForm({ includeJournal: e.target.checked })} label="Include journal notes" isDark={isDark} />
           <ToggleSwitch checked={form.includeSnapshots} onChange={(e) => updateForm({ includeSnapshots: e.target.checked })} label="Include chart snapshots" isDark={isDark} />
           <ToggleSwitch checked={form.includeAnalytics} onChange={(e) => updateForm({ includeAnalytics: e.target.checked })} label="Include analytics" isDark={isDark} />
@@ -284,7 +284,7 @@ export default function ShareLinkManager() {
         </div>
       </form>
 
-      <div>
+      <div data-tour="mentor-links">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide">Existing links</h3>
         {loading ? (
           <p className={`text-xs ${muted}`}>Loading…</p>

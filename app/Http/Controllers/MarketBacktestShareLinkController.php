@@ -149,6 +149,15 @@ class MarketBacktestShareLinkController extends Controller
         ], 201);
     }
 
+    public function completeTour(Request $request)
+    {
+        if (!$request->user()->mentor_tour_completed_at) {
+            $request->user()->forceFill(['mentor_tour_completed_at' => now()])->save();
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     public function destroy(Request $request, MarketBacktestShareLink $shareLink)
     {
         abort_unless($shareLink->adm_user_id === $request->user()->id, 404);

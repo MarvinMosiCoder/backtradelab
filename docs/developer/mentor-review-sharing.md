@@ -139,6 +139,14 @@ approach `Public/PrivacyPolicy.jsx` and `Public/Home.jsx` already take. If this 
 extended with more shared components, check first whether that component calls `useTheme()`
 internally — if it does, it cannot be reused here without passing theme data as props instead.
 
+## Spotlight tour
+
+`MentorReviewManagePage.jsx` owns a `WorkspaceTour.jsx` instance (the third in this app, after the chart workspace tour and the trade journal tour — see [Trading chart](trading-chart.md) and [Trade reports and journals](trade-reports-and-journals.md)), covering `ShareLinkManager.jsx`'s four always-rendered landmarks in page order: the header (what a share link is and that it's revocable/read-only), the Scope radio group (session / date range / specific trades), the three include-toggles (journal/snapshots/analytics), and the "Existing links" list. Each step's `selector` targets a `data-tour="mentor-*"` attribute placed directly on the real element in `ShareLinkManager.jsx` — add the attribute to the new control first if a step is ever retargeted.
+
+All four selected elements render unconditionally regardless of loading/data state — deliberately, unlike a per-row target (e.g. one specific share-link card), so the tour never hits `WorkspaceTour`'s "this control is unavailable here" fallback just because the trader hasn't created a link yet.
+
+Independent of both other tours: separate nullable `mentor_tour_completed_at` timestamp on `adm_users`, separate `POST /mentor-tour/complete` (`MarketBacktestShareLinkController::completeTour()`), same idempotent "only stamp if not already set" pattern. `MentorReviewManagePage.jsx` seeds `tourStep` from `auth.user.mentor_tour_completed_at` and honors the same `?tour=1` restart convention as the other two. A "Take the tour" button sits in the page header, same placement/styling as the journal tour's.
+
 ## Maintenance
 
 - Keep the public `show()` action as the *only* place trade data crosses the auth boundary for
@@ -165,5 +173,6 @@ internally — if it does, it cannot be reused here without passing theme data a
 - Another user calling `destroy()` on someone else's link → 404, and the link remains unrevoked.
 - `view_count` increments and `last_viewed_at` updates on each successful public view, but not on
   404/410 responses.
+- A first-time visit to `/mentor-review` (no `mentor_tour_completed_at` yet) opens the spotlight tour automatically; finishing or skipping it posts `/mentor-tour/complete` and it does not reopen on the next visit. `?tour=1` reopens it regardless of completion state. The "Take the tour" button reopens it manually at any time.
 
 Related: [Trade reports](trade-reports-and-journals.md), [Backtesting and orders](backtesting-and-orders.md).

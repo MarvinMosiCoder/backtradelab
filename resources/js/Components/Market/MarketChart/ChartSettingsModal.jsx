@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Layers, LineChart, Palette, Rows3, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Layers, LineChart, Move, Palette, Rows3, X } from 'lucide-react';
 
 const TABS = [
   { key: 'symbol', label: 'Symbol', icon: Rows3 },
@@ -136,11 +136,17 @@ function CanvasTab({ isDark, canvas, onChange }) {
   );
 }
 
+const DRAG_MARGIN = 32;
+
 export default function ChartSettingsModal({ open, onClose, isDark, candleColors, candleSize, chartDisplay, onCandleColorChange, onCandleSizeChange, onChartDisplayChange }) {
   const [activeTab, setActiveTab] = useState('symbol');
   const [draftColors, setDraftColors] = useState(candleColors);
   const [draftSize, setDraftSize] = useState(candleSize);
   const [draftDisplay, setDraftDisplay] = useState(chartDisplay);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const panelRef = useRef(null);
+  const dragCleanupRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -148,9 +154,12 @@ export default function ChartSettingsModal({ open, onClose, isDark, candleColors
     setDraftColors(candleColors);
     setDraftSize(candleSize);
     setDraftDisplay(chartDisplay);
+    setDragOffset({ x: 0, y: 0 });
     // Only re-seed the draft when the modal opens, not on every parent re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => () => dragCleanupRef.current?.(), []);
 
   if (!open) return null;
 
@@ -165,14 +174,64 @@ export default function ChartSettingsModal({ open, onClose, isDark, candleColors
     onClose();
   };
 
+  const handleDragHandlePointerDown = (event) => {
+    if (event.button !== 0 || event.target.closest('button')) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    event.preventDefault();
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+    const startOffset = dragOffset;
+    const startRect = panel.getBoundingClientRect();
+
+    const handleMove = (moveEvent) => {
+      const nextLeft = startRect.left + (moveEvent.clientX - startClientX);
+      const nextTop = startRect.top + (moveEvent.clientY - startClientY);
+      const clampedLeft = Math.min(Math.max(nextLeft, DRAG_MARGIN - startRect.width), window.innerWidth - DRAG_MARGIN);
+      const clampedTop = Math.min(Math.max(nextTop, 0), window.innerHeight - DRAG_MARGIN);
+
+      setDragOffset({
+        x: startOffset.x + (clampedLeft - startRect.left),
+        y: startOffset.y + (clampedTop - startRect.top),
+      });
+    };
+
+    const handleUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+      dragCleanupRef.current = null;
+    };
+
+    setIsDragging(true);
+    dragCleanupRef.current = handleUp;
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+  };
+
   const panelClass = isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-gray-900';
   const fieldClass = isDark ? 'border-gray-700 bg-black-table-color/60 text-white' : 'border-gray-200 bg-white text-gray-900';
 
   return (
     <div className="fixed inset-0 z-[10030] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border shadow-2xl ${panelClass}`} role="dialog" aria-modal="true" aria-labelledby="chart-settings-title">
-        <div className={`flex items-center justify-between border-b px-5 py-4 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-          <h2 id="chart-settings-title" className="text-lg font-bold">Chart settings</h2>
+      <div
+        ref={panelRef}
+        className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border shadow-2xl ${panelClass}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chart-settings-title"
+        style={{ transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, willChange: 'transform' }}
+      >
+        <div
+          onPointerDown={handleDragHandlePointerDown}
+          className={`flex select-none items-center justify-between border-b px-5 py-4 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${isDark ? 'border-gray-700' : 'border-gray-200'}`}
+          title="Drag to move"
+        >
+          <h2 id="chart-settings-title" className="flex items-center gap-2 text-lg font-bold">
+            <Move size={15} className={isDark ? 'text-gray-500' : 'text-gray-400'} aria-hidden="true" />
+            Chart settings
+          </h2>
           <button type="button" onClick={onClose} className={`rounded-md p-1.5 ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`} aria-label="Close"><X size={18} /></button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">

@@ -1,12 +1,44 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
+import { createPortal } from 'react-dom';
 import { marketCategoryLabel } from '../../../utils/marketLabels';
 import { Bell, CandlestickChart, Check, ChevronDown, CircleHelp, Info, ListPlus, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 import { useWatchlist } from '../../../Context/WatchlistContext';
+import TimeframeSelector, { DEFAULT_TIMEFRAME_FAVORITES } from './TimeframeSelector';
 
 const searchResultKey = (exchange, category, symbol) => `${String(exchange).toLowerCase()}:${String(category).toLowerCase()}:${String(symbol).toUpperCase()}`;
+
+// Same anchored-tooltip pattern as the drawing-tool rail in ReplayPanel.jsx
+// (useAnchoredTooltip + RailTooltipPortal): a portal-rendered label positioned
+// via getBoundingClientRect so it escapes any clipping/overflow ancestors.
+function useAnchoredTooltip() {
+  const anchorRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const show = () => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (rect) setPos({ top: rect.top + rect.height / 2, left: rect.right + 8 });
+  };
+  const hide = () => setPos(null);
+  return { anchorRef, pos, show, hide };
+}
+
+function HeaderTooltipPortal({ pos, label, isDark }) {
+  if (!pos || !label || typeof document === 'undefined') return null;
+  return createPortal(
+    <span
+      role="tooltip"
+      className={`pointer-events-none fixed z-[9999] -translate-y-1/2 whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-medium shadow-lg ${
+        isDark ? 'border-[#363a45] bg-[#1e222d] text-white' : 'border-slate-200 bg-white text-slate-800'
+      }`}
+      style={{ top: pos.top, left: pos.left }}
+    >
+      {label}
+    </span>,
+    document.body
+  );
+}
 
 function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, isDark }) {
   return (
@@ -48,7 +80,7 @@ function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, i
   );
 }
 
-export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
+export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, timeframeFavorites = DEFAULT_TIMEFRAME_FAVORITES, onTimeframeFavoritesChange = () => {}, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
   const { watchlists = {}, activeWatchlist: activeWatchlistName = null, addSymbolToWatchlist: onAddToWatchlist = null } = useWatchlist() ?? {};
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [recentlyAddedKey, setRecentlyAddedKey] = useState(null);
@@ -163,6 +195,12 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
 
   const marketInfo = <MarketMetadataPopover metadata={marketMetadata} loading={marketMetadataLoading} error={marketMetadataError} isDark={isDark} panelStyle={panelStyle}/>;
 
+  const replayTooltip = useAnchoredTooltip();
+  const alertTooltip = useAnchoredTooltip();
+  const infoTooltip = useAnchoredTooltip();
+  const indicatorsTooltip = useAnchoredTooltip();
+  const replayTooltipLabel = replayMode ? 'Back to live' : 'Start replay';
+
   if (compact) {
     const compactFieldClass = `h-8 rounded-md border px-2 text-xs outline-none ${isDark ? 'border-gray-700 bg-black-table-color/95 text-white' : 'border-gray-200 bg-white/95 text-gray-800'}`;
 
@@ -268,32 +306,36 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             </button>
           )}
 
-          <select data-tour="timeframe" value={timeframe} onChange={(e) => onTimeframeChange(e.target.value)} className={`${compactFieldClass} w-28 min-w-28`} title="Timeframe">
-            {timeframeOptions.map((tf) => (
-              <option key={tf.value} value={tf.value}>
-                {tf.label}
-              </option>
-            ))}
-          </select>
+          <div data-tour="timeframe">
+            <TimeframeSelector
+              timeframe={timeframe}
+              timeframeOptions={timeframeOptions}
+              favorites={timeframeFavorites}
+              onTimeframeChange={onTimeframeChange}
+              onFavoritesChange={onTimeframeFavoritesChange}
+              chartTheme={chartTheme}
+            />
+          </div>
 
-          <button data-tour="replay" type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`} title={replayMode ? 'Back to live' : 'Start replay'}>
+          <button ref={replayTooltip.anchorRef} data-tour="replay" type="button" onClick={onToggleReplayMode} onMouseEnter={replayTooltip.show} onMouseLeave={replayTooltip.hide} onFocus={replayTooltip.show} onBlur={replayTooltip.hide} disabled={replayAccessStatus === 'checking-access'} aria-label={replayTooltipLabel} className={`flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-semibold disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`}>
             {replayAccessStatus === 'checking-access' ? <LoaderCircle size={14} className="animate-spin" /> : replayMode ? <X size={14} /> : <Play size={14} />}
-            <span className="hidden sm:inline">{replayAccessStatus === 'checking-access' ? 'Checking…' : replayAccessStatus === 'pick-candle' ? 'Click candle' : replayMode ? 'Live' : 'Replay'}</span>
           </button>
-          <button type="button" onClick={onCreatePriceAlert} className="flex h-8 items-center gap-1.5 rounded-md bg-[#2962ff] px-2.5 text-xs font-semibold text-white">
+          {replayAccessStatus !== 'checking-access' && <HeaderTooltipPortal pos={replayTooltip.pos} label={replayTooltipLabel} isDark={isDark} />}
+          <button ref={alertTooltip.anchorRef} type="button" onClick={onCreatePriceAlert} onMouseEnter={alertTooltip.show} onMouseLeave={alertTooltip.hide} onFocus={alertTooltip.show} onBlur={alertTooltip.hide} aria-label="Create alert" className="flex h-8 items-center gap-1.5 rounded-md bg-[#2962ff] px-2.5 text-xs font-semibold text-white">
             <Bell size={13} />
-            <span className="hidden sm:inline">Alert</span>
           </button>
+          <HeaderTooltipPortal pos={alertTooltip.pos} label="Create alert" isDark={isDark} />
           <div className="relative">
-            <button type="button" onClick={() => setIsMarketInfoOpen(value => !value)} className={`${compactFieldClass} flex w-8 items-center justify-center`} title="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
+            <button ref={infoTooltip.anchorRef} type="button" onClick={() => setIsMarketInfoOpen(value => !value)} onMouseEnter={infoTooltip.show} onMouseLeave={infoTooltip.hide} onFocus={infoTooltip.show} onBlur={infoTooltip.hide} className={`${compactFieldClass} flex w-8 items-center justify-center`} aria-label="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
             {isMarketInfoOpen && marketInfo}
+            <HeaderTooltipPortal pos={infoTooltip.pos} label="Market information" isDark={isDark} />
           </div>
 
           <div className="relative">
-            <button type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
+            <button ref={indicatorsTooltip.anchorRef} type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} onMouseEnter={indicatorsTooltip.show} onMouseLeave={indicatorsTooltip.hide} onFocus={indicatorsTooltip.show} onBlur={indicatorsTooltip.hide} aria-label="Indicators" className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
               <SlidersHorizontal size={13} />
-              <span className="hidden sm:inline">Indicators</span>
             </button>
+            <HeaderTooltipPortal pos={indicatorsTooltip.pos} label="Indicators" isDark={isDark} />
             {isIndicatorsOpen && (
               <div className={`absolute left-0 top-full z-[100] mt-2 w-72 max-w-[85vw] space-y-3 rounded-md border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={panelStyle}>
                 <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>Add indicators</div>
@@ -448,29 +490,30 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
 
         <div className="col-span-1 min-w-0 sm:col-span-3 lg:col-span-1">
           <label className="sr-only">Timeframe</label>
-          <select value={timeframe} onChange={(e) => onTimeframeChange(e.target.value)} className={`${fieldClass} w-full`}>
-            {timeframeOptions.map((tf) => (
-              <option key={tf.value} value={tf.value}>
-                {tf.label}
-              </option>
-            ))}
-          </select>
+          <TimeframeSelector
+            timeframe={timeframe}
+            timeframeOptions={timeframeOptions}
+            favorites={timeframeFavorites}
+            onTimeframeChange={onTimeframeChange}
+            onFavoritesChange={onTimeframeFavoritesChange}
+            chartTheme={chartTheme}
+          />
         </div>
 
         <div className="col-span-2 min-w-0 sm:col-span-3 lg:col-span-2">
           <label className="sr-only">Replay</label>
-          <button data-tour="replay" type="button" onClick={onToggleReplayMode} disabled={replayAccessStatus === 'checking-access'} className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`}>
+          <button ref={replayTooltip.anchorRef} data-tour="replay" type="button" onClick={onToggleReplayMode} onMouseEnter={replayTooltip.show} onMouseLeave={replayTooltip.hide} onFocus={replayTooltip.show} onBlur={replayTooltip.hide} disabled={replayAccessStatus === 'checking-access'} aria-label={replayTooltipLabel} className={`flex h-9 w-full items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-wait disabled:opacity-60 ${replayMode ? 'bg-red-600 text-white hover:bg-red-700' : neutralActionClass}`}>
             {replayAccessStatus === 'checking-access' ? <LoaderCircle size={15} className="animate-spin" /> : replayMode ? <X size={15} /> : <Play size={15} />}
-            {replayAccessStatus === 'checking-access' ? 'Checking replay access…' : replayAccessStatus === 'pick-candle' ? 'Click a candle to start' : replayMode ? 'Back to Live' : 'Start Replay'}
           </button>
+          {replayAccessStatus !== 'checking-access' && <HeaderTooltipPortal pos={replayTooltip.pos} label={replayTooltipLabel} isDark={isDark} />}
         </div>
 
         <div className="relative col-span-1 sm:col-span-3 lg:col-span-2">
-          <button type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
+          <button ref={indicatorsTooltip.anchorRef} type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} onMouseEnter={indicatorsTooltip.show} onMouseLeave={indicatorsTooltip.hide} onFocus={indicatorsTooltip.show} onBlur={indicatorsTooltip.hide} aria-label="Indicators" className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
             <SlidersHorizontal size={14} />
-            <span>Indicators</span>
             {activeIndicatorCount > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2962ff] px-1 text-[9px] text-white">{activeIndicatorCount}</span>}
           </button>
+          <HeaderTooltipPortal pos={indicatorsTooltip.pos} label="Indicators" isDark={isDark} />
           {isIndicatorsOpen && (
             <div className={`absolute right-0 top-full z-[100] mt-2 w-72 max-w-[calc(100vw-1rem)] space-y-3 rounded-lg border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={panelStyle}>
               <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>Add indicators</div>
@@ -494,14 +537,15 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           )}
         </div>
 
-        <button type="button" onClick={onCreatePriceAlert} className="col-span-1 flex h-9 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-600 sm:col-span-3 lg:col-span-1">
+        <button ref={alertTooltip.anchorRef} type="button" onClick={onCreatePriceAlert} onMouseEnter={alertTooltip.show} onMouseLeave={alertTooltip.hide} onFocus={alertTooltip.show} onBlur={alertTooltip.hide} aria-label="Create alert" className="col-span-1 flex h-9 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-3 text-xs font-semibold text-white transition-colors hover:bg-blue-600 sm:col-span-3 lg:col-span-1">
           <Bell size={14} />
-          <span className="hidden xl:inline">Alert</span>
         </button>
+        <HeaderTooltipPortal pos={alertTooltip.pos} label="Create alert" isDark={isDark} />
 
         <div className="relative col-span-1 sm:col-span-3 lg:col-span-1">
-          <button type="button" onClick={() => setIsMarketInfoOpen(value => !value)} className={`${fieldClass} flex w-full items-center justify-center gap-1.5 font-semibold hover:border-[#2962ff]/60`} title="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/><span className="hidden xl:inline">Info</span></button>
+          <button ref={infoTooltip.anchorRef} type="button" onClick={() => setIsMarketInfoOpen(value => !value)} onMouseEnter={infoTooltip.show} onMouseLeave={infoTooltip.hide} onFocus={infoTooltip.show} onBlur={infoTooltip.hide} className={`${fieldClass} flex w-full items-center justify-center gap-1.5 font-semibold hover:border-[#2962ff]/60`} aria-label="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
           {isMarketInfoOpen && marketInfo}
+          <HeaderTooltipPortal pos={infoTooltip.pos} label="Market information" isDark={isDark} />
         </div>
 
         <div

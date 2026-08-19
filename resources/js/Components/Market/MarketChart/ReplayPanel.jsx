@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { createPortal } from 'react-dom';
 import { usePage } from '@inertiajs/react';
+import Select from 'react-select';
 import {
   Activity,
   ArrowDown,
@@ -462,14 +463,42 @@ function parseDrawingDateTime(value, fallback) {
   return Number.isFinite(milliseconds) ? Math.floor(milliseconds / 1000) : fallback;
 }
 
+function ConfirmOverwriteDialog({ isDark, templateName, onCancel, onConfirm, overlayClassName = 'fixed inset-0' }) {
+  const surfaceClass = isDark ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800';
+  const fieldClass = isDark ? 'border-[#434651] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-300 bg-white text-slate-800';
+  const mutedClass = isDark ? 'text-[#b2b5be]' : 'text-slate-600';
+  const dividerClass = isDark ? 'border-[#363a45]' : 'border-slate-200';
+
+  return (
+    <div className={`${overlayClassName} z-[10032] flex items-center justify-center bg-black/40 px-3`} data-chart-ui>
+      <section className={`w-full max-w-sm overflow-hidden rounded-md border shadow-2xl ${surfaceClass}`} role="alertdialog" aria-modal="true" aria-label="Overwrite template">
+        <header className="px-6 pb-3 pt-6">
+          <h2 className="text-lg font-semibold">Overwrite template?</h2>
+        </header>
+        <div className={`px-6 pb-6 text-sm ${mutedClass}`}>
+          Overwrite the “{templateName}” template with the current tool settings? This can’t be undone.
+        </div>
+        <footer className={`flex items-center justify-end gap-3 border-t px-6 py-5 ${dividerClass}`}>
+          <button type="button" onClick={onCancel} className={`h-11 rounded-lg border px-5 text-sm font-semibold ${fieldClass}`}>Cancel</button>
+          <button type="button" onClick={onConfirm} className="h-11 rounded-lg bg-amber-400 px-5 text-sm font-semibold text-slate-950 transition hover:bg-amber-300">Overwrite</button>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+const DIALOG_DRAG_MARGIN = 32;
+
 function DrawingSettingsDialog({
   drawing,
   editorLabel,
+  editorType,
   timeframe,
   chartTheme,
   canUsePresets,
   presetItems,
   onSaveTemplate,
+  onDeleteToolPreset,
   onClose,
   onApply,
 }) {
@@ -479,6 +508,11 @@ function DrawingSettingsDialog({
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
   const [templateNameDraft, setTemplateNameDraft] = useState('');
+  const [pendingOverwriteName, setPendingOverwriteName] = useState(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const panelRef = useRef(null);
+  const dragCleanupRef = useRef(null);
   const tabs = ['style', 'text', 'coordinates', 'visibility'];
   const surfaceClass = isDark ? 'border-[#363a45] bg-[#1e222d] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800';
   const fieldClass = isDark
@@ -492,7 +526,46 @@ function DrawingSettingsDialog({
   useEffect(() => {
     setDraft({ ...drawing });
     setActiveTab('style');
+    setDragOffset({ x: 0, y: 0 });
   }, [drawing?.id]);
+
+  useEffect(() => () => dragCleanupRef.current?.(), []);
+
+  const handleDragHandlePointerDown = (event) => {
+    if (event.button !== 0 || event.target.closest('button')) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+
+    event.preventDefault();
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+    const startOffset = dragOffset;
+    const startRect = panel.getBoundingClientRect();
+
+    const handleMove = (moveEvent) => {
+      const nextLeft = startRect.left + (moveEvent.clientX - startClientX);
+      const nextTop = startRect.top + (moveEvent.clientY - startClientY);
+      const clampedLeft = Math.min(Math.max(nextLeft, DIALOG_DRAG_MARGIN - startRect.width), window.innerWidth - DIALOG_DRAG_MARGIN);
+      const clampedTop = Math.min(Math.max(nextTop, 0), window.innerHeight - DIALOG_DRAG_MARGIN);
+
+      setDragOffset({
+        x: startOffset.x + (clampedLeft - startRect.left),
+        y: startOffset.y + (clampedTop - startRect.top),
+      });
+    };
+
+    const handleUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('pointermove', handleMove);
+      document.removeEventListener('pointerup', handleUp);
+      dragCleanupRef.current = null;
+    };
+
+    setIsDragging(true);
+    dragCleanupRef.current = handleUp;
+    document.addEventListener('pointermove', handleMove);
+    document.addEventListener('pointerup', handleUp);
+  };
 
   const updatePoint = (key, field, value) => {
     setDraft((current) => {
@@ -516,20 +589,49 @@ function DrawingSettingsDialog({
     setShowTemplateMenu(false);
   };
 
+  const commitSaveTemplate = (name) => {
+    onSaveTemplate?.(name, draft);
+    setShowSaveAsDialog(false);
+    setTemplateNameDraft('');
+    setPendingOverwriteName(null);
+  };
+
   const handleSaveTemplate = () => {
     const name = templateNameDraft.trim();
     if (!name) return;
     const existing = (presetItems ?? []).find((item) => String(item.name).toLowerCase() === name.toLowerCase());
-    if (existing && !window.confirm(`Overwrite the “${existing.name}” template with the current tool settings?`)) return;
-    onSaveTemplate?.(name);
-    setShowSaveAsDialog(false);
-    setTemplateNameDraft('');
+    if (existing) {
+      setPendingOverwriteName(existing.name);
+      return;
+    }
+    commitSaveTemplate(name);
+  };
+
+  const handleApplyTemplate = (preset) => {
+    if (!preset?.settings) return;
+    setDraft((current) => ({
+      ...current,
+      ...preset.settings,
+      ...(typeof preset.settings.labelText === 'string' ? { text: preset.settings.labelText, labelText: preset.settings.labelText } : {}),
+    }));
+    setShowTemplateMenu(false);
   };
 
   return (
     <div className="fixed inset-0 z-[10020] flex items-start justify-center bg-black/10 px-3 pt-[max(4.5rem,8vh)]" data-chart-ui>
-      <section className={`w-full max-w-[476px] overflow-hidden rounded-md border shadow-2xl ${surfaceClass}`} role="dialog" aria-modal="true" aria-label={`${editorLabel} settings`}>
-        <header className="flex items-center justify-between px-6 pb-4 pt-6">
+      <section
+        ref={panelRef}
+        className={`w-full max-w-[476px] overflow-hidden rounded-md border shadow-2xl ${surfaceClass}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${editorLabel} settings`}
+        style={{ transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`, willChange: 'transform' }}
+      >
+        <header
+          onPointerDown={handleDragHandlePointerDown}
+          className={`flex select-none items-center justify-between px-6 pb-4 pt-6 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          title="Drag to move"
+        >
           <div className="flex min-w-0 items-center gap-3">
             <h2 className="truncate text-xl font-semibold">{editorLabel}</h2>
             <Pencil size={19} strokeWidth={1.6} className={mutedClass} />
@@ -649,7 +751,7 @@ function DrawingSettingsDialog({
             {showTemplateMenu && (
               <>
                 <button type="button" className="fixed inset-0 z-[10029] cursor-default" onClick={() => setShowTemplateMenu(false)} aria-label="Close template menu" tabIndex={-1} />
-                <div className={`absolute bottom-full left-0 z-[10030] mb-2 w-44 overflow-hidden rounded-lg border py-1.5 shadow-2xl ${surfaceClass}`}>
+                <div className={`absolute bottom-full left-0 z-[10030] mb-2 w-56 overflow-hidden rounded-lg border py-1.5 shadow-2xl ${surfaceClass}`}>
                   <button
                     type="button"
                     onClick={() => { setTemplateNameDraft(''); setShowSaveAsDialog(true); setShowTemplateMenu(false); }}
@@ -664,6 +766,34 @@ function DrawingSettingsDialog({
                   >
                     Apply defaults
                   </button>
+                  <div className={`mx-4 my-1.5 border-t ${dividerClass}`} />
+                  <div className={`px-4 pb-1 text-[11px] font-semibold uppercase tracking-wide ${mutedClass}`}>Templates</div>
+                  <div className="max-h-44 space-y-0.5 overflow-y-auto px-2 pb-1.5">
+                    {(presetItems ?? []).map((preset) => (
+                      <div key={preset.id ?? preset.name} className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleApplyTemplate(preset)}
+                          className={`h-9 flex-1 truncate rounded px-2 text-left text-sm ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                          title={`Apply ${preset.name}`}
+                        >
+                          {preset.name}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteToolPreset?.(editorType, preset)}
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10"
+                          title={`Delete ${preset.name}`}
+                          aria-label={`Delete ${preset.name}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    {!(presetItems ?? []).length && (
+                      <span className={`block px-2 py-1 text-[11px] ${mutedClass}`}>No saved templates</span>
+                    )}
+                  </div>
                 </div>
               </>
             )}
@@ -701,6 +831,15 @@ function DrawingSettingsDialog({
             </footer>
           </section>
         </div>
+      )}
+
+      {pendingOverwriteName && (
+        <ConfirmOverwriteDialog
+          isDark={isDark}
+          templateName={pendingOverwriteName}
+          onCancel={() => setPendingOverwriteName(null)}
+          onConfirm={() => commitSaveTemplate(templateNameDraft.trim())}
+        />
       )}
     </div>
   );
@@ -746,9 +885,28 @@ function TopToolEditorBar({
 }) {
   const [hexColorDraft, setHexColorDraft] = useState(activeColor ?? '');
   const [showSaveAsDialog, setShowSaveAsDialog] = useState(false);
+  const [pendingOverwriteName, setPendingOverwriteName] = useState(null);
 
   const toggleMenu = (menu) => {
     setOpenMenu((currentMenu) => (currentMenu === menu ? null : menu));
+  };
+
+  const attemptSavePreset = () => {
+    const trimmed = presetNameDraft.trim();
+    if (!trimmed) return;
+    const existing = (presetItems ?? []).find((item) => String(item.name).toLowerCase() === trimmed.toLowerCase());
+    if (existing) {
+      setPendingOverwriteName(existing.name);
+      return;
+    }
+    onSavePreset();
+    setShowSaveAsDialog(false);
+  };
+
+  const confirmOverwritePreset = () => {
+    onSavePreset();
+    setPendingOverwriteName(null);
+    setShowSaveAsDialog(false);
   };
 
   const handleApplyToolDefaults = () => {
@@ -926,8 +1084,7 @@ function TopToolEditorBar({
                       onChange={(event) => setPresetNameDraft(event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' && presetNameDraft.trim()) {
-                          onSavePreset();
-                          setShowSaveAsDialog(false);
+                          attemptSavePreset();
                         }
                       }}
                       className={`mt-2 h-11 w-full rounded-lg border px-3 text-sm outline-none ${editorFieldClass}`}
@@ -944,10 +1101,7 @@ function TopToolEditorBar({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      onSavePreset();
-                      setShowSaveAsDialog(false);
-                    }}
+                    onClick={attemptSavePreset}
                     disabled={!presetNameDraft.trim()}
                     className="h-11 rounded-lg bg-emerald-400 px-5 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
                   >
@@ -956,6 +1110,16 @@ function TopToolEditorBar({
                 </footer>
               </section>
             </div>,
+            chartBoundsRef.current,
+          )}
+          {pendingOverwriteName && typeof document !== 'undefined' && chartBoundsRef?.current && createPortal(
+            <ConfirmOverwriteDialog
+              isDark={isDark}
+              templateName={pendingOverwriteName}
+              onCancel={() => setPendingOverwriteName(null)}
+              onConfirm={confirmOverwritePreset}
+              overlayClassName="pointer-events-auto absolute inset-0"
+            />,
             chartBoundsRef.current,
           )}
         </div>
@@ -1184,11 +1348,13 @@ function TopToolEditorBar({
         <DrawingSettingsDialog
           drawing={selectedDrawing}
           editorLabel={editorLabel}
+          editorType={editorType}
           timeframe={timeframe}
           chartTheme={chartTheme}
           canUsePresets={canUsePresets}
           presetItems={presetItems}
           onSaveTemplate={onSaveSelectedToolPreset}
+          onDeleteToolPreset={onDeleteToolPreset}
           onClose={() => setOpenMenu(null)}
           onApply={(nextDrawing) => {
             if (nextDrawing.color !== activeColor) onDrawingColorChange(nextDrawing.color);
@@ -1226,6 +1392,41 @@ function formatMoney(value, digits = 2) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   });
+}
+
+function playbookSelectStyles(isDark) {
+  return {
+    control: (base, state) => ({
+      ...base,
+      minHeight: 32,
+      height: 32,
+      fontSize: 12,
+      backgroundColor: isDark ? '#151617' : '#ffffff',
+      borderColor: state.isFocused ? '#2962ff' : (isDark ? '#374151' : '#cbd5e1'),
+      boxShadow: 'none',
+      '&:hover': { borderColor: '#2962ff' },
+    }),
+    valueContainer: (base) => ({ ...base, height: 32, padding: '0 8px' }),
+    input: (base) => ({ ...base, margin: 0, padding: 0, color: isDark ? '#fff' : '#0f172a' }),
+    indicatorsContainer: (base) => ({ ...base, height: 32 }),
+    indicatorSeparator: (base) => ({ ...base, display: 'none' }),
+    placeholder: (base) => ({ ...base, fontSize: 12, color: isDark ? '#6b7280' : '#94a3b8' }),
+    singleValue: (base) => ({ ...base, fontSize: 12, color: isDark ? '#fff' : '#0f172a' }),
+    menu: (base) => ({
+      ...base,
+      backgroundColor: isDark ? '#151617' : '#ffffff',
+      border: `1px solid ${isDark ? '#374151' : '#cbd5e1'}`,
+      zIndex: 60,
+    }),
+    menuList: (base) => ({ ...base, maxHeight: 220 }),
+    option: (base, state) => ({
+      ...base,
+      fontSize: 12,
+      backgroundColor: state.isFocused ? (isDark ? '#1f2937' : '#f1f5f9') : 'transparent',
+      color: isDark ? '#fff' : '#0f172a',
+      cursor: 'pointer',
+    }),
+  };
 }
 
 function getStoredValue(key, fallback) {
@@ -1496,6 +1697,303 @@ function LeverageModal({
   );
 }
 
+function AdvancedExitField({ label, help, value, onChange, fieldClass, mutedClass }) {
+  const [enabled, setEnabled] = useState(() => Boolean(value));
+
+  return (
+    <div>
+      <label className="flex cursor-pointer items-center gap-2">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => {
+            const checked = event.target.checked;
+            setEnabled(checked);
+            if (!checked) onChange('');
+          }}
+          className="h-4 w-4 shrink-0 accent-emerald-500"
+        />
+        <span className="text-sm font-semibold">{label}</span>
+      </label>
+      {enabled && (
+        <div className="mt-2 pl-6">
+          <input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            inputMode="decimal"
+            autoFocus
+            placeholder="e.g. 1.5"
+            className={`h-9 w-full rounded border px-3 text-sm outline-none ${fieldClass}`}
+          />
+          <span className={`mt-1 block text-[11px] leading-4 ${mutedClass}`}>{help}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ManagedExitsModal({
+  side,
+  trailingStopPercent,
+  onTrailingStopPercentChange,
+  breakEvenTriggerPercent,
+  onBreakEvenTriggerPercentChange,
+  partialTakeProfitPercent,
+  onPartialTakeProfitPercentChange,
+  isDark,
+  onClose,
+}) {
+  const surfaceClass = isDark ? 'border-gray-700 bg-[#151617] text-white' : 'border-slate-200 bg-white text-slate-900';
+  const fieldClass = isDark
+    ? 'border-gray-700 bg-black-table-color text-white placeholder:text-gray-500 focus:border-gray-500'
+    : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400';
+  const mutedClass = isDark ? 'text-gray-400' : 'text-slate-500';
+  const segmentBorderClass = isDark ? 'border-gray-700' : 'border-slate-300';
+
+  return (
+    <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/40 px-3" data-chart-ui>
+      <section className={`w-full max-w-sm overflow-hidden rounded-lg border p-5 shadow-2xl ${surfaceClass}`} role="dialog" aria-modal="true" aria-label="Managed exit rules">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold">Managed Exits</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className={`flex h-8 w-8 items-center justify-center rounded transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+            aria-label="Close"
+          >
+            <X size={18} strokeWidth={1.6} />
+          </button>
+        </div>
+
+        {/* Read-only — reflects the side already chosen in the main order form rather than
+            re-toggling it here, which would create a second, confusable source of truth. */}
+        <div className={`mb-4 flex h-9 items-center overflow-hidden rounded-full border text-sm font-semibold ${segmentBorderClass}`}>
+          <div className={`flex h-full flex-1 items-center justify-center ${side === 'long' ? 'bg-emerald-500 text-white' : mutedClass}`}>Buy/Long</div>
+          <div className={`flex h-full flex-1 items-center justify-center ${side === 'short' ? 'bg-red-500 text-white' : mutedClass}`}>Sell/Short</div>
+        </div>
+
+        <div className="space-y-4">
+          <AdvancedExitField
+            label="Trailing Stop"
+            value={trailingStopPercent}
+            onChange={onTrailingStopPercentChange}
+            fieldClass={fieldClass}
+            mutedClass={mutedClass}
+            help="Stop-loss follows price in your favor, staying this % behind the best price reached since entry. It only tightens, never loosens."
+          />
+          <AdvancedExitField
+            label="Break-even"
+            value={breakEvenTriggerPercent}
+            onChange={onBreakEvenTriggerPercentChange}
+            fieldClass={fieldClass}
+            mutedClass={mutedClass}
+            help="Once price moves this % in your favor, stop-loss jumps to your entry price so the trade can no longer lose money."
+          />
+          <AdvancedExitField
+            label="Partial Close"
+            value={partialTakeProfitPercent}
+            onChange={onPartialTakeProfitPercentChange}
+            fieldClass={fieldClass}
+            mutedClass={mutedClass}
+            help="Percent of your position SIZE — not price — to close the first time Take Profit is reached. The rest stays open and Take Profit is cleared."
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-5 h-11 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white transition hover:bg-[#1f52e0]"
+        >
+          Done
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function estimatePriceFromPnlPercent(side, entryPrice, leverage, pnlPercent, isLoss) {
+  const entry = Number(entryPrice);
+  const lev = Math.max(Number(leverage) || 1, 1);
+  const pct = Math.abs(Number(pnlPercent));
+
+  if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(pct) || pct <= 0) return null;
+
+  const fraction = pct / (100 * lev);
+  const signedFraction = isLoss ? -fraction : fraction;
+  const price = side === 'long' ? entry * (1 + signedFraction) : entry * (1 - signedFraction);
+
+  return price > 0 ? price : null;
+}
+
+function estimatePnlPercentFromPrice(side, entryPrice, leverage, price) {
+  const entry = Number(entryPrice);
+  const lev = Math.max(Number(leverage) || 1, 1);
+  const target = Number(price);
+
+  if (!Number.isFinite(entry) || entry <= 0 || !Number.isFinite(target) || target <= 0) return null;
+
+  const fraction = side === 'long' ? (target - entry) / entry : (entry - target) / entry;
+
+  return fraction * lev * 100;
+}
+
+function TpSlAdvancedField({
+  label,
+  accentClass,
+  mode,
+  onModeChange,
+  priceValue,
+  onPriceChange,
+  pnlValue,
+  onPnlChange,
+  previewText,
+  fieldClass,
+  mutedClass,
+  segmentBorderClass,
+  isDark,
+}) {
+  const activeSegmentClass = isDark ? 'bg-white text-skin-black' : 'bg-skin-black text-white';
+
+  return (
+    <div>
+      <div className="mb-1.5 flex items-center justify-between">
+        <span className={`text-sm font-semibold ${accentClass}`}>{label}</span>
+        <div className={`flex h-6 overflow-hidden rounded border text-[10px] font-semibold ${segmentBorderClass}`}>
+          <button
+            type="button"
+            onClick={() => onModeChange('price')}
+            className={`px-2 transition ${mode === 'price' ? activeSegmentClass : mutedClass}`}
+          >
+            Price
+          </button>
+          <button
+            type="button"
+            onClick={() => onModeChange('pnl')}
+            className={`px-2 transition ${mode === 'pnl' ? activeSegmentClass : mutedClass}`}
+          >
+            PnL %
+          </button>
+        </div>
+      </div>
+      <input
+        value={mode === 'price' ? priceValue : pnlValue}
+        onChange={(event) => (mode === 'price' ? onPriceChange(event.target.value) : onPnlChange(event.target.value))}
+        inputMode="decimal"
+        autoFocus
+        placeholder={mode === 'price' ? 'Trigger price' : 'PnL % of margin'}
+        className={`h-9 w-full rounded border px-3 text-sm outline-none ${fieldClass}`}
+      />
+      <span className={`mt-1 block text-[11px] leading-4 ${mutedClass}`}>{previewText}</span>
+    </div>
+  );
+}
+
+function AdvancedTpSlModal({
+  side,
+  entryPrice,
+  leverage,
+  stopLossMode,
+  onStopLossModeChange,
+  stopLossPrice,
+  onStopLossPriceChange,
+  stopLossPnl,
+  onStopLossPnlChange,
+  takeProfitMode,
+  onTakeProfitModeChange,
+  takeProfitPrice,
+  onTakeProfitPriceChange,
+  takeProfitPnl,
+  onTakeProfitPnlChange,
+  isDark,
+  onClose,
+}) {
+  const surfaceClass = isDark ? 'border-gray-700 bg-[#151617] text-white' : 'border-slate-200 bg-white text-slate-900';
+  const fieldClass = isDark
+    ? 'border-gray-700 bg-black-table-color text-white placeholder:text-gray-500 focus:border-gray-500'
+    : 'border-slate-300 bg-white text-slate-900 placeholder:text-slate-400';
+  const mutedClass = isDark ? 'text-gray-400' : 'text-slate-500';
+  const segmentBorderClass = isDark ? 'border-gray-700' : 'border-slate-300';
+
+  const stopLossPreview = stopLossMode === 'price'
+    ? (() => {
+        const pct = estimatePnlPercentFromPrice(side, entryPrice, leverage, stopLossPrice);
+        return pct != null ? `≈ ${pct.toFixed(2)}% PnL at this price` : 'Enter a trigger price';
+      })()
+    : (() => {
+        const price = estimatePriceFromPnlPercent(side, entryPrice, leverage, stopLossPnl, true);
+        return price != null ? `≈ Triggers at ${price.toFixed(price < 1 ? 8 : 2)}` : 'Enter a % of margin to lose';
+      })();
+
+  const takeProfitPreview = takeProfitMode === 'price'
+    ? (() => {
+        const pct = estimatePnlPercentFromPrice(side, entryPrice, leverage, takeProfitPrice);
+        return pct != null ? `≈ ${pct.toFixed(2)}% PnL at this price` : 'Enter a trigger price';
+      })()
+    : (() => {
+        const price = estimatePriceFromPnlPercent(side, entryPrice, leverage, takeProfitPnl, false);
+        return price != null ? `≈ Triggers at ${price.toFixed(price < 1 ? 8 : 2)}` : 'Enter a % of margin to gain';
+      })();
+
+  return (
+    <div className="fixed inset-0 z-[10040] flex items-center justify-center bg-black/40 px-3" data-chart-ui>
+      <section className={`w-full max-w-sm overflow-hidden rounded-lg border p-5 shadow-2xl ${surfaceClass}`} role="dialog" aria-modal="true" aria-label="Take profit and stop loss">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-base font-semibold">Take Profit / Stop Loss</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className={`flex h-8 w-8 items-center justify-center rounded transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+            aria-label="Close"
+          >
+            <X size={18} strokeWidth={1.6} />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <TpSlAdvancedField
+            label="Take Profit"
+            accentClass="text-emerald-500"
+            mode={takeProfitMode}
+            onModeChange={onTakeProfitModeChange}
+            priceValue={takeProfitPrice}
+            onPriceChange={onTakeProfitPriceChange}
+            pnlValue={takeProfitPnl}
+            onPnlChange={onTakeProfitPnlChange}
+            previewText={takeProfitPreview}
+            fieldClass={fieldClass}
+            mutedClass={mutedClass}
+            segmentBorderClass={segmentBorderClass}
+            isDark={isDark}
+          />
+          <TpSlAdvancedField
+            label="Stop Loss"
+            accentClass="text-red-500"
+            mode={stopLossMode}
+            onModeChange={onStopLossModeChange}
+            priceValue={stopLossPrice}
+            onPriceChange={onStopLossPriceChange}
+            pnlValue={stopLossPnl}
+            onPnlChange={onStopLossPnlChange}
+            previewText={stopLossPreview}
+            fieldClass={fieldClass}
+            mutedClass={mutedClass}
+            segmentBorderClass={segmentBorderClass}
+            isDark={isDark}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-5 h-11 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white transition hover:bg-[#1f52e0]"
+        >
+          Done
+        </button>
+      </section>
+    </div>
+  );
+}
+
 export default function ReplayPanel({
   replayMode,
   replayAccessStatus = 'idle',
@@ -1572,23 +2070,40 @@ export default function ReplayPanel({
   const [orderType, setOrderType] = useState('market');
   const [orderSide, setOrderSide] = useState('long');
   const [showLeverageModal, setShowLeverageModal] = useState(false);
-  const [orderNotional, setOrderNotional] = useState('1000');
+  const [orderNotional, setOrderNotional] = useState('');
   const [orderLeverage, setOrderLeverage] = useState('1');
   const [orderEntryPrice, setOrderEntryPrice] = useState('');
   const [orderStopLoss, setOrderStopLoss] = useState('');
+  const [orderStopLossMode, setOrderStopLossMode] = useState('price');
+  const [orderStopLossPnl, setOrderStopLossPnl] = useState('');
   const [orderTakeProfit, setOrderTakeProfit] = useState('');
+  const [orderTakeProfitMode, setOrderTakeProfitMode] = useState('price');
+  const [orderTakeProfitPnl, setOrderTakeProfitPnl] = useState('');
+  const [tpSlEnabled, setTpSlEnabled] = useState(false);
   const [playbooks, setPlaybooks] = useState([]);
   const [selectedPlaybookId, setSelectedPlaybookId] = useState('');
   const [checklistAnswers, setChecklistAnswers] = useState([]);
   const [trailingStopPercent, setTrailingStopPercent] = useState('');
   const [breakEvenTriggerPercent, setBreakEvenTriggerPercent] = useState('');
   const [partialTakeProfitPercent, setPartialTakeProfitPercent] = useState('');
+  const [showManagedExitsModal, setShowManagedExitsModal] = useState(false);
+  const [showAdvancedTpSlModal, setShowAdvancedTpSlModal] = useState(false);
+  const [showCurrencySettings, setShowCurrencySettings] = useState(false);
   const [showOrderDraft, setShowOrderDraft] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState(() => (
     getStoredValue(displayCurrencyStorageKey, 'USDT') === 'PHP' ? 'PHP' : 'USDT'
   ));
   const [phpRate, setPhpRate] = useState(() => getStoredValue(phpRateStorageKey, '58'));
   const wasFullscreenDrawingOnlyRef = React.useRef(fullscreenDrawingOnly);
+
+  const resetTpSlDraft = () => {
+    setOrderStopLoss('');
+    setOrderStopLossMode('price');
+    setOrderStopLossPnl('');
+    setOrderTakeProfit('');
+    setOrderTakeProfitMode('price');
+    setOrderTakeProfitPnl('');
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -1603,6 +2118,11 @@ export default function ReplayPanel({
   }, []);
 
   const selectedPlaybook = playbooks.find((item) => String(item.id) === String(selectedPlaybookId)) ?? null;
+  const playbookOptions = [
+    { value: '', label: 'No playbook' },
+    ...playbooks.map((playbook) => ({ value: String(playbook.id), label: playbook.name })),
+  ];
+  const selectedPlaybookOption = playbookOptions.find((option) => option.value === String(selectedPlaybookId)) ?? playbookOptions[0];
 
   useEffect(() => {
     setChecklistAnswers((selectedPlaybook?.checklist ?? []).map(() => false));
@@ -1614,8 +2134,8 @@ export default function ReplayPanel({
         setActiveGroup((current) => current === 'backtest' ? null : current);
         setShowOrderDraft(false);
         setOrderEntryPrice('');
-        setOrderStopLoss('');
-        setOrderTakeProfit('');
+        resetTpSlDraft();
+        setTpSlEnabled(false);
         onBacktestOrderDraftChange?.(null);
       }
       wasFullscreenDrawingOnlyRef.current = false;
@@ -1629,8 +2149,8 @@ export default function ReplayPanel({
     if (!fullscreenEntryPanelOpen) {
       setShowOrderDraft(false);
       setOrderEntryPrice('');
-      setOrderStopLoss('');
-      setOrderTakeProfit('');
+      resetTpSlDraft();
+      setTpSlEnabled(false);
       onBacktestOrderDraftChange?.(null);
     }
   }, [fullscreenDrawingOnly, fullscreenEntryPanelOpen, onBacktestOrderDraftChange]);
@@ -1707,10 +2227,14 @@ export default function ReplayPanel({
 
     if (orderLineDraftPatch.kind === 'sl') {
       setOrderStopLoss(orderLineDraftPatch.value);
+      setOrderStopLossMode('price');
+      setTpSlEnabled(true);
     }
 
     if (orderLineDraftPatch.kind === 'tp') {
       setOrderTakeProfit(orderLineDraftPatch.value);
+      setOrderTakeProfitMode('price');
+      setTpSlEnabled(true);
     }
   }, [orderLineDraftPatch]);
 
@@ -1729,8 +2253,8 @@ export default function ReplayPanel({
     if (!orderDraftClearRequest?.id) return;
     setShowOrderDraft(false);
     setOrderEntryPrice('');
-    setOrderStopLoss('');
-    setOrderTakeProfit('');
+    resetTpSlDraft();
+    setTpSlEnabled(false);
     onBacktestOrderDraftChange?.(null);
   }, [onBacktestOrderDraftChange, orderDraftClearRequest]);
 
@@ -1738,8 +2262,8 @@ export default function ReplayPanel({
     if (activeGroup === 'backtest') {
       setShowOrderDraft(false);
       setOrderEntryPrice('');
-      setOrderStopLoss('');
-      setOrderTakeProfit('');
+      resetTpSlDraft();
+      setTpSlEnabled(false);
       onBacktestOrderDraftChange?.(null);
     }
     setActiveGroup((currentGroup) => (currentGroup === group ? null : group));
@@ -1749,8 +2273,6 @@ export default function ReplayPanel({
   };
 
   const handleSavePreset = () => {
-    const existing = presetItems.find(item => String(item.name).toLowerCase() === presetNameDraft.trim().toLowerCase());
-    if (existing && !window.confirm(`Overwrite the “${existing.name}” template with the current tool settings?`)) return;
     onSaveSelectedToolPreset(presetNameDraft);
     setPresetNameDraft('');
   };
@@ -1795,19 +2317,33 @@ export default function ReplayPanel({
   const leverageValue = Number(orderLeverage);
   const isLeverageValid = Number.isFinite(leverageValue) && leverageValue >= 1 && leverageValue <= 125;
   const feeRate = Number(backtestAccount?.feeRate ?? 0.0004);
-  const plannedStopLoss = getPositiveNumber(orderStopLoss) ?? (
-    effectiveEntryPrice != null
-      ? orderSide === 'short'
-        ? effectiveEntryPrice * 1.01
-        : effectiveEntryPrice * 0.99
-      : null
+  const plannedStopLossPnlPrice = orderStopLossMode === 'pnl'
+    ? estimatePriceFromPnlPercent(orderSide, effectiveEntryPrice, leverageValue, orderStopLossPnl, true)
+    : null;
+  const plannedTakeProfitPnlPrice = orderTakeProfitMode === 'pnl'
+    ? estimatePriceFromPnlPercent(orderSide, effectiveEntryPrice, leverageValue, orderTakeProfitPnl, false)
+    : null;
+  const plannedStopLoss = !tpSlEnabled ? null : (
+    orderStopLossMode === 'pnl'
+      ? plannedStopLossPnlPrice
+      : getPositiveNumber(orderStopLoss) ?? (
+          effectiveEntryPrice != null
+            ? orderSide === 'short'
+              ? effectiveEntryPrice * 1.01
+              : effectiveEntryPrice * 0.99
+            : null
+        )
   );
-  const plannedTakeProfit = getPositiveNumber(orderTakeProfit) ?? (
-    effectiveEntryPrice != null
-      ? orderSide === 'short'
-        ? effectiveEntryPrice * 0.99
-        : effectiveEntryPrice * 1.01
-      : null
+  const plannedTakeProfit = !tpSlEnabled ? null : (
+    orderTakeProfitMode === 'pnl'
+      ? plannedTakeProfitPnlPrice
+      : getPositiveNumber(orderTakeProfit) ?? (
+          effectiveEntryPrice != null
+            ? orderSide === 'short'
+              ? effectiveEntryPrice * 0.99
+              : effectiveEntryPrice * 1.01
+            : null
+        )
   );
   const orderPlan = getOrderPlan({
     side: orderSide,
@@ -1834,6 +2370,7 @@ export default function ReplayPanel({
     (orderPlan?.isTargetValid ?? true) &&
     (!selectedPlaybook || checklistAnswers.length === selectedPlaybook.checklist.length) &&
     (!selectedPlaybook || checklistAnswers.every(Boolean));
+  const managedExitCount = [trailingStopPercent, breakEvenTriggerPercent, partialTakeProfitPercent].filter(Boolean).length;
 
   const submitBacktestOrder = () => {
     const notional = Number(quoteNotional);
@@ -1845,8 +2382,10 @@ export default function ReplayPanel({
       notional,
       leverage: leverageValue,
       entryPrice: effectiveEntryPrice,
-      stopLoss: plannedStopLoss,
-      takeProfit: plannedTakeProfit,
+      stopLoss: orderStopLossMode === 'pnl' ? null : plannedStopLoss,
+      stopLossPnlPercent: orderStopLossMode === 'pnl' && plannedStopLoss != null ? getPositiveNumber(orderStopLossPnl) : null,
+      takeProfit: orderTakeProfitMode === 'pnl' ? null : plannedTakeProfit,
+      takeProfitPnlPercent: orderTakeProfitMode === 'pnl' && plannedTakeProfit != null ? getPositiveNumber(orderTakeProfitPnl) : null,
       playbookId: selectedPlaybook?.id ?? null,
       checklistAnswers,
       trailingStopPercent,
@@ -1859,8 +2398,8 @@ export default function ReplayPanel({
   const removeOrderDraft = () => {
     setShowOrderDraft(false);
     setOrderEntryPrice('');
-    setOrderStopLoss('');
-    setOrderTakeProfit('');
+    resetTpSlDraft();
+    setTpSlEnabled(false);
     onBacktestOrderDraftChange?.(null);
   };
   const isDarkTheme = chartTheme?.mode === 'dark';
@@ -1911,10 +2450,15 @@ export default function ReplayPanel({
     orderPlan?.estimatedProfit,
     orderSide,
     orderStopLoss,
+    orderStopLossMode,
+    orderStopLossPnl,
     orderTakeProfit,
+    orderTakeProfitMode,
+    orderTakeProfitPnl,
     orderType,
     quoteCurrency,
     showOrderDraft,
+    tpSlEnabled,
   ]);
 
   return (
@@ -2365,37 +2909,54 @@ export default function ReplayPanel({
                   </div>
                 </div>
               </div>
-              <div className={`shrink-0 text-right text-sm font-semibold ${valueTextClass}`}>
-                {backtestAccount ? formatAccountMoney(backtestMetrics.cashBalance) : '---'}
+              <div className="flex shrink-0 items-center gap-1.5">
+                <div className={`text-right text-sm font-semibold ${valueTextClass}`}>
+                  {backtestAccount ? formatAccountMoney(backtestMetrics.cashBalance) : '---'}
+                </div>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrencySettings((current) => !current)}
+                    className={`flex h-7 w-7 items-center justify-center rounded ${mutedTextClass} ${isDarkTheme ? 'hover:bg-white/10' : 'hover:bg-slate-100'}`}
+                    title="Display currency settings"
+                    aria-label="Display currency settings"
+                  >
+                    <Settings size={14} />
+                  </button>
+                  {showCurrencySettings && (
+                    <>
+                      <button type="button" className="fixed inset-0 z-[10029] cursor-default" onClick={() => setShowCurrencySettings(false)} aria-label="Close currency settings" tabIndex={-1} />
+                      <div className={`absolute right-0 top-full z-[10030] mt-2 w-52 rounded-lg border p-3 shadow-2xl ${isDarkTheme ? 'border-gray-700 bg-[#151617]' : 'border-slate-200 bg-white'}`}>
+                        <label className="block">
+                          <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
+                            Display currency
+                          </span>
+                          <select
+                            value={displayCurrency}
+                            onChange={(event) => handleDisplayCurrencyChange(event.target.value)}
+                            className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
+                          >
+                            <option value="USDT">{quoteCurrency}</option>
+                            <option value="PHP">PHP</option>
+                          </select>
+                        </label>
+                        <label className="mt-2 block">
+                          <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
+                            PHP / {quoteCurrency}
+                          </span>
+                          <input
+                            value={phpRate}
+                            onChange={(event) => setPhpRate(event.target.value)}
+                            inputMode="decimal"
+                            disabled={displayCurrency !== 'PHP'}
+                            className={`h-8 w-full rounded border px-2 text-xs outline-none disabled:opacity-40 ${fieldClass}`}
+                          />
+                        </label>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
-                  Currency
-                </span>
-                <select
-                  value={displayCurrency}
-                  onChange={(event) => handleDisplayCurrencyChange(event.target.value)}
-                  className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
-                >
-                  <option value="USDT">{quoteCurrency}</option>
-                  <option value="PHP">PHP</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
-                  PHP / {quoteCurrency}
-                </span>
-                <input
-                  value={phpRate}
-                  onChange={(event) => setPhpRate(event.target.value)}
-                  inputMode="decimal"
-                  disabled={displayCurrency !== 'PHP'}
-                  className={`h-8 w-full rounded border px-2 text-xs outline-none disabled:opacity-40 ${fieldClass}`}
-                />
-              </label>
             </div>
 
             {backtestError && (
@@ -2445,19 +3006,18 @@ export default function ReplayPanel({
                 </button>
               </div>
               <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
-                <label className="block">
+                <div className="block">
                   <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Strategy playbook</span>
-                  <select
-                    value={selectedPlaybookId}
-                    onChange={(event) => setSelectedPlaybookId(event.target.value)}
-                    className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
-                  >
-                    <option value="">No playbook</option>
-                    {playbooks.map((playbook) => (
-                      <option key={playbook.id} value={playbook.id}>{playbook.name}</option>
-                    ))}
-                  </select>
-                </label>
+                  <Select
+                    value={selectedPlaybookOption}
+                    onChange={(option) => setSelectedPlaybookId(option?.value ?? '')}
+                    options={playbookOptions}
+                    isSearchable
+                    placeholder="No playbook"
+                    aria-label="Strategy playbook"
+                    styles={playbookSelectStyles(isDarkTheme)}
+                  />
+                </div>
                 {selectedPlaybook && (
                   <div className="mt-2 space-y-1.5">
                     {selectedPlaybook.description && <p className={`text-[11px] ${labelTextClass}`}>{selectedPlaybook.description}</p>}
@@ -2476,13 +3036,14 @@ export default function ReplayPanel({
                 )}
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <input
-                  value={orderNotional}
-                  onChange={(event) => setOrderNotional(event.target.value)}
-                  inputMode="decimal"
-                  className={`h-8 min-w-0 rounded border px-2 text-xs outline-none ${fieldClass}`}
-                  placeholder={`${displayCurrency} margin`}
-                />
+                <button
+                  type="button"
+                  disabled
+                  className={`h-8 cursor-default rounded border px-2 text-xs font-semibold opacity-90 outline-none ${fieldClass}`}
+                  title="This engine simulates isolated margin only — there is no cross-margin mode."
+                >
+                  Isolated
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowLeverageModal(true)}
@@ -2494,6 +3055,13 @@ export default function ReplayPanel({
                   {isLeverageValid ? formatLeverage(leverageValue) : (orderLeverage || 'Lev')}
                 </button>
               </div>
+              <input
+                value={orderNotional}
+                onChange={(event) => setOrderNotional(event.target.value)}
+                inputMode="decimal"
+                className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
+                placeholder={`${displayCurrency} margin`}
+              />
               <div className="grid grid-cols-4 gap-1.5">
                 {[0.25, 0.5, 0.75, 1].map((pct) => (
                   <button
@@ -2511,10 +3079,90 @@ export default function ReplayPanel({
                 <span>Value {orderPlan?.positionNotional ? formatAccountMoney(orderPlan.positionNotional) : '---'}</span>
                 <span>Lev {isLeverageValid ? formatLeverage(leverageValue) : '---'}</span>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <label className="block"><span className={`mb-1 block text-[10px] uppercase ${mutedTextClass}`}>Trail %</span><input value={trailingStopPercent} onChange={(e) => setTrailingStopPercent(e.target.value)} inputMode="decimal" placeholder="Off" className={`h-8 w-full rounded border px-2 text-xs ${fieldClass}`} /></label>
-                <label className="block"><span className={`mb-1 block text-[10px] uppercase ${mutedTextClass}`}>Break-even %</span><input value={breakEvenTriggerPercent} onChange={(e) => setBreakEvenTriggerPercent(e.target.value)} inputMode="decimal" placeholder="Off" className={`h-8 w-full rounded border px-2 text-xs ${fieldClass}`} /></label>
-                <label className="block"><span className={`mb-1 block text-[10px] uppercase ${mutedTextClass}`}>Partial TP %</span><input value={partialTakeProfitPercent} onChange={(e) => setPartialTakeProfitPercent(e.target.value)} inputMode="decimal" placeholder="Off" className={`h-8 w-full rounded border px-2 text-xs ${fieldClass}`} /></label>
+              <div className={`rounded-md border ${cardSurfaceClass}`}>
+                <div className="flex h-9 items-center justify-between px-2">
+                  <label className="flex min-w-0 cursor-pointer items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={tpSlEnabled}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setTpSlEnabled(checked);
+                        if (!checked) resetTpSlDraft();
+                      }}
+                      className="h-4 w-4 shrink-0 accent-emerald-500"
+                    />
+                    <span className={`text-xs font-semibold ${valueTextClass}`}>TP / SL</span>
+                  </label>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowManagedExitsModal(true)}
+                      className="flex items-center gap-0.5 text-[11px] font-semibold text-[#5b8cff] hover:underline"
+                    >
+                      Managed Exits{managedExitCount ? ` (${managedExitCount})` : ''}
+                      <ChevronRight size={12} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedTpSlModal(true)}
+                      className="flex items-center gap-0.5 text-[11px] font-semibold text-[#5b8cff] hover:underline"
+                    >
+                      Advanced
+                      <ChevronRight size={12} />
+                    </button>
+                  </div>
+                </div>
+                {tpSlEnabled && (
+                  <div className={`grid grid-cols-2 gap-2 border-t p-2 ${sectionBorderClass}`}>
+                    <label className="block">
+                      <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>SL</span>
+                      {orderStopLossMode === 'pnl' ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedTpSlModal(true)}
+                          className={`flex h-8 w-full items-center rounded border px-2 text-left text-xs outline-none ${fieldClass}`}
+                          title="Set via PnL % in Advanced"
+                        >
+                          {orderStopLossPnl ? `-${orderStopLossPnl}% PnL` : 'Set % in Advanced'}
+                        </button>
+                      ) : (
+                        <input
+                          value={orderStopLoss}
+                          onChange={(event) => setOrderStopLoss(event.target.value)}
+                          inputMode="decimal"
+                          className={`h-8 w-full rounded border px-2 text-xs outline-none ${
+                            orderPlan?.isStopValid === false ? invalidFieldClass : fieldClass
+                          }`}
+                          placeholder="Stop price"
+                        />
+                      )}
+                    </label>
+                    <label className="block">
+                      <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>TP</span>
+                      {orderTakeProfitMode === 'pnl' ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedTpSlModal(true)}
+                          className={`flex h-8 w-full items-center rounded border px-2 text-left text-xs outline-none ${fieldClass}`}
+                          title="Set via PnL % in Advanced"
+                        >
+                          {orderTakeProfitPnl ? `+${orderTakeProfitPnl}% PnL` : 'Set % in Advanced'}
+                        </button>
+                      ) : (
+                        <input
+                          value={orderTakeProfit}
+                          onChange={(event) => setOrderTakeProfit(event.target.value)}
+                          inputMode="decimal"
+                          className={`h-8 w-full rounded border px-2 text-xs outline-none ${
+                            orderPlan?.isTargetValid === false ? invalidFieldClass : fieldClass
+                          }`}
+                          placeholder="Target price"
+                        />
+                      )}
+                    </label>
+                  </div>
+                )}
               </div>
               <div className={`grid grid-cols-2 gap-2 text-[11px] ${labelTextClass}`}>
                 <span>Entry fee {orderPlan?.entryFee ? formatAccountMoney(orderPlan.entryFee) : '---'}</span>
@@ -2530,7 +3178,7 @@ export default function ReplayPanel({
                   Reduce margin to {formatAccountMoney(getMaxMarginForCash(backtestMetrics.cashBalance, leverageValue, feeRate))} or less.
                 </div>
               )}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 <label className="block">
                   <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
                     {isPendingOrder ? 'Price' : 'Entry'}
@@ -2541,34 +3189,6 @@ export default function ReplayPanel({
                     inputMode="decimal"
                     className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
                     placeholder={isPendingOrder ? 'Required' : formatMoney(executionPrice)}
-                  />
-                </label>
-                <label className="block">
-                  <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
-                    SL
-                  </span>
-                  <input
-                    value={orderStopLoss}
-                    onChange={(event) => setOrderStopLoss(event.target.value)}
-                    inputMode="decimal"
-                    className={`h-8 w-full rounded border px-2 text-xs outline-none ${
-                      orderPlan?.isStopValid === false ? invalidFieldClass : fieldClass
-                    }`}
-                    placeholder="Stop"
-                  />
-                </label>
-                <label className="block">
-                  <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>
-                    TP
-                  </span>
-                  <input
-                    value={orderTakeProfit}
-                    onChange={(event) => setOrderTakeProfit(event.target.value)}
-                    inputMode="decimal"
-                    className={`h-8 w-full rounded border px-2 text-xs outline-none ${
-                      orderPlan?.isTargetValid === false ? invalidFieldClass : fieldClass
-                    }`}
-                    placeholder="Target"
                   />
                 </label>
               </div>
@@ -2668,7 +3288,11 @@ export default function ReplayPanel({
                           <span>SL {position.stopLoss ? formatMoney(position.stopLoss) : '---'}</span>
                           <span>TP {position.takeProfit ? formatMoney(position.takeProfit) : '---'}</span>
                           <span>Liq {position.liquidationPrice ? formatMoney(position.liquidationPrice) : '---'}</span>
-                          <span>{position.trailingStopPercent ? `Trail ${position.trailingStopPercent}%` : position.breakEvenTriggerPercent ? `BE ${position.breakEvenTriggerPercent}%` : 'Managed exits off'}</span>
+                          <span>{[
+                            position.trailingStopPercent ? `Trail ${position.trailingStopPercent}%` : null,
+                            position.breakEvenTriggerPercent ? `BE ${position.breakEvenTriggerPercent}%` : null,
+                            position.partialTakeProfitPercent && !position.partialTakeProfitExecuted ? `Partial ${position.partialTakeProfitPercent}%` : null,
+                          ].filter(Boolean).join(' · ') || 'Managed exits off'}</span>
                         </div>
                         <ControlButton
                           icon={X}
@@ -2707,6 +3331,44 @@ export default function ReplayPanel({
             setOrderLeverage(String(nextLeverage));
             setShowLeverageModal(false);
           }}
+        />,
+        document.body
+      )}
+
+      {showManagedExitsModal && typeof document !== 'undefined' && createPortal(
+        <ManagedExitsModal
+          side={orderSide}
+          trailingStopPercent={trailingStopPercent}
+          onTrailingStopPercentChange={setTrailingStopPercent}
+          breakEvenTriggerPercent={breakEvenTriggerPercent}
+          onBreakEvenTriggerPercentChange={setBreakEvenTriggerPercent}
+          partialTakeProfitPercent={partialTakeProfitPercent}
+          onPartialTakeProfitPercentChange={setPartialTakeProfitPercent}
+          isDark={isDarkTheme}
+          onClose={() => setShowManagedExitsModal(false)}
+        />,
+        document.body
+      )}
+
+      {showAdvancedTpSlModal && typeof document !== 'undefined' && createPortal(
+        <AdvancedTpSlModal
+          side={orderSide}
+          entryPrice={effectiveEntryPrice}
+          leverage={leverageValue}
+          stopLossMode={orderStopLossMode}
+          onStopLossModeChange={setOrderStopLossMode}
+          stopLossPrice={orderStopLoss}
+          onStopLossPriceChange={(value) => { setOrderStopLoss(value); setTpSlEnabled(true); }}
+          stopLossPnl={orderStopLossPnl}
+          onStopLossPnlChange={(value) => { setOrderStopLossPnl(value); setTpSlEnabled(true); }}
+          takeProfitMode={orderTakeProfitMode}
+          onTakeProfitModeChange={setOrderTakeProfitMode}
+          takeProfitPrice={orderTakeProfit}
+          onTakeProfitPriceChange={(value) => { setOrderTakeProfit(value); setTpSlEnabled(true); }}
+          takeProfitPnl={orderTakeProfitPnl}
+          onTakeProfitPnlChange={(value) => { setOrderTakeProfitPnl(value); setTpSlEnabled(true); }}
+          isDark={isDarkTheme}
+          onClose={() => setShowAdvancedTpSlModal(false)}
         />,
         document.body
       )}

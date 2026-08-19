@@ -9,6 +9,7 @@ import {
   LogIn,
   OctagonX,
   Pencil,
+  Plus,
   Save,
   SlidersHorizontal,
   Target,
@@ -93,6 +94,8 @@ export default function StrategyPlaybooks() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -109,7 +112,9 @@ export default function StrategyPlaybooks() {
 
   useEffect(() => { load(); }, []);
 
-  const reset = () => { setForm(EMPTY_FORM); setEditingId(null); setError(''); };
+  const reset = () => { setForm(EMPTY_FORM); setEditingId(null); setFormError(''); };
+  const closeModal = () => { setIsModalOpen(false); reset(); };
+  const openCreateModal = () => { reset(); setIsModalOpen(true); };
   const edit = (playbook) => {
     setEditingId(playbook.id);
     setForm({
@@ -118,12 +123,14 @@ export default function StrategyPlaybooks() {
       stopRules: playbook.stopRules ?? '', targetRules: playbook.targetRules ?? '',
       checklistText: (playbook.checklist ?? []).join('\n'), isActive: Boolean(playbook.isActive),
     });
+    setFormError('');
+    setIsModalOpen(true);
   };
 
   const save = async (event) => {
     event.preventDefault();
     setSaving(true);
-    setError('');
+    setFormError('');
     const payload = {
       name: form.name,
       description: form.description || null,
@@ -138,11 +145,11 @@ export default function StrategyPlaybooks() {
     try {
       if (editingId) await axios.put(`/market-backtest/playbooks/${editingId}`, payload);
       else await axios.post('/market-backtest/playbooks', payload);
-      reset();
+      closeModal();
       await load();
     } catch (err) {
       const validation = err.response?.data?.errors;
-      setError(validation ? Object.values(validation).flat()[0] : (err.response?.data?.message ?? 'Unable to save playbook.'));
+      setFormError(validation ? Object.values(validation).flat()[0] : (err.response?.data?.message ?? 'Unable to save playbook.'));
     } finally {
       setSaving(false);
     }
@@ -151,7 +158,7 @@ export default function StrategyPlaybooks() {
   const archive = async (playbook) => {
     if (!window.confirm(`Archive “${playbook.name}”? Historical trades will keep their saved copy.`)) return;
     await axios.delete(`/market-backtest/playbooks/${playbook.id}`);
-    if (editingId === playbook.id) reset();
+    if (editingId === playbook.id) closeModal();
     await load();
   };
 
@@ -162,6 +169,7 @@ export default function StrategyPlaybooks() {
   const buttonClass = isDark ? 'bg-skin-black-light text-gray-200 hover:bg-gray-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200';
   const cardSurface = isDark ? 'border-gray-800 bg-black-table-color' : 'border-slate-200 bg-slate-50';
   const sectionSurface = isDark ? 'border-gray-800 bg-skin-black' : 'border-slate-200 bg-white';
+  const borderClass = isDark ? 'border-gray-800' : 'border-slate-200';
   const activeCount = playbooks.filter((playbook) => playbook.isActive).length;
 
   return (
@@ -174,114 +182,152 @@ export default function StrategyPlaybooks() {
           </div>
           <p className={`mt-1 text-sm ${muted}`}>Define repeatable trade rules. One checklist item per line is required before an attached order can be placed.</p>
         </div>
-        {!loading && playbooks.length > 0 && (
-          <StatCard label="Active playbooks" value={`${activeCount} / ${playbooks.length}`} icon={ClipboardList} isDark={isDark} />
-        )}
+        <div className="flex items-center gap-3">
+          {!loading && playbooks.length > 0 && (
+            <StatCard label="Active playbooks" value={`${activeCount} / ${playbooks.length}`} icon={ClipboardList} isDark={isDark} />
+          )}
+          <button
+            type="button"
+            onClick={openCreateModal}
+            data-tour="journal-playbooks"
+            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
+          >
+            <Plus size={14} />
+            New playbook
+          </button>
+        </div>
       </div>
 
       {error && <div className="mb-3 rounded border border-red-800 bg-red-950/50 p-2 text-sm text-red-200">{error}</div>}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,1fr)]">
-        <div className="space-y-3">
-          {loading ? (
-            <p className={`text-sm ${muted}`}>Loading playbooks…</p>
-          ) : playbooks.length ? (
-            playbooks.map((playbook) => (
-              <PlaybookCard
-                key={playbook.id}
-                playbook={playbook}
-                isDark={isDark}
-                cardSurface={cardSurface}
-                muted={muted}
-                buttonClass={buttonClass}
-                onEdit={() => edit(playbook)}
-                onArchive={() => archive(playbook)}
-              />
-            ))
-          ) : (
-            <div className={`flex flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center ${cardSurface}`}>
-              <ClipboardList size={26} className={faint} />
-              <div className="mt-2 text-sm font-semibold">No playbooks yet</div>
-              <p className={`mt-1 text-sm ${muted}`}>Create your first repeatable setup.</p>
-            </div>
-          )}
+      {loading ? (
+        <p className={`text-sm ${muted}`}>Loading playbooks…</p>
+      ) : playbooks.length ? (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {playbooks.map((playbook) => (
+            <PlaybookCard
+              key={playbook.id}
+              playbook={playbook}
+              isDark={isDark}
+              cardSurface={cardSurface}
+              muted={muted}
+              buttonClass={buttonClass}
+              onEdit={() => edit(playbook)}
+              onArchive={() => archive(playbook)}
+            />
+          ))}
         </div>
+      ) : (
+        <button
+          type="button"
+          onClick={openCreateModal}
+          className={`flex w-full flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center transition hover:opacity-80 ${cardSurface}`}
+        >
+          <ClipboardList size={26} className={faint} />
+          <div className="mt-2 text-sm font-semibold">No playbooks yet</div>
+          <p className={`mt-1 text-sm ${muted}`}>Create your first repeatable setup.</p>
+        </button>
+      )}
 
-        <form onSubmit={save} className="space-y-3">
-          <input
-            required
-            maxLength={120}
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="Playbook name"
-            className={`h-10 w-full rounded-md border px-3 text-sm ${field}`}
-          />
-          <textarea
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Short description"
-            rows={2}
-            className={`w-full rounded-md border p-3 text-sm ${field}`}
-          />
-
-          <div className={`rounded-lg border p-3 ${sectionSurface}`}>
-            <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${muted}`}>
-              <SlidersHorizontal size={13} />
-              <span>Trade rules</span>
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          onMouseDown={(event) => event.target === event.currentTarget && closeModal()}
+        >
+          <div
+            className={`flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-xl border shadow-2xl ${surface}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="playbook-modal-title"
+          >
+            <div className={`flex items-center justify-between border-b px-5 py-4 ${borderClass}`}>
+              <div className="flex items-center gap-2">
+                <BookOpen size={17} className={isDark ? 'text-blue-400' : 'text-blue-600'} />
+                <h2 id="playbook-modal-title" className="text-base font-bold">{editingId ? 'Edit playbook' : 'New playbook'}</h2>
+              </div>
+              <button type="button" onClick={closeModal} className={`rounded-md p-1.5 ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`} aria-label="Close">
+                <X size={18} />
+              </button>
             </div>
-            <div className="space-y-3">
-              {RULE_FIELDS.map(({ key, label, icon: Icon }) => (
-                <label key={key} className="block">
-                  <span className={`mb-1 flex items-center gap-1.5 text-xs font-medium ${muted}`}>
-                    <Icon size={13} />
-                    {label}
-                  </span>
+
+            <form onSubmit={save} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+                {formError && <div className="rounded border border-red-800 bg-red-950/50 p-2 text-sm text-red-200">{formError}</div>}
+                <input
+                  required
+                  maxLength={120}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  placeholder="Playbook name"
+                  className={`h-10 w-full rounded-md border px-3 text-sm ${field}`}
+                />
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Short description"
+                  rows={2}
+                  className={`w-full rounded-md border p-3 text-sm ${field}`}
+                />
+
+                <div className={`rounded-lg border p-3 ${sectionSurface}`}>
+                  <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${muted}`}>
+                    <SlidersHorizontal size={13} />
+                    <span>Trade rules</span>
+                  </div>
+                  <div className="space-y-3">
+                    {RULE_FIELDS.map(({ key, label, icon: Icon }) => (
+                      <label key={key} className="block">
+                        <span className={`mb-1 flex items-center gap-1.5 text-xs font-medium ${muted}`}>
+                          <Icon size={13} />
+                          {label}
+                        </span>
+                        <textarea
+                          value={form[key]}
+                          onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                          rows={2}
+                          className={`w-full rounded-md border p-2.5 text-sm ${field}`}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={`rounded-lg border p-3 ${sectionSurface}`}>
+                  <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${muted}`}>
+                    <ListChecks size={13} />
+                    <span>Pre-trade checklist</span>
+                  </div>
                   <textarea
-                    value={form[key]}
-                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                    rows={2}
+                    value={form.checklistText}
+                    onChange={(e) => setForm({ ...form, checklistText: e.target.value })}
+                    placeholder={'One item per line\nTrend agrees with setup\nStop loss is defined'}
+                    rows={5}
                     className={`w-full rounded-md border p-2.5 text-sm ${field}`}
                   />
-                </label>
-              ))}
-            </div>
-          </div>
+                </div>
 
-          <div className={`rounded-lg border p-3 ${sectionSurface}`}>
-            <div className={`mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide ${muted}`}>
-              <ListChecks size={13} />
-              <span>Pre-trade checklist</span>
-            </div>
-            <textarea
-              value={form.checklistText}
-              onChange={(e) => setForm({ ...form, checklistText: e.target.value })}
-              placeholder={'One item per line\nTrend agrees with setup\nStop loss is defined'}
-              rows={5}
-              className={`w-full rounded-md border p-2.5 text-sm ${field}`}
-            />
-          </div>
+                <ToggleSwitch
+                  checked={form.isActive}
+                  onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                  label="Active and available during order entry"
+                  isDark={isDark}
+                />
+              </div>
 
-          <ToggleSwitch
-            checked={form.isActive}
-            onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
-            label="Active and available during order entry"
-            isDark={isDark}
-          />
-
-          <div className="flex gap-2 pt-1">
-            <button disabled={saving} className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-              <Save size={14} />
-              {saving ? 'Saving…' : editingId ? 'Update playbook' : 'Create playbook'}
-            </button>
-            {editingId && (
-              <button type="button" onClick={reset} className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold ${buttonClass}`}>
-                <X size={14} />
-                Cancel
-              </button>
-            )}
+              <div className={`flex justify-end gap-2 border-t px-5 py-4 ${borderClass}`}>
+                <button type="button" onClick={closeModal} className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold ${buttonClass}`}>
+                  <X size={14} />
+                  Cancel
+                </button>
+                <button disabled={saving} className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                  <Save size={14} />
+                  {saving ? 'Saving…' : editingId ? 'Update playbook' : 'Create playbook'}
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
-      </div>
+        </div>
+      )}
     </div>
   );
 }

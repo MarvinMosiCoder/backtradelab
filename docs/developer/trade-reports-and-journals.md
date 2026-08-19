@@ -19,6 +19,7 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 | `GenerateBacktestReportExport` (job) | Builds the CSV/JSON file and notifies the user |
 | `MarketBacktestExport` (model) | Tracks one export request's lifecycle (`pending`→`processing`→`ready`/`failed`) |
 | `TradeInsightsWidget.jsx` | Compact single-tip teaser rendered on the trader dashboard workspace, links to the full report |
+| `POST /journal-tour/complete` | Marks the `/trade-report` spotlight tour finished for the caller |
 
 ## Flow
 
@@ -27,6 +28,12 @@ Closed simulated positions feed PnL summaries, a calendar, exports, snapshots, a
 3. Response data feeds summary cards, calendar aggregation, and rows.
 4. Journal edits update setup/freeform tags, reason, mistake, emotion, and notes on the owned closed position.
 5. Snapshot links use authorized routes/storage rather than exposing private paths.
+
+## Trade journal spotlight tour
+
+`TradeReportPage.jsx` owns a second `WorkspaceTour.jsx` instance (the first is the chart workspace tour — see [Trading chart](trading-chart.md)), covering all five stacked panels on `/trade-report` in page order: Risk Guardrails, Strategy Playbooks (the "New playbook" button), Trade Calendar, the report's summary stat grid, the Closed Trades table (search/filter/journal editing explained together, since they occupy the same panel), the CSV/JSON export buttons, and Imported Trades. Each step's `selector` targets a `data-tour="journal-*"` attribute placed directly on the real control in its owning component (`RiskGuardrailSettings.jsx`, `StrategyPlaybooks.jsx`, `TradeCalendar.jsx`, `TradeReport.jsx` ×3, `ImportedTrades.jsx`) — add the attribute to the new control first if a step is ever retargeted, rather than guessing a selector from outside.
+
+It is entirely independent of the chart tour: separate nullable `journal_tour_completed_at` timestamp on `adm_users`, separate `POST /journal-tour/complete` (`MarketBacktestController::completeJournalTour()`), same idempotent "only stamp if not already set" pattern. `TradeReportPage.jsx` seeds `tourStep` from `auth.user.journal_tour_completed_at` the same way `Dashboard.jsx` seeds the chart tour's `chartTourCompleted`, and honors the same `?tour=1` query-param restart convention. Unlike the chart tour, there is no separate static `/help`-style page for this one — a small "Take the tour" button in the page's own header (top-right, above the panels) restarts it, since `Pages/Help/Index.jsx` is scoped specifically to the eight chart-workspace steps and extending it to a second, unrelated tour was out of scope here. If a written walkthrough of this tour is wanted later, give it its own page rather than interleaving two tours' steps into one.
 
 ## Coaching insights
 
@@ -67,6 +74,8 @@ The notification list (`Pages/AdmVram/NotificationsViewAll.jsx`) renders a notif
 This requires a running queue worker (`QUEUE_CONNECTION=database`, `php artisan queue:work`, supervised in production — see [Deployment](deployment-and-production.md)). `MarketBacktestReportService` also backs the synchronous `report()` summary and the trade-journal response, so a report field added there is available to both the live summary and the export without duplicating serialization.
 
 The closed-trades journal table supports client-side full-text search across symbols and journal content, symbol/side/result/journal-status filters, selectable page sizes, and numbered pagination. Filtering resets to the first page and does not change the account-wide summary cards or export contents.
+
+**Journal editing is a modal, not an inline-expanding table row.** `TradeReport.jsx` used to insert an extra `<tr>` directly under the clicked row (`editingTradeId === trade.id`) holding the setup tag/tags/emotion inputs and entry/exit/mistake/notes textareas — pushing every subsequent row down and consuming a large slice of the table's limited height, the same "always-visible form eats the screen" issue [Strategy playbooks](backtesting-and-orders.md#strategy-playbooks-and-pre-trade-checklist) had. The trigger button is unchanged (`editingTradeId === trade.id ? cancelJournalEdit() : startJournalEdit(trade)`, still toggling Edit/Close) but now opens a page-level modal (`z-[10010]`, matching `PaymentActionModal.jsx`'s convention) instead of expanding the row. `editingTrade` (`sortedTrades.find(trade => trade.id === editingTradeId)`) resolves which trade the modal shows — using the unfiltered/unpaginated `sortedTrades` rather than `paginatedTrades` so the modal doesn't unexpectedly lose its trade if pagination math shifts, though in practice the existing `cancelJournalEdit()` calls on page/filter change (see `goToPage`, and the `useEffect` keyed on the filter/search/page-size state) already close the modal before that could happen. The modal header repeats the trade's symbol/side/date/PnL for context since the underlying row is no longer visibly expanding beneath it. Backdrop click, the header X, and the footer Cancel/Save all route through the same `cancelJournalEdit()`/`saveJournal()` handlers the inline row used — no new state or persistence path, only where the fields render.
 
 ## Maintenance
 

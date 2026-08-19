@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { flushSync } from 'react-dom';
 import axios from 'axios';
 import { usePage } from '@inertiajs/react';
-import { Bell, HelpCircle, MoreHorizontal, Trash2, Wallet, X } from 'lucide-react';
+import { Bell, HelpCircle, LoaderCircle, MoreHorizontal, RotateCcw, Settings, Trash2, Wallet, X } from 'lucide-react';
 import {
   createChart,
   CandlestickSeries,
@@ -15,12 +15,13 @@ import {
 import { useTheme } from '../../Context/ThemeContext';
 import { useAuth } from '../../Context/AuthContext';
 import ChartHeader from './MarketChart/ChartHeader';
+import { DEFAULT_TIMEFRAME_FAVORITES } from './MarketChart/TimeframeSelector';
 import ChartSettingsModal from './MarketChart/ChartSettingsModal';
 import ChartStage from './MarketChart/ChartStage';
 import ReplayPanel from './MarketChart/ReplayPanel';
 import PositionsPanel from './MarketChart/PositionsPanel';
 import SubscriptionModal from './MarketChart/SubscriptionModal';
-import IndicatorSettingsPanel, { IndicatorClickTargets } from './MarketChart/IndicatorSettingsPanel';
+import IndicatorSettingsPanel, { IndicatorClickTargets, IndicatorContextMenu } from './MarketChart/IndicatorSettingsPanel';
 import { createLiveCandleStream } from './MarketChart/liveCandleStream';
 import FullscreenChartHeader from './MarketChart/FullscreenChartHeader';
 import WorkspaceTour from './WorkspaceTour';
@@ -61,6 +62,7 @@ const MIN_CANDLE_SIZE = 3;
 const MAX_CANDLE_SIZE = 24;
 
 const MAX_DRAWING_UNDO_STEPS = 25;
+const POSITION_MONITOR_GAP_LIMIT = 500;
 const MARKET_DATA_POLL_SECONDS = Math.max(5, Number(import.meta.env.VITE_MARKET_DATA_POLL_SECONDS ?? 10));
 const WEBSOCKET_DELAY_SECONDS = 45;
 
@@ -119,6 +121,22 @@ function movingAverageConvergenceDivergence(candles, fastPeriod, slowPeriod, sig
   });
 
   return { macd, signal, histogram };
+}
+
+/**
+ * Re-enables autoscale on every pane's price scale (main + any visible indicator pane).
+ * A manual vertical price-scale drag disables autoscale entirely inside lightweight-charts —
+ * invisibly to React state — and nothing was re-enabling it when the symbol/timeframe
+ * changed underneath it, so a stale manually-set range from a completely different candle
+ * set could leave the new candles rendered outside the visible price range (present in the
+ * data, invisible on screen) until the user found "Reset Chart" or dragged the scale back
+ * themselves. Called from the viewport-init effects below on every symbol/timeframe change,
+ * not just from the manual Reset Chart action.
+ */
+function resetPriceScalesToAutoScale(chart) {
+  chart.panes().forEach((_, paneIndex) => {
+    chart.priceScale('right', paneIndex)?.applyOptions({ autoScale: true });
+  });
 }
 
 const CHART_THEMES = {
@@ -875,8 +893,12 @@ export default function MarketReplayChart({
   const isTouchInputRef = useRef(false);
   const isNarrowChartRef = useRef(false);
   const overlayRenderFrameRef = useRef(null);
+  const isViewportDraggingRef = useRef(false);
+  const viewportDragFrameRef = useRef(null);
   const autoClosedPositionRef = useRef(new Set());
   const autoTriggeredPositionRef = useRef(new Set());
+  const pendingManagedPositionRef = useRef(new Set());
+  const lastMonitoredReplayIndexRef = useRef(null);
   const pendingVisibleLogicalRangeRef = useRef(null);
   const pendingVisibleViewRef = useRef(null);
   const pendingBackToLiveRef = useRef(false);
@@ -932,7 +954,8 @@ export default function MarketReplayChart({
     catch { return { volume: true, volumeVisible: true, volumeSize: 20, sma: false, smaVisible: true, smaPeriod: 20, smaColor: '#2962ff', smaLineWidth: 2, ema: false, emaVisible: true, emaPeriod: 20, emaColor: '#f59e0b', emaLineWidth: 2, rsi: false, rsiVisible: true, rsiPeriod: 14, rsiSize: 25, rsiColor: '#a855f7', rsiLineWidth: 2, macd: false, macdVisible: true, macdFastPeriod: 12, macdSlowPeriod: 26, macdSignalPeriod: 9, macdSize: 25, macdColor: '#2962ff', macdSignalColor: '#f59e0b', macdUpColor: '#26a69a', macdDownColor: '#ef5350', macdLineWidth: 2 }; }
   });
   const [selectedIndicator, setSelectedIndicator] = useState(null);
-  const [indicatorSettingsPosition, setIndicatorSettingsPosition] = useState(null);
+  const [expandedIndicator, setExpandedIndicator] = useState(null);
+  const [indicatorContextMenu, setIndicatorContextMenu] = useState(null);
   const [allDrawingsLocked, setAllDrawingsLocked] = useState(false);
   const allDrawingsLockedRef = useRef(false);
   const [hiddenLayers, setHiddenLayers] = useState({ drawings: false, indicators: false, positions: false });
@@ -950,6 +973,7 @@ export default function MarketReplayChart({
   const [hoveredLegendCandle, setHoveredLegendCandle] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showTimeframeLoadingHint, setShowTimeframeLoadingHint] = useState(false);
 
   const [replayMode, setReplayMode] = useState(false);
   const [replayIndex, setReplayIndex] = useState(0);
@@ -966,6 +990,7 @@ export default function MarketReplayChart({
   const [isFullscreenEntryPanelOpen, setIsFullscreenEntryPanelOpen] = useState(false);
   const [priceAlerts, setPriceAlerts] = useState([]);
   const [alertModalOpen, setAlertModalOpen] = useState(false);
+  const [showClearDrawingsConfirm, setShowClearDrawingsConfirm] = useState(false);
   const [alertSoundEnabled, setAlertSoundEnabled] = useState(true);
   const [alertDraft, setAlertDraft] = useState({ price: '', type: 'rise' });
   const [alertError, setAlertError] = useState('');
@@ -1058,6 +1083,8 @@ export default function MarketReplayChart({
   const [chartContextMenu, setChartContextMenu] = useState(null);
   const chartContextMenuRef = useRef(null);
   const chartContextMenuFirstItemRef = useRef(null);
+  const indicatorContextMenuRef = useRef(null);
+  const indicatorContextMenuFirstItemRef = useRef(null);
   const [orderDraftClearRequest, setOrderDraftClearRequest] = useState(null);
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: CHART_HEIGHT });
   const [overlayRenderVersion, setOverlayRenderVersion] = useState(0);
@@ -1128,6 +1155,23 @@ export default function MarketReplayChart({
   }, [visibleCandles]);
   const legendCandle = hoveredLegendCandle ?? visibleCandles.at(-1) ?? null;
   const isTimeframeLoading = timeframe !== loadedTimeframe && !error;
+
+  // A timeframe switch during Replay re-fetches up to max_candles=20000 of
+  // history (paginated, several sequential exchange requests) and can take
+  // well past the couple hundred ms a normal switch needs. The shield below
+  // intentionally shows nothing for that common fast case to avoid a flash —
+  // but with zero feedback, a slow-but-working replay switch is visually
+  // identical to a stuck one. Surface a spinner only once loading has run
+  // long enough that it's no longer a fast transition.
+  useEffect(() => {
+    if (!isTimeframeLoading) {
+      setShowTimeframeLoadingHint(false);
+      return undefined;
+    }
+    const timerId = window.setTimeout(() => setShowTimeframeLoadingHint(true), 1500);
+    return () => window.clearTimeout(timerId);
+  }, [isTimeframeLoading]);
+
   const latestCandleStartedAt = useMemo(() => {
     const candleTime = Number(visibleCandles.at(-1)?.time);
     return Number.isFinite(candleTime) ? candleTime * 1000 : null;
@@ -1184,6 +1228,9 @@ export default function MarketReplayChart({
   const executionCandle = replayMode ? allCandles[replayIndex] : null;
   const executionPrice = executionCandle?.close ?? currentPrice;
   const executionTime = executionCandle?.time ?? null;
+  const positionMonitorCandle = replayMode
+    ? executionCandle
+    : (visibleCandles.length ? visibleCandles[visibleCandles.length - 1] : null);
   const selectedDrawing = useMemo(() => {
     return drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
   }, [drawings, selectedDrawingId]);
@@ -1757,6 +1804,14 @@ export default function MarketReplayChart({
     });
   }, [chartDisplay, saveToolSettingsForType]);
 
+  const timeframeFavorites = useMemo(() => (
+    Array.isArray(toolSettings.timeframeFavorites?.list) ? toolSettings.timeframeFavorites.list : DEFAULT_TIMEFRAME_FAVORITES
+  ), [toolSettings.timeframeFavorites]);
+
+  const handleTimeframeFavoritesChange = useCallback((nextList) => {
+    saveToolSettingsForType('timeframeFavorites', { list: nextList });
+  }, [saveToolSettingsForType]);
+
   const [isChartSettingsOpen, setIsChartSettingsOpen] = useState(false);
   const [isLegendActive, setIsLegendActive] = useState(false);
 
@@ -2283,7 +2338,54 @@ export default function MarketReplayChart({
   }, [chartContextMenu]);
 
   useEffect(() => {
+    if (!indicatorContextMenu) return undefined;
+
+    indicatorContextMenuFirstItemRef.current?.focus();
+
+    const closeMenu = (event) => {
+      if (event?.type === 'pointerdown' && indicatorContextMenuRef.current?.contains(event.target)) return;
+      setIndicatorContextMenu(null);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setIndicatorContextMenu(null);
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+
+      const items = Array.from(indicatorContextMenuRef.current?.querySelectorAll('[role="menuitem"]') ?? []);
+      if (!items.length) return;
+      event.preventDefault();
+      const currentIndex = items.indexOf(document.activeElement);
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (currentIndex + 1 + items.length) % items.length
+            : (currentIndex - 1 + items.length) % items.length;
+      items[nextIndex].focus();
+    };
+
+    document.addEventListener('pointerdown', closeMenu);
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('wheel', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
+
+    return () => {
+      document.removeEventListener('pointerdown', closeMenu);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('wheel', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
+    };
+  }, [indicatorContextMenu]);
+
+  useEffect(() => {
     setChartContextMenu(null);
+    setIndicatorContextMenu(null);
   }, [exchange, marketCategory, symbol, timeframe]);
 
   const getDefaultPositionStop = useCallback((type, entry, target) => {
@@ -2548,15 +2650,33 @@ export default function MarketReplayChart({
           const livePnlLabel = formattedLivePnl
             ? `  LIVE ${livePnl >= 0 ? '+' : '-'}${formattedLivePnl} ${backtestAccount?.quoteCurrency ?? 'USDT'}`
             : '';
+          const sideLabel = position.side === 'short' ? 'SHORT' : 'LONG';
+          // Mark the managed-exit rules directly on the lines they affect, matching how
+          // exchanges label a trailing/break-even stop or a multi-target take-profit on the
+          // chart itself rather than leaving it discoverable only in a side list.
+          const slQualifiers = [
+            position.trailingStopPercent ? 'TRAIL' : null,
+            position.breakEvenTriggerPercent ? 'BE' : null,
+          ].filter(Boolean);
+          const slPrefix = slQualifiers.length ? `${slQualifiers.join('+')} ` : '';
+          const tpSuffix = position.partialTakeProfitPercent && !position.partialTakeProfitExecuted
+            ? ` · ${position.partialTakeProfitPercent}% close`
+            : '';
 
           return [
             buildLine(openPosition, 'entry', position.entryPrice, {
               dashed: false,
               color: livePnl == null ? '#f59e0b' : livePnl >= 0 ? '#22c55e' : '#ef4444',
-              label: `${position.side === 'short' ? 'SHORT' : 'LONG'} OPEN ${formatOverlayPrice(position.entryPrice)}${livePnlLabel}`,
+              label: `${sideLabel} OPEN ${formatOverlayPrice(position.entryPrice)}${livePnlLabel}`,
             }),
-            buildLine(openPosition, 'sl', position.stopLoss, { dashed: false }),
-            buildLine(openPosition, 'tp', position.takeProfit, { dashed: false }),
+            buildLine(openPosition, 'sl', position.stopLoss, {
+              dashed: false,
+              label: `${sideLabel} ${slPrefix}SL ${formatOverlayPrice(position.stopLoss)}`,
+            }),
+            buildLine(openPosition, 'tp', position.takeProfit, {
+              dashed: false,
+              label: `${sideLabel} TP ${formatOverlayPrice(position.takeProfit)}${tpSuffix}`,
+            }),
           ];
         }),
     ].filter(Boolean);
@@ -2565,24 +2685,33 @@ export default function MarketReplayChart({
   const renderedTradeMarkers = useMemo(() => {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
-    if (!chart || !series || !allCandles.length) return [];
+    if (!chart || !series || !allCandles.length || !visibleCandles.length) return [];
     const intervalSeconds = TIMEFRAME_SECONDS[loadedTimeframe] ?? 60;
+    const lastVisibleTime = Number(visibleCandles[visibleCandles.length - 1].time);
 
-    return (backtestAccount?.trades ?? []).filter((trade) => trade.symbol === symbol).map((trade) => {
-      const logical = estimateDrawingLogicalFromTime(
-        allCandles,
-        Number(trade.executedAtTime),
-        intervalSeconds
-      );
-      const x = Number.isFinite(logical)
-        ? chart.timeScale().logicalToCoordinate(logical)
-        : chart.timeScale().timeToCoordinate(Number(trade.executedAtTime));
-      const y = series.priceToCoordinate(Number(trade.price));
-      if (x == null || y == null) return null;
-      const isBuy = (trade.action === 'open' && trade.side === 'long') || (trade.action === 'close' && trade.side === 'short');
-      return { id: trade.id, x, y, label: isBuy ? 'B' : 'S', color: isBuy ? '#16a34a' : '#dc2626' };
-    }).filter(Boolean);
-  }, [allCandles, backtestAccount?.trades, loadedTimeframe, overlayRenderVersion, symbol]);
+    return (backtestAccount?.trades ?? [])
+      .filter((trade) => trade.symbol === symbol)
+      // A trade executed later than the candle currently revealed in Replay hasn't
+      // "happened yet" from this vantage point. Positioning used to run against the
+      // full unsliced `allCandles` timeline, so a future trade's marker still resolved
+      // to a valid logical index and got extrapolated far past the last rendered
+      // candle into empty chart space instead of disappearing with it.
+      .filter((trade) => Number.isFinite(lastVisibleTime) && Number(trade.executedAtTime) <= lastVisibleTime)
+      .map((trade) => {
+        const logical = estimateDrawingLogicalFromTime(
+          allCandles,
+          Number(trade.executedAtTime),
+          intervalSeconds
+        );
+        const x = Number.isFinite(logical)
+          ? chart.timeScale().logicalToCoordinate(logical)
+          : chart.timeScale().timeToCoordinate(Number(trade.executedAtTime));
+        const y = series.priceToCoordinate(Number(trade.price));
+        if (x == null || y == null) return null;
+        const isBuy = (trade.action === 'open' && trade.side === 'long') || (trade.action === 'close' && trade.side === 'short');
+        return { id: trade.id, x, y, label: isBuy ? 'B' : 'S', color: isBuy ? '#16a34a' : '#dc2626' };
+      }).filter(Boolean);
+  }, [allCandles, visibleCandles, backtestAccount?.trades, loadedTimeframe, overlayRenderVersion, symbol]);
 
   const swingPointMarkers = useMemo(() => {
     if (!isLegendActive) return [];
@@ -3056,14 +3185,11 @@ export default function MarketReplayChart({
         }
 
         if (indicatorType) {
-          const paneOffset = chart.panes().slice(0, Number(param?.paneIndex ?? 0)).reduce((total, pane) => total + pane.getHeight(), 0);
-          setSelectedIndicator(indicatorType);
-          setIndicatorSettingsPosition(param?.point ? { x: param.point.x, y: param.point.y + paneOffset } : null);
+          setExpandedIndicator(indicatorType);
           setSelectedDrawingId(null);
           setTool(null);
         } else {
-          setSelectedIndicator(null);
-          setIndicatorSettingsPosition(null);
+          setExpandedIndicator(null);
         }
         return;
       }
@@ -3274,12 +3400,89 @@ export default function MarketReplayChart({
       scheduleOverlayRender();
     };
 
+    // Dragging the right price scale is handled entirely inside lightweight-charts with no
+    // subscription event of its own (unlike the time scale's subscribeVisibleLogicalRangeChange
+    // above) — the canvas repaints synchronously as part of the browser's own mouse handling,
+    // invisible to React. Reacting to individual `mousemove` events (the previous approach)
+    // wasn't reliable: nothing guarantees every native mousemove during a fast drag actually
+    // reaches this listener before the library's own canvas has already moved on, so the SVG
+    // overlay could still fall a step behind and visibly wiggle/misalign against the candles.
+    // This instead drives the overlay from its own requestAnimationFrame loop for the entire
+    // mousedown-to-mouseup span, independent of how many (or few) native events fire in between —
+    // it re-syncs every real frame no matter which internal gesture is happening.
+    const stepViewportDragOverlay = () => {
+      if (!isViewportDraggingRef.current) {
+        viewportDragFrameRef.current = null;
+        return;
+      }
+      flushSync(() => setOverlayRenderVersion((version) => version + 1));
+      viewportDragFrameRef.current = requestAnimationFrame(stepViewportDragOverlay);
+    };
+
+    const handleViewportDragStart = () => {
+      // Matches the same condition the chart's own handleScroll/handleScale options use — with
+      // a drawing tool active (and space not held), a mousedown-drag draws instead of panning or
+      // scaling, so there is no viewport change for this loop to keep the overlay synced with.
+      if (!isSpacePressedRef.current && toolRef.current) return;
+      isViewportDraggingRef.current = true;
+      if (!viewportDragFrameRef.current) {
+        viewportDragFrameRef.current = requestAnimationFrame(stepViewportDragOverlay);
+      }
+    };
+
+    const handleViewportDragEnd = () => {
+      if (!isViewportDraggingRef.current) return;
+      isViewportDraggingRef.current = false;
+      if (viewportDragFrameRef.current) {
+        cancelAnimationFrame(viewportDragFrameRef.current);
+        viewportDragFrameRef.current = null;
+      }
+      // One last sync in case the mouseup lands between two animation frames.
+      queueMicrotask(() => {
+        flushSync(() => setOverlayRenderVersion((version) => version + 1));
+      });
+    };
+
     const handleViewportInteraction = () => {
-      scheduleOverlayRender();
+      if (isViewportDraggingRef.current) return; // the per-frame drag loop above already covers this
+      if (overlayRenderFrameRef.current) {
+        cancelAnimationFrame(overlayRenderFrameRef.current);
+        overlayRenderFrameRef.current = null;
+      }
+      queueMicrotask(() => {
+        flushSync(() => setOverlayRenderVersion((version) => version + 1));
+      });
     };
 
     containerRef.current.addEventListener('wheel', handlePriceScaleWheel, { passive: false, capture: true });
     containerRef.current.addEventListener('wheel', handleViewportInteraction, { passive: true });
+    // Registered on `window`, not containerRef.current, and on both event models: an indicator
+    // pane's own price scale, and pane-height resizing (layout.panes.enableResize, the divider
+    // between stacked panes) are, like the main price scale, handled entirely inside
+    // lightweight-charts with no subscription event of their own. Some of these internal
+    // gestures render on nested elements (e.g. the resize-divider hit target) that may capture
+    // the pointer or otherwise not reliably bubble a plain container-scoped listener; a window
+    // listener still sees the event on its way down/up regardless of which descendant it
+    // targets. isPointInContainer guards against starting the loop for clicks elsewhere on the
+    // page entirely; isViewportDraggingRef coalesces a duplicate start if both event models fire.
+    const isPointInContainer = (event) => {
+      const el = containerRef.current;
+      if (!el) return false;
+      const point = event.touches?.[0] ?? event;
+      const rect = el.getBoundingClientRect();
+      return (
+        point.clientX >= rect.left && point.clientX <= rect.right
+        && point.clientY >= rect.top && point.clientY <= rect.bottom
+      );
+    };
+    const handleWindowViewportDragStart = (event) => {
+      if (!isPointInContainer(event)) return;
+      handleViewportDragStart();
+    };
+    window.addEventListener('mousedown', handleWindowViewportDragStart, { passive: true });
+    window.addEventListener('pointerdown', handleWindowViewportDragStart, { passive: true });
+    window.addEventListener('mouseup', handleViewportDragEnd, { passive: true });
+    window.addEventListener('pointerup', handleViewportDragEnd, { passive: true });
     containerRef.current.addEventListener('mousemove', handleViewportInteraction, { passive: true });
     containerRef.current.addEventListener('mouseup', handleViewportInteraction, { passive: true });
     containerRef.current.addEventListener('mouseleave', handleViewportInteraction, { passive: true });
@@ -3301,10 +3504,20 @@ export default function MarketReplayChart({
         containerRef.current.removeEventListener('mouseup', handleViewportInteraction);
         containerRef.current.removeEventListener('mouseleave', handleViewportInteraction);
       }
+      window.removeEventListener('mousedown', handleWindowViewportDragStart);
+      window.removeEventListener('pointerdown', handleWindowViewportDragStart);
+      window.removeEventListener('mouseup', handleViewportDragEnd);
+      window.removeEventListener('pointerup', handleViewportDragEnd);
 
       if (overlayRenderFrameRef.current) {
         cancelAnimationFrame(overlayRenderFrameRef.current);
         overlayRenderFrameRef.current = null;
+      }
+
+      isViewportDraggingRef.current = false;
+      if (viewportDragFrameRef.current) {
+        cancelAnimationFrame(viewportDragFrameRef.current);
+        viewportDragFrameRef.current = null;
       }
 
       if (resizeObserverRef.current) {
@@ -3466,14 +3679,16 @@ export default function MarketReplayChart({
   useEffect(() => {
     if (selectedIndicator && !indicators[selectedIndicator]) {
       setSelectedIndicator(null);
-      setIndicatorSettingsPosition(null);
     }
-  }, [indicators, selectedIndicator]);
+    if (expandedIndicator && !indicators[expandedIndicator]) {
+      setExpandedIndicator(null);
+    }
+  }, [expandedIndicator, indicators, selectedIndicator]);
 
   useEffect(() => {
     if (tool || selectedDrawingId) {
       setSelectedIndicator(null);
-      setIndicatorSettingsPosition(null);
+      setExpandedIndicator(null);
     }
   }, [selectedDrawingId, tool]);
 
@@ -3673,6 +3888,7 @@ export default function MarketReplayChart({
 
     isProgrammaticRangeChangeRef.current = true;
     chart.timeScale().fitContent();
+    resetPriceScalesToAutoScale(chart);
 
     requestAnimationFrame(() => {
       isProgrammaticRangeChangeRef.current = false;
@@ -3690,11 +3906,23 @@ export default function MarketReplayChart({
     isProgrammaticRangeChangeRef.current = true;
 
     const intervalSeconds = TIMEFRAME_SECONDS[timeframe] ?? 60;
-    const centerLogical = estimateDrawingLogicalFromTime(
+    const rawCenterLogical = estimateDrawingLogicalFromTime(
       visibleCandles,
       pendingView.centerTime,
       intervalSeconds
     );
+    // Replay mode truncates visibleCandles to the replay cursor (see the
+    // visibleCandles memo). A viewport carried over from the previous
+    // timeframe can center on a time past that cursor — most easily hit
+    // switching to a coarser timeframe like 30m, where far fewer bars cover
+    // the same real-time span — landing the whole logical range beyond the
+    // last real candle. The chart then reads as completely blank even
+    // though the data and legend are fine. Clamp to the last loaded bar so
+    // some real candles always stay in view, mirroring the same clamp used
+    // for drawing-anchor framing above.
+    const centerLogical = Number.isFinite(rawCenterLogical) && replayMode
+      ? Math.min(rawCenterLogical, visibleCandles.length - 1)
+      : rawCenterLogical;
     const span = Math.max(Number(pendingView.logicalSpan) || 0, 6);
 
     if (Number.isFinite(centerLogical)) {
@@ -3707,6 +3935,7 @@ export default function MarketReplayChart({
     } else {
       chart.timeScale().fitContent();
     }
+    resetPriceScalesToAutoScale(chart);
 
     viewportInitializedKeyRef.current = `${exchange}:${marketCategory}:${symbol}:${timeframe}`;
 
@@ -3714,7 +3943,7 @@ export default function MarketReplayChart({
       isProgrammaticRangeChangeRef.current = false;
       scheduleOverlayRender();
     });
-  }, [exchange, marketCategory, scheduleOverlayRender, symbol, timeframe, visibleCandles.length]);
+  }, [exchange, marketCategory, replayMode, scheduleOverlayRender, symbol, timeframe, visibleCandles.length]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -3725,6 +3954,7 @@ export default function MarketReplayChart({
     pendingVisibleViewRef.current = null;
     isProgrammaticRangeChangeRef.current = true;
     chart.timeScale().setVisibleLogicalRange(pendingRange);
+    resetPriceScalesToAutoScale(chart);
     viewportInitializedKeyRef.current = `${exchange}:${marketCategory}:${symbol}:${timeframe}`;
 
     requestAnimationFrame(() => {
@@ -4819,7 +5049,16 @@ export default function MarketReplayChart({
               ...drawingTimes,
             ]
               .map((time) => estimateDrawingLogicalFromTime(complete, time, intervalSeconds))
-              .filter((logical) => Number.isFinite(logical));
+              .filter((logical) => Number.isFinite(logical))
+              // Replay mode truncates the rendered series to `nextReplayIndex` — no
+              // bar beyond the replay point is ever loaded into the chart. A drawing
+              // anchored after the replay time (very common: drawings are often made
+              // against the live chart, then replay is scrubbed to an earlier point)
+              // must not be allowed to push the framed viewport past that boundary,
+              // or the real (truncated) candles get squeezed into an invisible sliver
+              // at the left edge of an otherwise-empty requested range — the chart
+              // reads as completely blank even though the data and legend are fine.
+              .map((logical) => Math.min(logical, nextReplayIndex));
 
             if (frameLogicals.length) {
               const minLogical = Math.min(...frameLogicals, nextReplayIndex);
@@ -4897,7 +5136,20 @@ export default function MarketReplayChart({
           setLoading(false);
         }
 
-        const normalized = await fetchCandles(params);
+        // Replay fetches page through the exchange in up to ~20 sequential
+        // requests to gather max_candles=20000 of history and can legitimately
+        // take a while. Without a ceiling, a stalled upstream request (a slow
+        // exchange, a network hiccup) leaves the fetch pending indefinitely —
+        // the shield above never clears and the chart looks permanently
+        // broken with no error, since nothing ever reaches the catch block.
+        const normalized = await Promise.race([
+          fetchCandles(params),
+          new Promise((_resolve, reject) => {
+            window.setTimeout(() => {
+              reject(new Error('Chart data is taking longer than expected to load. Please try again.'));
+            }, wasInReplay ? 60000 : 30000);
+          }),
+        ]);
 
         if (fetchRequestIdRef.current !== requestId) return;
 
@@ -5341,14 +5593,34 @@ export default function MarketReplayChart({
     });
   };
 
-  const handleClearDrawings = () => {
-    if (drawingsRef.current.length && !window.confirm('Clear all drawings for this market? You can undo this action with Ctrl/Cmd + Z.')) {
-      return;
-    }
-
+  const performClearDrawings = () => {
     pushDrawingUndoSnapshot(selectedDrawingIdRef.current);
     saveDrawings([]);
     setSelectedDrawingId(null);
+    setShowClearDrawingsConfirm(false);
+  };
+
+  const handleClearDrawings = () => {
+    if (drawingsRef.current.length) {
+      setShowClearDrawingsConfirm(true);
+      return;
+    }
+
+    performClearDrawings();
+  };
+
+  const handleResetChartView = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    isProgrammaticRangeChangeRef.current = true;
+    chart.timeScale().fitContent();
+    resetPriceScalesToAutoScale(chart);
+
+    requestAnimationFrame(() => {
+      isProgrammaticRangeChangeRef.current = false;
+      scheduleOverlayRender();
+    });
   };
 
   const handleDeleteSelectedDrawing = () => {
@@ -5504,8 +5776,8 @@ export default function MarketReplayChart({
     saveDrawings(next);
   };
 
-  const handleSaveSelectedToolPreset = (presetName) => {
-    const selected = drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current);
+  const handleSaveSelectedToolPreset = (presetName, overrideDrawing) => {
+    const selected = overrideDrawing ?? drawingsRef.current.find((drawing) => drawing.id === selectedDrawingIdRef.current);
     if (!selected || !PRESET_ENABLED_TOOL_TYPES.includes(selected.type)) return;
 
     const settings = buildToolSettingsFromDrawing(selected);
@@ -5712,7 +5984,9 @@ export default function MarketReplayChart({
     leverage,
     entryPrice,
     stopLoss,
+    stopLossPnlPercent,
     takeProfit,
+    takeProfitPnlPercent,
     playbookId,
     checklistAnswers,
     trailingStopPercent,
@@ -5753,7 +6027,9 @@ export default function MarketReplayChart({
         price: fillPrice,
         executed_at_time: executionTime,
         ...(getPositiveNumber(stopLoss) != null ? { stop_loss: getPositiveNumber(stopLoss) } : {}),
+        ...(getPositiveNumber(stopLossPnlPercent) != null ? { stop_loss_pnl_percent: getPositiveNumber(stopLossPnlPercent) } : {}),
         ...(getPositiveNumber(takeProfit) != null ? { take_profit: getPositiveNumber(takeProfit) } : {}),
+        ...(getPositiveNumber(takeProfitPnlPercent) != null ? { take_profit_pnl_percent: getPositiveNumber(takeProfitPnlPercent) } : {}),
         ...(playbookId ? { playbook_id: playbookId, checklist_answers: checklistAnswers } : {}),
         ...(getPositiveNumber(trailingStopPercent) != null ? { trailing_stop_percent: getPositiveNumber(trailingStopPercent) } : {}),
         ...(getPositiveNumber(breakEvenTriggerPercent) != null ? { break_even_trigger_percent: getPositiveNumber(breakEvenTriggerPercent) } : {}),
@@ -5963,11 +6239,11 @@ export default function MarketReplayChart({
   closeBacktestPositionRef.current = handleCloseBacktestPosition;
 
   useEffect(() => {
-    if (!replayMode || !executionCandle || !backtestAccount?.pendingPositions?.length) return;
+    if (!positionMonitorCandle || !backtestAccount?.pendingPositions?.length) return;
 
-    const candleHigh = Number(executionCandle.high);
-    const candleLow = Number(executionCandle.low);
-    const candleTime = executionCandle.time;
+    const candleHigh = Number(positionMonitorCandle.high);
+    const candleLow = Number(positionMonitorCandle.low);
+    const candleTime = positionMonitorCandle.time;
 
     if (!Number.isFinite(candleHigh) || !Number.isFinite(candleLow)) return;
 
@@ -6011,44 +6287,116 @@ export default function MarketReplayChart({
     return () => {
       cancelled = true;
     };
-  }, [backtestAccount, executionCandle, replayMode, symbol]);
+  }, [backtestAccount, positionMonitorCandle, symbol]);
 
   useEffect(() => {
-    if (!replayMode || !executionCandle || !backtestAccount?.openPositions?.length) return;
+    lastMonitoredReplayIndexRef.current = null;
+  }, [symbol, timeframe, replayMode]);
 
-    const candleHigh = Number(executionCandle.high);
-    const candleLow = Number(executionCandle.low);
-    const candleTime = executionCandle.time;
+  useEffect(() => {
+    if (!positionMonitorCandle || !backtestAccount?.openPositions?.length) return;
 
-    if (!Number.isFinite(candleHigh) || !Number.isFinite(candleLow)) return;
+    const latestHigh = Number(positionMonitorCandle.high);
+    const latestLow = Number(positionMonitorCandle.low);
+    if (!Number.isFinite(latestHigh) || !Number.isFinite(latestLow)) return;
+
+    // Normally there's just one candle to check: the current one. But Replay can also jump
+    // the playhead forward by more than one bar in a single step — dragging/seeking the
+    // timeline, not just Step Forward/Play — and each of those older effect runs only ever
+    // looked at `positionMonitorCandle`, the single *landing* bar. Every bar in between was
+    // silently never checked at all. If price crossed a SL/TP/liquidation level on one of
+    // those skipped bars, it was gone for good: a later bar's own high/low no longer reaches
+    // that level once price has moved back away from it, so the position stayed open forever
+    // despite genuinely having been hit. `lastMonitoredReplayIndexRef` tracks the last index
+    // this effect actually looked at; when the gap is more than one bar, every bar in the gap
+    // is checked in order instead of only the newest one.
+    let candlesToCheck = [positionMonitorCandle];
+    if (replayMode) {
+      const lastIndex = lastMonitoredReplayIndexRef.current;
+      if (lastIndex != null && replayIndex > lastIndex + 1) {
+        // Bounded so an extreme jump (e.g. dragging the timeline across thousands of bars)
+        // can't queue thousands of sequential requests — falls back to the most recent
+        // POSITION_MONITOR_GAP_LIMIT bars of the gap rather than the true full range.
+        const gapStart = Math.max(lastIndex + 1, replayIndex - POSITION_MONITOR_GAP_LIMIT + 1);
+        const gapCandles = allCandles
+          .slice(gapStart, replayIndex + 1)
+          .filter((candle) => Number.isFinite(Number(candle?.high)) && Number.isFinite(Number(candle?.low)));
+        if (gapCandles.length) candlesToCheck = gapCandles;
+      }
+      lastMonitoredReplayIndexRef.current = replayIndex;
+    }
 
     const managedPositions = backtestAccount.openPositions
       .filter((position) => position.symbol === symbol)
-      .filter((position) => position.liquidationPrice || position.trailingStopPercent || position.breakEvenTriggerPercent || position.partialTakeProfitPercent)
-      .filter((position) => Number(position.openedAtTime) !== Number(candleTime));
+      .filter((position) => position.liquidationPrice || position.trailingStopPercent || position.breakEvenTriggerPercent || position.partialTakeProfitPercent);
 
     if (managedPositions.length) {
       let cancelled = false;
       const processManagedPositions = async () => {
         const snapshot = await captureBacktestSnapshot();
         for (const position of managedPositions) {
-          const key = `${position.id}:${candleTime}:managed`;
-          if (cancelled || autoClosedPositionRef.current.has(key)) continue;
-          autoClosedPositionRef.current.add(key);
+          if (cancelled) continue;
+          // A live tick can re-run this effect many times a second, each spawning its own
+          // async pass over the same open positions. Without this guard, two overlapping
+          // passes could both have an in-flight process-candle request for the same position;
+          // whichever lands second finds it already closed and 404s with a raw Eloquent
+          // "model not found" message. Only one request per position may be in flight at once.
+          if (pendingManagedPositionRef.current.has(position.id)) continue;
+          pendingManagedPositionRef.current.add(position.id);
           try {
-            const response = await axios.post(`/market-backtest/positions/${position.id}/process-candle`, {
-              high: candleHigh,
-              low: candleLow,
-              price: Number(executionCandle.close),
-              executed_at_time: candleTime,
-            });
-            const nextAccount = response.data?.account ?? null;
-            if (!cancelled) setBacktestAccount(nextAccount);
-            const remainsOpen = (nextAccount?.openPositions ?? []).some((item) => item.id === position.id);
-            if (!remainsOpen && snapshot) uploadBacktestSnapshot(position.id, 'exit', snapshot).catch(() => {});
-          } catch (err) {
-            autoClosedPositionRef.current.delete(key);
-            if (!cancelled) setBacktestError(err.response?.data?.message ?? 'Failed to process position rules');
+            // Only bars strictly after this position's own entry apply — a shared gap can
+            // span bars from before this position existed if it was opened partway through it.
+            const positionCandles = candlesToCheck.filter(
+              (candle) => Number(candle.time) > Number(position.openedAtTime)
+            );
+
+            for (const candle of positionCandles) {
+              if (cancelled) break;
+
+              const candleHigh = Number(candle.high);
+              const candleLow = Number(candle.low);
+              const candleTime = candle.time;
+              if (!Number.isFinite(candleHigh) || !Number.isFinite(candleLow)) continue;
+
+              // Keyed on the running high/low (not just candleTime) so a still-forming live
+              // candle is re-checked every time price makes a new extreme, instead of only
+              // once per bar.
+              const key = `${position.id}:${candleTime}:${candleHigh}:${candleLow}:managed`;
+              if (autoClosedPositionRef.current.has(key)) continue;
+              autoClosedPositionRef.current.add(key);
+
+              try {
+                const response = await axios.post(`/market-backtest/positions/${position.id}/process-candle`, {
+                  high: candleHigh,
+                  low: candleLow,
+                  price: Number(candle.close),
+                  executed_at_time: candleTime,
+                });
+                const nextAccount = response.data?.account ?? null;
+                // Apply this unconditionally, even if `cancelled` — a newer candle/tick
+                // superseding this effect run does not mean the server's response stopped
+                // being true. The position may genuinely be closed now; discarding that here
+                // would leave it permanently "stuck open" on the frontend, since every later
+                // re-check of an already-closed position just 404s (see below) and never
+                // corrects the state.
+                setBacktestAccount(nextAccount);
+                const remainsOpen = (nextAccount?.openPositions ?? []).some((item) => item.id === position.id);
+                if (!remainsOpen) {
+                  if (snapshot) uploadBacktestSnapshot(position.id, 'exit', snapshot).catch(() => {});
+                  break; // closed — no need to keep checking later bars in this gap for it
+                }
+              } catch (err) {
+                autoClosedPositionRef.current.delete(key);
+                // A 404 here means another check already closed/removed this position first —
+                // expected under the race above, not a real failure worth alarming the user with.
+                if (err.response?.status !== 404) {
+                  setBacktestError(err.response?.data?.message ?? 'Failed to process position rules');
+                }
+                break;
+              }
+            }
+          } finally {
+            pendingManagedPositionRef.current.delete(position.id);
           }
         }
       };
@@ -6059,43 +6407,56 @@ export default function MarketReplayChart({
     const triggeredPositions = backtestAccount.openPositions
       .filter((position) => position.symbol === symbol)
       .filter((position) => !position.liquidationPrice && !position.trailingStopPercent && !position.breakEvenTriggerPercent && !position.partialTakeProfitPercent)
-      .filter((position) => Number(position.openedAtTime) !== Number(candleTime))
       .map((position) => {
         const stopLoss = Number(position.stopLoss);
         const takeProfit = Number(position.takeProfit);
         const hasStopLoss = Number.isFinite(stopLoss) && stopLoss > 0;
         const hasTakeProfit = Number.isFinite(takeProfit) && takeProfit > 0;
-        let exitPrice = null;
-        let trigger = null;
 
-        if (position.side === 'long') {
-          if (hasStopLoss && candleLow <= stopLoss) {
-            exitPrice = stopLoss;
-            trigger = 'sl';
-          } else if (hasTakeProfit && candleHigh >= takeProfit) {
-            exitPrice = takeProfit;
-            trigger = 'tp';
+        const positionCandles = candlesToCheck.filter(
+          (candle) => Number(candle.time) > Number(position.openedAtTime)
+        );
+
+        for (const candle of positionCandles) {
+          const candleHigh = Number(candle.high);
+          const candleLow = Number(candle.low);
+          if (!Number.isFinite(candleHigh) || !Number.isFinite(candleLow)) continue;
+
+          let exitPrice = null;
+          let trigger = null;
+
+          if (position.side === 'long') {
+            if (hasStopLoss && candleLow <= stopLoss) {
+              exitPrice = stopLoss;
+              trigger = 'sl';
+            } else if (hasTakeProfit && candleHigh >= takeProfit) {
+              exitPrice = takeProfit;
+              trigger = 'tp';
+            }
+          }
+
+          if (position.side === 'short') {
+            if (hasStopLoss && candleHigh >= stopLoss) {
+              exitPrice = stopLoss;
+              trigger = 'sl';
+            } else if (hasTakeProfit && candleLow <= takeProfit) {
+              exitPrice = takeProfit;
+              trigger = 'tp';
+            }
+          }
+
+          if (exitPrice) {
+            return {
+              id: position.id,
+              exitPrice,
+              trigger,
+              candleTime: candle.time,
+              key: `${position.id}:${candle.time}:${trigger}`,
+            };
           }
         }
 
-        if (position.side === 'short') {
-          if (hasStopLoss && candleHigh >= stopLoss) {
-            exitPrice = stopLoss;
-            trigger = 'sl';
-          } else if (hasTakeProfit && candleLow <= takeProfit) {
-            exitPrice = takeProfit;
-            trigger = 'tp';
-          }
-        }
-
-        if (!exitPrice) return null;
-
-        return {
-          id: position.id,
-          exitPrice,
-          trigger,
-          key: `${position.id}:${candleTime}:${trigger}`,
-        };
+        return null;
       })
       .filter(Boolean)
       .filter((item) => !autoClosedPositionRef.current.has(item.key));
@@ -6110,7 +6471,7 @@ export default function MarketReplayChart({
       for (const item of triggeredPositions) {
         if (cancelled) return;
         autoClosedPositionRef.current.add(item.key);
-        const didClose = await closeBacktestPositionRef.current?.(item.id, item.exitPrice, candleTime, { silent: true });
+        const didClose = await closeBacktestPositionRef.current?.(item.id, item.exitPrice, item.candleTime, { silent: true });
         if (!didClose) {
           autoClosedPositionRef.current.delete(item.key);
         }
@@ -6122,7 +6483,7 @@ export default function MarketReplayChart({
     return () => {
       cancelled = true;
     };
-  }, [backtestAccount, executionCandle, replayMode, symbol]);
+  }, [allCandles, backtestAccount, positionMonitorCandle, replayIndex, replayMode, symbol]);
 
   const handleToggleFullscreen = () => {
     setIsFullscreen((current) => {
@@ -6175,6 +6536,7 @@ export default function MarketReplayChart({
     symbolError,
     timeframe,
     timeframeOptions,
+    timeframeFavorites,
     replayMode,
     replayAccessStatus,
     liveConnectionStatus,
@@ -6186,11 +6548,11 @@ export default function MarketReplayChart({
     onAddSymbol: handleAddSymbol,
     onRemoveSymbol: handleRemoveSymbol,
     onTimeframeChange: handleTimeframeChange,
+    onTimeframeFavoritesChange: handleTimeframeFavoritesChange,
     onToggleReplayMode: toggleReplayMode,
     onIndicatorsChange: setIndicators,
     onOpenIndicatorSettings: (indicator) => {
       setSelectedIndicator(indicator);
-      setIndicatorSettingsPosition({ x: 80, y: 64 });
       setSelectedDrawingId(null);
       setTool(null);
     },
@@ -6209,6 +6571,45 @@ export default function MarketReplayChart({
     {replayAccessError && <div className="fixed right-4 top-4 z-[10004] max-w-sm rounded-lg border border-red-500/40 bg-[#131722] p-4 text-sm text-white shadow-2xl"><div>{replayAccessError}</div><div className="mt-2 flex gap-3"><button onClick={() => requireReplayAccess({ showProgress: true })} className="font-semibold text-[#5b8cff]">Try again</button><button onClick={() => setReplayAccessError('')} className="text-[#9598a1]">Dismiss</button></div></div>}
     {alertNotice && <div className="fixed right-4 top-4 z-[10003] flex max-w-sm items-start gap-3 rounded-lg border border-amber-400/40 bg-[#131722] p-4 text-sm text-white shadow-2xl"><Bell size={18} className="mt-0.5 shrink-0 text-amber-400"/><span>{alertNotice}</span><button onClick={()=>setAlertNotice('')} aria-label="Dismiss alert"><X size={16}/></button></div>}
     {alertModalOpen && <div className="fixed inset-0 z-[10002] flex items-end justify-center bg-black/60 p-4 sm:items-center" onMouseDown={(e)=>e.target===e.currentTarget&&setAlertModalOpen(false)}><div className={`w-full max-w-sm rounded-xl border p-5 shadow-2xl ${chartTheme.mode==='dark'?'border-[#2a2e39] bg-[#131722] text-white':'border-slate-200 bg-white text-slate-900'}`} role="dialog" aria-modal="true"><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 font-bold"><Bell size={17}/>Set {symbol} alert</h2><button onClick={()=>setAlertModalOpen(false)} aria-label="Close"><X size={18}/></button></div><label className="mt-4 block text-xs font-semibold">Price<input autoFocus type="number" min="0" step="any" value={alertDraft.price} onChange={(e)=>setAlertDraft((d)=>({...d,price:e.target.value}))} className="mt-1 h-10 w-full rounded-md border border-gray-600 bg-transparent px-3 outline-none focus:border-[#2962ff]"/></label><div className="mt-3 grid grid-cols-2 gap-2">{[['rise','Rise to price'],['drop','Drop to price']].map(([value,label])=><button key={value} onClick={()=>setAlertDraft((d)=>({...d,type:value}))} className={`h-10 rounded-md border text-xs font-semibold ${alertDraft.type===value?'border-[#2962ff] bg-[#2962ff] text-white':'border-gray-600'}`}>{label}</button>)}</div>{alertError&&<p className="mt-2 text-xs text-red-400">{alertError}</p>}<button onClick={savePriceAlert} className="mt-4 h-10 w-full rounded-md bg-[#2962ff] text-sm font-bold text-white">Create alert</button></div></div>}
+    {showClearDrawingsConfirm && (
+      <div
+        className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/60 p-4"
+        onMouseDown={(e) => e.target === e.currentTarget && setShowClearDrawingsConfirm(false)}
+      >
+        <div
+          className={`w-full max-w-sm rounded-xl border p-5 shadow-2xl ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] bg-[#131722] text-white' : 'border-slate-200 bg-white text-slate-900'}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Clear all drawings"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold">Clear all drawings?</h2>
+            <button onClick={() => setShowClearDrawingsConfirm(false)} aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
+          <p className="mt-3 text-sm text-[#9598a1]">
+            This removes every drawing on this market's chart. You can undo it with Ctrl/Cmd + Z right after.
+          </p>
+          <div className="mt-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowClearDrawingsConfirm(false)}
+              className={`h-10 flex-1 rounded-md border text-sm font-semibold ${chartTheme.mode === 'dark' ? 'border-[#2a2e39] text-white hover:bg-white/5' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={performClearDrawings}
+              className="h-10 flex-1 rounded-md bg-red-600 text-sm font-bold text-white hover:bg-red-500"
+            >
+              Clear all
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     {tourStep >= 0 && <WorkspaceTour step={tourStep} steps={tourSteps} onStep={setTourStep} onFinish={finishTour} dark={chartTheme.mode==='dark'}/>}
     <ChartSettingsModal
       open={isChartSettingsOpen}
@@ -6277,6 +6678,31 @@ export default function MarketReplayChart({
         >
           <Trash2 size={15} />
           Clear Tools
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setChartContextMenu(null);
+            handleResetChartView();
+          }}
+          className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-semibold outline-none ${chartTheme.mode === 'dark' ? 'hover:bg-white/10 focus:bg-white/10' : 'hover:bg-slate-100 focus:bg-slate-100'}`}
+        >
+          <RotateCcw size={15} className="text-[#787b86]" />
+          Reset Chart
+        </button>
+        <div className={`my-1 border-t ${chartTheme.mode === 'dark' ? 'border-[#363a45]' : 'border-slate-200'}`} />
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            setChartContextMenu(null);
+            setIsChartSettingsOpen(true);
+          }}
+          className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-xs font-semibold outline-none ${chartTheme.mode === 'dark' ? 'hover:bg-white/10 focus:bg-white/10' : 'hover:bg-slate-100 focus:bg-slate-100'}`}
+        >
+          <Settings size={15} className="text-[#787b86]" />
+          Chart Settings
         </button>
       </div>
     )}
@@ -6370,32 +6796,84 @@ export default function MarketReplayChart({
           <IndicatorSettingsPanel
             indicators={indicators}
             selectedIndicator={selectedIndicator}
-            position={indicatorSettingsPosition}
-            overlaySize={overlaySize}
             onChange={setIndicators}
-            onClose={() => {
-              setSelectedIndicator(null);
-              setIndicatorSettingsPosition(null);
-            }}
+            onClose={() => setSelectedIndicator(null)}
             chartTheme={chartTheme}
           />
 
           <IndicatorClickTargets
             indicators={indicators}
             paneTops={indicatorPaneTops}
+            expandedIndicator={expandedIndicator}
             chartTheme={chartTheme}
-            onSelect={(indicator, event) => {
-              const wrapperBounds = wrapperRef.current?.getBoundingClientRect();
-              const targetBounds = event.currentTarget.getBoundingClientRect();
-              setSelectedIndicator(indicator);
-              setIndicatorSettingsPosition(wrapperBounds ? {
-                x: targetBounds.left - wrapperBounds.left,
-                y: targetBounds.bottom - wrapperBounds.top,
-              } : { x: 64, y: Number(indicatorPaneTops[indicator]) + 32 || 80 });
-              setSelectedDrawingId(null);
-              setTool(null);
+            onAction={(indicator, action, event) => {
+              if (action === 'expand') {
+                setExpandedIndicator((current) => (current === indicator ? null : indicator));
+                setSelectedDrawingId(null);
+                setTool(null);
+                return;
+              }
+              if (action === 'settings') {
+                setSelectedIndicator(indicator);
+                setSelectedDrawingId(null);
+                setTool(null);
+                return;
+              }
+              if (action === 'toggle-visible') {
+                setIndicators((current) => ({
+                  ...current,
+                  [`${indicator}Visible`]: current[`${indicator}Visible`] === false,
+                }));
+                return;
+              }
+              if (action === 'remove') {
+                setIndicators((current) => ({ ...current, [indicator]: false }));
+                setSelectedIndicator((current) => (current === indicator ? null : current));
+                setExpandedIndicator((current) => (current === indicator ? null : current));
+                return;
+              }
+              if (action === 'menu') {
+                setIndicatorContextMenu({
+                  type: indicator,
+                  x: Math.max(8, Math.min(event.clientX, window.innerWidth - 208)),
+                  y: Math.max(8, Math.min(event.clientY, window.innerHeight - 120)),
+                });
+              }
             }}
           />
+
+          {indicatorContextMenu && (
+            <IndicatorContextMenu
+              indicatorKey={indicatorContextMenu.type}
+              x={indicatorContextMenu.x}
+              y={indicatorContextMenu.y}
+              indicators={indicators}
+              chartTheme={chartTheme}
+              menuRef={indicatorContextMenuRef}
+              firstItemRef={indicatorContextMenuFirstItemRef}
+              onToggleVisible={() => {
+                const key = indicatorContextMenu.type;
+                setIndicators((current) => ({
+                  ...current,
+                  [`${key}Visible`]: current[`${key}Visible`] === false,
+                }));
+                setIndicatorContextMenu(null);
+              }}
+              onOpenSettings={() => {
+                setSelectedIndicator(indicatorContextMenu.type);
+                setSelectedDrawingId(null);
+                setTool(null);
+                setIndicatorContextMenu(null);
+              }}
+              onRemove={() => {
+                const key = indicatorContextMenu.type;
+                setIndicators((current) => ({ ...current, [key]: false }));
+                setSelectedIndicator((current) => (current === key ? null : current));
+                setExpandedIndicator((current) => (current === key ? null : current));
+                setIndicatorContextMenu(null);
+              }}
+            />
+          )}
 
           {isTimeframeLoading && (
             <div
@@ -6404,8 +6882,15 @@ export default function MarketReplayChart({
               aria-live="polite"
               aria-label={`Loading ${timeframe} candles`}
               onContextMenu={(event) => event.preventDefault()}
-              className="absolute -left-[52px] bottom-0 right-0 top-0 z-[75] cursor-wait bg-black/25"
-            />
+              className="absolute -left-[52px] bottom-0 right-0 top-0 z-[75] flex cursor-wait items-center justify-center bg-black/25"
+            >
+              {showTimeframeLoadingHint && (
+                <div className="flex items-center gap-2 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+                  <LoaderCircle size={13} className="animate-spin" />
+                  Loading {timeframe} history…
+                </div>
+              )}
+            </div>
           )}
 
           {priceAlerts.map(alert => {

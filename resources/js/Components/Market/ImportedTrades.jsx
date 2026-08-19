@@ -222,7 +222,7 @@ export default function ImportedTrades() {
   const rowBorder = isDark ? 'border-gray-800' : 'border-slate-200';
 
   return (
-    <div className={`rounded-lg border p-4 ${surface}`}>
+    <div data-tour="journal-import" className={`rounded-lg border p-4 ${surface}`}>
       <div className="mb-4">
         <h2 className="text-sm font-semibold">Imported Trades</h2>
         <p className={`mt-1 text-xs ${muted}`}>Bring in real historical fills from a broker or exchange CSV export.</p>

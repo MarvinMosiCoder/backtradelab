@@ -400,6 +400,15 @@ class MarketBacktestController extends Controller
         ]);
     }
 
+    public function completeJournalTour(Request $request)
+    {
+        if (!$request->user()->journal_tour_completed_at) {
+            $request->user()->forceFill(['journal_tour_completed_at' => now()])->save();
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     public function uploadPositionSnapshot(Request $request, MarketBacktestPosition $position)
     {
         $validated = $request->validate([
@@ -455,6 +464,8 @@ class MarketBacktestController extends Controller
             'executed_at_time' => ['nullable', 'integer', 'min:0'],
             'stop_loss' => ['nullable', 'numeric', 'gt:0'],
             'take_profit' => ['nullable', 'numeric', 'gt:0'],
+            'stop_loss_pnl_percent' => ['nullable', 'numeric', 'gt:0', 'max:95'],
+            'take_profit_pnl_percent' => ['nullable', 'numeric', 'gt:0', 'max:100000'],
             'playbook_id' => ['nullable', 'integer', 'min:1'],
             'checklist_answers' => ['nullable', 'array', 'max:20'],
             'checklist_answers.*' => ['boolean'],
@@ -486,6 +497,15 @@ class MarketBacktestController extends Controller
             $price = (float) $validated['price'];
             $stopLoss = isset($validated['stop_loss']) ? (float) $validated['stop_loss'] : null;
             $takeProfit = isset($validated['take_profit']) ? (float) $validated['take_profit'] : null;
+
+            if ($stopLoss === null && isset($validated['stop_loss_pnl_percent'])) {
+                $stopLoss = $this->priceFromPnlPercent($validated['side'], $price, $leverage, (float) $validated['stop_loss_pnl_percent'], true);
+            }
+
+            if ($takeProfit === null && isset($validated['take_profit_pnl_percent'])) {
+                $takeProfit = $this->priceFromPnlPercent($validated['side'], $price, $leverage, (float) $validated['take_profit_pnl_percent'], false);
+            }
+
             $orderType = $validated['order_type'] ?? 'market';
             $isPendingOrder = in_array($orderType, ['conditional', 'limit', 'trigger'], true);
             $playbook = null;
@@ -1148,6 +1168,23 @@ class MarketBacktestController extends Controller
         return round(max($price, 0.00000001), 8);
     }
 
+    /**
+     * Converts a target % PnL of margin (leveraged) into the trigger price that
+     * produces it, so SL/TP can be entered as "-20% PnL" instead of a raw price.
+     */
+    private function priceFromPnlPercent(string $side, float $entryPrice, float $leverage, float $pnlPercent, bool $isLoss): float
+    {
+        $leverage = max($leverage, 1);
+        $fraction = abs($pnlPercent) / (100 * $leverage);
+        $signedFraction = $isLoss ? -$fraction : $fraction;
+
+        $price = $side === 'long'
+            ? $entryPrice * (1 + $signedFraction)
+            : $entryPrice * (1 - $signedFraction);
+
+        return round(max($price, 0.00000001), 8);
+    }
+
     private function resolveEntrySizing(float $requestedMargin, float $leverage, float $price, float $cashBalance): ?array
     {
         $margin = round($requestedMargin, 8);
@@ -1264,6 +1301,7 @@ class MarketBacktestController extends Controller
                 'trailingStopPercent' => $position->trailing_stop_percent !== null ? (float) $position->trailing_stop_percent : null,
                 'breakEvenTriggerPercent' => $position->break_even_trigger_percent !== null ? (float) $position->break_even_trigger_percent : null,
                 'partialTakeProfitPercent' => $position->partial_take_profit_percent !== null ? (float) $position->partial_take_profit_percent : null,
+                'partialTakeProfitExecuted' => (bool) $position->partial_take_profit_executed,
                 'playbookName' => $position->playbook_snapshot['name'] ?? null,
                 'checklistComplete' => $position->playbook_snapshot
                     ? count($position->checklist_answers ?? []) === count($position->playbook_snapshot['checklist'] ?? [])

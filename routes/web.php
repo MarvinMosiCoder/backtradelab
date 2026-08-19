@@ -168,6 +168,9 @@ Route::middleware(['auth', 'account.active'])->group(function () {
     Route::get('/subscription-requests/{subscriptionRequest}/proof', [ReplayAccessController::class, 'proof'])->name('subscription.proof');
     Route::get('/subscription-messages/{subscriptionMessage}/attachment', [ReplayAccessController::class, 'messageAttachment'])->name('subscription.message-attachment');
     Route::post('/chart-tour/complete', [ReplayAccessController::class, 'completeTour'])->middleware('throttle:market-write');
+    Route::post('/journal-tour/complete', [MarketBacktestController::class, 'completeJournalTour'])->middleware('throttle:market-write');
+    Route::post('/mentor-tour/complete', [MarketBacktestShareLinkController::class, 'completeTour'])->middleware('throttle:market-write');
+    Route::post('/training-tour/complete', [TrainingChallengeController::class, 'completeTour'])->middleware('throttle:market-write');
     Route::get('/admin/subscriptions', [ReplayAccessController::class, 'adminPage'])->middleware('superadmin');
     Route::get('/admin/subscriptions/items', [ReplayAccessController::class, 'adminIndex'])->middleware('superadmin');
     Route::post('/admin/subscriptions/{subscriptionRequest}/reconcile', [ReplayAccessController::class, 'adminReconcile'])->middleware(['superadmin', 'throttle:market-write']);
