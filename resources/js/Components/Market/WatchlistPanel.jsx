@@ -3,6 +3,7 @@ import Select from 'react-select';
 import { CandlestickChart, ChevronDown, FolderPlus, Pencil, Star, Trash2, X } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
 import { useWatchlist, watchlistMarketKey } from '../../Context/WatchlistContext';
+import { useConfirm } from '../../Hooks/useConfirm';
 import { marketCategoryLabel } from '../../utils/marketLabels';
 
 const watchlistSelectStyles = (isDark) => ({
@@ -22,12 +23,15 @@ const watchlistSelectStyles = (isDark) => ({
     placeholder: (base) => ({ ...base, fontSize: 11, color: '#787b86' }),
     singleValue: (base) => ({ ...base, fontSize: 11, color: isDark ? '#fff' : '#0f172a' }),
     menu: (base) => ({ ...base, backgroundColor: isDark ? '#131722' : '#ffffff', border: `1px solid ${isDark ? '#2a2e39' : '#e2e8f0'}`, zIndex: 50 }),
+    // Portaled to <body> (see menuPortalTarget below), so this is the only
+    // z-index that actually matters for the open menu now.
+    menuPortal: (base) => ({ ...base, zIndex: 10050 }),
     option: (base, state) => ({
         ...base,
         fontSize: 11,
         backgroundColor: state.isFocused ? (isDark ? '#1e222d' : '#f1f5f9') : 'transparent',
-        color: state.isDisabled ? '#787b86' : (isDark ? '#fff' : '#0f172a'),
-        cursor: state.isDisabled ? 'not-allowed' : 'pointer',
+        color: isDark ? '#fff' : '#0f172a',
+        cursor: 'pointer',
     }),
 });
 
@@ -35,6 +39,7 @@ export default function WatchlistPanel({ isFullscreen = false, compact = false, 
     const watchlist = useWatchlist();
     const { theme } = useTheme();
     const isDark = theme === 'bg-skin-black';
+    const { confirm, confirmElement } = useConfirm();
     const [isPanelCollapsed, setIsPanelCollapsed] = useState(Boolean(isFullscreen));
 
     if (!watchlist) return null;
@@ -49,6 +54,7 @@ export default function WatchlistPanel({ isFullscreen = false, compact = false, 
         toggleWatchlist,
         addSymbolToWatchlist,
         removeSymbolFromWatchlist,
+        deleteSavedSymbol,
         openCreateWatchlistModal,
         openEditWatchlistModal,
         setDeleteWatchlistName,
@@ -56,6 +62,7 @@ export default function WatchlistPanel({ isFullscreen = false, compact = false, 
 
     return (
         <div className={`${className} ${isFullscreen ? 'w-72 max-w-[85vw] overflow-hidden rounded-lg border shadow-2xl' : `rounded-lg border p-2 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`} ${isFullscreen ? (isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white') : ''}`}>
+            {confirmElement}
             <div className={`flex items-center justify-between gap-3 ${isFullscreen ? `border-b px-2 py-1.5 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}` : 'px-1 pb-1.5'}`}>
                 <button type="button" onClick={() => setIsPanelCollapsed((current) => !current)} className="flex min-w-0 items-center gap-1.5" aria-expanded={!isPanelCollapsed} aria-label={isPanelCollapsed ? 'Expand watchlists' : 'Collapse watchlists'}>
                     <ChevronDown size={13} className={`shrink-0 transition-transform ${isPanelCollapsed ? '-rotate-90' : ''} ${isDark ? 'text-[#787b86]' : 'text-slate-500'}`} />
@@ -86,7 +93,7 @@ export default function WatchlistPanel({ isFullscreen = false, compact = false, 
                                         return {
                                             value: key,
                                             label: `${item.symbol} · ${String(item.exchange).toUpperCase()} ${marketCategoryLabel(item.category)}`,
-                                            isDisabled: items.includes(key),
+                                            savedSymbol: item,
                                             symbol: item.symbol,
                                             exchangeLabel: `${String(item.exchange ?? 'bybit').toUpperCase()} · ${marketCategoryLabel(item.category)}`,
                                             logoUrl: meta?.fundamentals?.logo_url ?? null,
@@ -99,10 +106,23 @@ export default function WatchlistPanel({ isFullscreen = false, compact = false, 
                                         </span>
                                         <span className="min-w-0 flex-1"><span className="block truncate font-bold">{option.symbol}</span><span className="block truncate text-[9px] text-[#787b86]">{option.exchangeLabel}</span></span>
                                         {Number.isFinite(option.lastPrice) && <span className="shrink-0 tabular-nums text-[9px] text-[#787b86]">{option.lastPrice.toLocaleString(undefined, { maximumFractionDigits: 8 })}</span>}
+                                        <button
+                                            type="button"
+                                            onMouseDown={(event) => { event.preventDefault(); event.stopPropagation(); }}
+                                            onClick={async (event) => {
+                                                event.stopPropagation();
+                                                if (!(await confirm(`Remove ${option.symbol} from your saved symbols? Your chart drawings are not deleted.`, { title: 'Remove saved symbol?', confirmLabel: 'Remove' }))) return;
+                                                deleteSavedSymbol(option.savedSymbol).catch(() => {});
+                                            }}
+                                            className="shrink-0 rounded p-1 text-[#787b86] hover:bg-red-500/10 hover:text-red-500"
+                                            aria-label={`Delete saved symbol ${option.symbol}`}
+                                            title={`Delete saved symbol ${option.symbol}`}
+                                        ><X size={12} /></button>
                                     </span>}
                                     placeholder="Add a saved market…"
                                     aria-label={`Add market to ${name}`}
                                     isSearchable
+                                    menuPortalTarget={typeof document !== 'undefined' ? document.body : null}
                                     styles={watchlistSelectStyles(isDark)}
                                 />
                                 <div className={`mt-1.5 max-h-56 space-y-1 overflow-y-auto ${items.length ? 'pr-0.5' : ''}`}>{items.map((key) => {
@@ -126,7 +146,15 @@ export default function WatchlistPanel({ isFullscreen = false, compact = false, 
                                             <span className="block">{Number.isFinite(lastPrice) ? lastPrice.toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—'}</span>
                                             {hasChange && <span className={`block ${change >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>{change >= 0 ? '+' : ''}{change.toFixed(2)}%</span>}
                                         </span>}
-                                        <button type="button" onClick={() => removeSymbolFromWatchlist(name, key)} className="shrink-0 p-1.5 text-[#787b86] hover:text-red-500" aria-label={`Remove ${market.symbol} from ${name}`}><X size={11} /></button>
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                if (!(await confirm(`Remove ${market.symbol} from "${name}"? This only removes it from this watchlist — the saved symbol itself stays.`, { title: 'Remove from watchlist?', confirmLabel: 'Remove' }))) return;
+                                                removeSymbolFromWatchlist(name, key);
+                                            }}
+                                            className="shrink-0 p-1.5 text-[#787b86] hover:text-red-500"
+                                            aria-label={`Remove ${market.symbol} from ${name}`}
+                                        ><X size={11} /></button>
                                     </div>;
                                 })}{!items.length && <span className="block px-1 py-1 text-[10px] text-[#787b86]">No markets yet.</span>}</div>
                             </div>}

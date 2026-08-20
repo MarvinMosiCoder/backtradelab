@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { createPortal } from 'react-dom';
 import { marketCategoryLabel } from '../../../utils/marketLabels';
-import { Bell, CandlestickChart, Check, ChevronDown, CircleHelp, Info, ListPlus, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Trash2, X } from 'lucide-react';
+import { Bell, CandlestickChart, Check, ChevronDown, CircleHelp, Info, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Star, Trash2, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 import { useWatchlist } from '../../../Context/WatchlistContext';
@@ -40,20 +40,19 @@ function HeaderTooltipPortal({ pos, label, isDark }) {
   );
 }
 
-function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, isDark }) {
+function MarketCategoryTabs({ marketCategory, onCategoryChange, showFavoritesOnly, onSelectFavorites, onResetSearch, isDark }) {
   return (
     <div
-      className={`grid w-full grid-cols-2 overflow-hidden rounded-md border p-0.5 ${
-        isDark ? 'border-gray-700 bg-black-table-color/80' : 'border-slate-200 bg-slate-100'
-      }`}
+      className={`flex w-full items-center gap-6 border-b ${isDark ? 'border-gray-700' : 'border-slate-200'}`}
       role="tablist"
       aria-label="Market type"
     >
       {[
+        ['favorites', 'Favorites'],
         ['spot', 'Spot'],
         ['linear', 'Futures'],
       ].map(([value, label]) => {
-        const active = marketCategory === value;
+        const active = value === 'favorites' ? showFavoritesOnly : (!showFavoritesOnly && marketCategory === value);
         return (
           <button
             key={value}
@@ -61,18 +60,23 @@ function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, i
             role="tab"
             aria-selected={active}
             onClick={() => {
-              if (!active) onCategoryChange(value);
+              if (value === 'favorites') {
+                if (!showFavoritesOnly) onSelectFavorites();
+              } else if (showFavoritesOnly || marketCategory !== value) {
+                onCategoryChange(value);
+              }
               onResetSearch();
             }}
-            className={`h-7 rounded text-[11px] font-semibold transition-colors ${
+            className={`relative pb-2 text-[11px] font-semibold transition-colors ${
               active
-                ? 'bg-[#2962ff] text-white shadow-sm'
+                ? 'text-[#2962ff]'
                 : isDark
-                  ? 'text-gray-300 hover:bg-white/10 hover:text-white'
-                  : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                  ? 'text-gray-400 hover:text-white'
+                  : 'text-slate-500 hover:text-slate-900'
             }`}
           >
             {label}
+            {active && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[#2962ff]" />}
           </button>
         );
       })}
@@ -83,6 +87,7 @@ function MarketCategoryTabs({ marketCategory, onCategoryChange, onResetSearch, i
 export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, timeframeFavorites = DEFAULT_TIMEFRAME_FAVORITES, onTimeframeFavoritesChange = () => {}, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
   const { watchlists = {}, activeWatchlist: activeWatchlistName = null, addSymbolToWatchlist: onAddToWatchlist = null } = useWatchlist() ?? {};
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [recentlyAddedKey, setRecentlyAddedKey] = useState(null);
   const [watchlistMenuOpenKey, setWatchlistMenuOpenKey] = useState(null);
   const watchlistNames = useMemo(() => {
@@ -141,6 +146,16 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
       })
       .slice(0, 80);
   }, [availableSymbols, symbolSearch]);
+
+  const activeWatchlistSymbols = activeWatchlistName ? (watchlists[activeWatchlistName] ?? []) : [];
+  const visibleSymbolOptions = showFavoritesOnly
+    ? filteredAddSymbolOptions.filter((item) => activeWatchlistSymbols.includes(buildSymbolKey(item)))
+    : filteredAddSymbolOptions;
+  const handleCategoryTabChange = (value) => {
+    setShowFavoritesOnly(false);
+    onCategoryChange(value);
+  };
+  const handleSelectFavoritesTab = () => setShowFavoritesOnly(true);
 
   useEffect(() => {
     if (!isAddOpen || !filteredAddSymbolOptions.length) return undefined;
@@ -220,32 +235,34 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
               <ChevronDown size={13} />
             </button>
             {isAddOpen && (
-              <div className={`absolute left-0 top-full z-[120] mt-2 w-80 max-w-[85vw] overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
-                <div className={`border-b p-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <MarketCategoryTabs
-                    marketCategory={marketCategory}
-                    onCategoryChange={onCategoryChange}
-                    onResetSearch={() => setSymbolSearch('')}
-                    isDark={isDark}
-                  />
-                </div>
-                <div className={`flex items-center gap-2 border-b p-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className={`absolute left-0 top-full z-[120] mt-2 w-96 max-w-[85vw] overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
+                <div className={`flex items-center gap-2 rounded-full border mx-3 mt-3 px-3.5 py-2 transition-colors focus-within:border-[#2962ff] ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <Search size={14} className="text-gray-400" />
-                  <input autoFocus value={symbolSearch} onChange={(e) => setSymbolSearch(e.target.value)} placeholder="Search all symbols" className="min-w-0 flex-1 bg-transparent text-xs uppercase outline-none placeholder:text-gray-500" />
+                  <input autoFocus value={symbolSearch} onChange={(e) => setSymbolSearch(e.target.value)} placeholder="Search all symbols" style={{ outline: 'none' }} className="min-w-0 flex-1 bg-transparent text-xs uppercase placeholder:text-gray-500" />
                   <button type="button" onClick={() => setIsAddOpen(false)} className={`rounded p-1 ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>
                     <X size={14} />
                   </button>
                 </div>
+                <div className={`border-b px-3 pb-2 pt-3 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                  <MarketCategoryTabs
+                    marketCategory={marketCategory}
+                    onCategoryChange={handleCategoryTabChange}
+                    showFavoritesOnly={showFavoritesOnly}
+                    onSelectFavorites={handleSelectFavoritesTab}
+                    onResetSearch={() => setSymbolSearch('')}
+                    isDark={isDark}
+                  />
+                </div>
                 <div className="max-h-72 overflow-y-auto">
-                  {filteredAddSymbolOptions.length ? (
-                    filteredAddSymbolOptions.map((item) => {
+                  {visibleSymbolOptions.length ? (
+                    visibleSymbolOptions.map((item) => {
                       const meta = searchMetadata[searchResultKey(item.exchange ?? 'bybit', item.category ?? 'spot', item.symbol)];
                       const watchlistItemKey = buildSymbolKey(item);
-                      const inAnyWatchlist = watchlistNames.some((name) => (watchlists[name] ?? []).includes(watchlistItemKey));
+                      const inActiveWatchlist = activeWatchlistSymbols.includes(watchlistItemKey);
                       const justAddedToWatchlist = recentlyAddedKey === watchlistItemKey;
                       const menuOpen = watchlistMenuOpenKey === watchlistItemKey;
                       return (
-                      <div key={buildSymbolKey(item)} className={`flex items-center gap-2 border-b px-3 py-2 last:border-b-0 ${isDark ? 'border-gray-700/50' : 'border-gray-100'}`}>
+                      <div key={buildSymbolKey(item)} className={`flex items-center gap-2.5 border-b px-3 py-2.5 last:border-b-0 ${isDark ? 'border-gray-700/50' : 'border-gray-100'}`}>
                         <span className={`flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-100'}`}>
                           {meta?.fundamentals?.logo_url ? <img src={meta.fundamentals.logo_url} alt="" className="h-full w-full object-contain" /> : <CandlestickChart size={12} className="text-[#5b8cff]" />}
                         </span>
@@ -260,10 +277,10 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                             <button
                               type="button"
                               onClick={() => setWatchlistMenuOpenKey((current) => (current === watchlistItemKey ? null : watchlistItemKey))}
-                              title="Add to watchlist"
-                              className={`flex h-6 w-6 items-center justify-center rounded-md border ${inAnyWatchlist || justAddedToWatchlist ? 'border-emerald-500/40 text-emerald-500' : isDark ? 'border-gray-700 text-gray-400 hover:border-[#2962ff] hover:text-[#2962ff]' : 'border-gray-200 text-slate-500 hover:border-[#2962ff] hover:text-[#2962ff]'}`}
+                              title={inActiveWatchlist ? 'In your active watchlist' : 'Add to watchlist'}
+                              className={`flex h-6 w-6 items-center justify-center rounded-md border ${inActiveWatchlist || justAddedToWatchlist ? 'border-[#2962ff]/40 text-[#2962ff]' : isDark ? 'border-gray-700 text-gray-400 hover:border-[#2962ff] hover:text-[#2962ff]' : 'border-gray-200 text-slate-500 hover:border-[#2962ff] hover:text-[#2962ff]'}`}
                             >
-                              {inAnyWatchlist || justAddedToWatchlist ? <Check size={12} /> : <ListPlus size={12} />}
+                              <Star size={12} fill={inActiveWatchlist || justAddedToWatchlist ? 'currentColor' : 'none'} />
                             </button>
                             {menuOpen && (
                               <div className={`absolute right-0 top-7 z-[130] w-44 overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
@@ -293,7 +310,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                       );
                     })
                   ) : (
-                    <div className={`px-3 py-5 text-center text-xs ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>No symbols found</div>
+                    <div className={`px-3 py-5 text-center text-xs ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>{showFavoritesOnly ? 'No favorites in this market yet' : 'No symbols found'}</div>
                   )}
                 </div>
               </div>
@@ -396,18 +413,10 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             )}
           </div>
           {isAddOpen && (
-            <div className={`absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border shadow-xl sm:right-auto sm:w-96 ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
-              <div className={`border-b p-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                <MarketCategoryTabs
-                  marketCategory={marketCategory}
-                  onCategoryChange={onCategoryChange}
-                  onResetSearch={() => setSymbolSearch('')}
-                  isDark={isDark}
-                />
-              </div>
-              <div className={`flex items-center gap-2 border-b px-2 py-2 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+            <div className={`absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border shadow-xl sm:right-auto sm:w-[28rem] ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
+              <div className={`flex items-center gap-2 rounded-full border mx-3 mt-3 px-3.5 py-2 transition-colors focus-within:border-[#2962ff] ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <Search size={14} className="text-gray-400" />
-                <input autoFocus value={symbolSearch} onChange={(event) => setSymbolSearch(event.target.value)} placeholder="Search all symbols" className={`min-w-0 flex-1 bg-transparent text-xs uppercase outline-none placeholder:text-gray-500 ${isDark ? 'text-white' : 'text-gray-800'}`} />
+                <input autoFocus value={symbolSearch} onChange={(event) => setSymbolSearch(event.target.value)} placeholder="Search all symbols" style={{ outline: 'none' }} className={`min-w-0 flex-1 bg-transparent text-xs uppercase placeholder:text-gray-500 ${isDark ? 'text-white' : 'text-gray-800'}`} />
                 <button
                   type="button"
                   onClick={() => {
@@ -420,37 +429,44 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                   <X size={14} />
                 </button>
               </div>
+              <div className={`border-b px-3 pb-2 pt-3 ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                <MarketCategoryTabs
+                  marketCategory={marketCategory}
+                  onCategoryChange={handleCategoryTabChange}
+                  showFavoritesOnly={showFavoritesOnly}
+                  onSelectFavorites={handleSelectFavoritesTab}
+                  onResetSearch={() => setSymbolSearch('')}
+                  isDark={isDark}
+                />
+              </div>
               <div className="max-h-64 overflow-y-auto">
-                {filteredAddSymbolOptions.length ? (
-                  filteredAddSymbolOptions.map((item) => {
+                {visibleSymbolOptions.length ? (
+                  visibleSymbolOptions.map((item) => {
                     const meta = searchMetadata[searchResultKey(item.exchange ?? 'bybit', item.category ?? 'spot', item.symbol)];
                     const watchlistItemKey = buildSymbolKey(item);
-                    const inAnyWatchlist = watchlistNames.some((name) => (watchlists[name] ?? []).includes(watchlistItemKey));
+                    const inActiveWatchlist = activeWatchlistSymbols.includes(watchlistItemKey);
                     const justAddedToWatchlist = recentlyAddedKey === watchlistItemKey;
                     const menuOpen = watchlistMenuOpenKey === watchlistItemKey;
                     return (
-                    <div key={buildSymbolKey(item)} className={`flex items-center gap-2 border-b px-2 py-1.5 last:border-b-0 ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
+                    <div key={buildSymbolKey(item)} className={`flex items-center gap-2.5 border-b px-3 py-2.5 last:border-b-0 ${isDark ? 'border-gray-800' : 'border-gray-100'}`}>
                       <span className={`flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full ${isDark ? 'bg-white/10' : 'bg-slate-100'}`}>
                         {meta?.fundamentals?.logo_url ? <img src={meta.fundamentals.logo_url} alt="" className="h-full w-full object-contain" /> : <CandlestickChart size={12} className="text-[#5b8cff]" />}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className={`truncate text-xs font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>
-                          {item.symbol}
-                          <span className="ml-1 text-[10px] font-medium text-emerald-300">
-                            {String(item.exchangeLabel ?? item.exchange ?? '').toUpperCase()} {marketCategoryLabel(item.category)}
-                          </span>
+                        <div className={`truncate text-xs font-semibold ${isDark ? 'text-white' : 'text-gray-800'}`}>{item.symbol}</div>
+                        <div className="truncate text-[10px] font-medium text-emerald-300">
+                          {String(item.exchangeLabel ?? item.exchange ?? '').toUpperCase()} {marketCategoryLabel(item.category)}
                         </div>
-                        {(item.coin_name || item.baseCoin || item.quoteCoin || item.status) && <div className="truncate text-[10px] text-gray-400">{[item.coin_name, item.baseCoin && item.quoteCoin ? `${item.baseCoin}/${item.quoteCoin}` : null, item.status].filter(Boolean).join(' / ')}</div>}
                       </div>
                       {onAddToWatchlist && watchlistNames.length > 0 && (
                         <div className="relative shrink-0">
                           <button
                             type="button"
                             onClick={() => setWatchlistMenuOpenKey((current) => (current === watchlistItemKey ? null : watchlistItemKey))}
-                            title="Add to watchlist"
-                            className={`flex h-6 w-6 items-center justify-center rounded-md border ${inAnyWatchlist || justAddedToWatchlist ? 'border-emerald-500/40 text-emerald-500' : isDark ? 'border-gray-700 text-gray-400 hover:border-[#2962ff] hover:text-[#2962ff]' : 'border-gray-200 text-slate-500 hover:border-[#2962ff] hover:text-[#2962ff]'}`}
+                            title={inActiveWatchlist ? 'In your active watchlist' : 'Add to watchlist'}
+                            className={`flex h-6 w-6 items-center justify-center rounded-md border ${inActiveWatchlist || justAddedToWatchlist ? 'border-[#2962ff]/40 text-[#2962ff]' : isDark ? 'border-gray-700 text-gray-400 hover:border-[#2962ff] hover:text-[#2962ff]' : 'border-gray-200 text-slate-500 hover:border-[#2962ff] hover:text-[#2962ff]'}`}
                           >
-                            {inAnyWatchlist || justAddedToWatchlist ? <Check size={12} /> : <ListPlus size={12} />}
+                            <Star size={12} fill={inActiveWatchlist || justAddedToWatchlist ? 'currentColor' : 'none'} />
                           </button>
                           {menuOpen && (
                             <div className={`absolute right-0 top-7 z-[130] w-44 overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
@@ -480,7 +496,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                     );
                   })
                 ) : (
-                  <div className="px-2 py-3 text-center text-xs text-gray-400">No symbols found</div>
+                  <div className="px-2 py-3 text-center text-xs text-gray-400">{showFavoritesOnly ? 'No favorites in this market yet' : 'No symbols found'}</div>
                 )}
               </div>
             </div>

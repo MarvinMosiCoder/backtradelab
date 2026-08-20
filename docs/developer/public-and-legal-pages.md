@@ -28,6 +28,8 @@ Public pages bypass the authenticated layout. Home and login share the browser k
 
 The homepage requests a fixed Bybit Spot BTCUSDT, ETHUSDT, and SOLUSDT summary. It combines cached exchange statistics and optional fundamentals with static educational descriptions. Loading, partial-provider, and unavailable states keep the public page usable, and the section identifies the data as informational rather than investment advice.
 
+`app.jsx`'s Inertia `resolve` uses `resolvePageComponent` over a lazy `import.meta.glob("./Pages/**/*.jsx")` (no `eager: true`), so each page — including `Public/Home` and `Auth/Login` — ships as its own chunk fetched on demand, instead of every page in the app (55+ at last count, dashboard/admin included) being bundled into one file that guests would otherwise download before the homepage could render. Keep `resolve` lazy; re-adding `eager: true` silently reinflates the shared entry bundle for anonymous visitors who only ever need one or two pages.
+
 `Home.jsx` uses a few reusable, no-dependency motion primitives (plain React + `IntersectionObserver`, no animation library):
 
 - `useScrollReveal()` / `<Reveal>` — fades and slides a section or card in once it enters the viewport; reuse these for new sections instead of adding ad hoc scroll listeners.

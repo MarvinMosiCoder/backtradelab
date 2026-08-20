@@ -6,6 +6,7 @@ use App\Models\MarketSymbol;
 use App\Services\MarketMetadataService;
 use App\Services\ExchangeMarketDataGateway;
 use App\Exceptions\ExchangeRateLimitedException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\Rule;
@@ -299,69 +300,139 @@ class MarketDataController extends Controller
                     : (int) config('market-data.normal_max_pages', 10);
                 $requests = 0;
 
-                while (count($candidateRows) < $maxCandles && $requests < $maxRequests) {
-                    $rowsResult = $this->fetchKlineRows(
-                        $candidateExchange,
-                        $exchangeSymbol,
-                        $symbol,
-                        $category,
-                        $interval,
-                        $chunkLimit,
-                        $currentEnd,
-                        $start ? (int) $start : null
+                if ($maxCandles <= 5000 && !$start) {
+                    // Fast path: every normal (non-replay) symbol/timeframe switch
+                    // takes this branch. Fetch page 1 synchronously to get a real
+                    // anchor timestamp, then fire the remaining pages concurrently
+                    // (ExchangeMarketDataGateway::pool()) instead of one at a time —
+                    // this is what turns a ~5-page sequential load (each page
+                    // waiting on the last) into one request plus one concurrent
+                    // batch. See fetchAdditionalKlinePages() for why only page 1
+                    // needs to be synchronous.
+                    $page1 = $this->fetchKlineRows(
+                        $candidateExchange, $exchangeSymbol, $symbol, $category, $interval,
+                        $chunkLimit, $currentEnd, null
                     );
 
-                    if (!$rowsResult['success']) {
-                        $fallbackErrors[$candidateExchange] = $rowsResult['payload']['message'] ?? 'Failed to fetch market data';
-                        if (($rowsResult['status'] ?? 0) === 429) {
-                            $retryAfter = max($retryAfter, (int) ($rowsResult['payload']['retry_after'] ?? 1));
+                    if (!$page1['success']) {
+                        $fallbackErrors[$candidateExchange] = $page1['payload']['message'] ?? 'Failed to fetch market data';
+                        if (($page1['status'] ?? 0) === 429) {
+                            $retryAfter = max($retryAfter, (int) ($page1['payload']['retry_after'] ?? 1));
                         }
-                        break;
-                    }
+                    } else {
+                        $requests = 1;
 
-                    $rows = $rowsResult['rows'];
-
-                    if (!is_array($rows) || empty($rows)) {
-                        break;
-                    }
-
-                    foreach ($rows as $row) {
-                        $ts = (int) ($row[0] ?? 0);
-                        if ($ts <= 0) {
-                            continue;
+                        foreach ($page1['rows'] as $row) {
+                            $ts = (int) ($row[0] ?? 0);
+                            if ($ts > 0 && !isset($seen[$ts])) {
+                                $seen[$ts] = true;
+                                $candidateRows[] = $row;
+                            }
                         }
 
-                        if (isset($seen[$ts])) {
-                            continue;
+                        $page1Timestamps = array_values(array_filter(
+                            array_map(fn ($row) => (int) ($row[0] ?? 0), $page1['rows']),
+                            fn ($timestamp) => $timestamp > 0
+                        ));
+
+                        if ($page1Timestamps && count($candidateRows) < $maxCandles) {
+                            $anchorEnd = min($page1Timestamps) - 1;
+                            $additionalPages = min($maxRequests - 1, (int) ceil(($maxCandles - count($candidateRows)) / $chunkLimit));
+
+                            if ($additionalPages > 0) {
+                                $pageResults = $this->fetchAdditionalKlinePages(
+                                    $candidateExchange, $exchangeSymbol, $symbol, $category, $interval,
+                                    $chunkLimit, $anchorEnd, $additionalPages
+                                );
+
+                                foreach ($pageResults as $pageResult) {
+                                    $requests++;
+                                    if (!$pageResult['success']) {
+                                        continue;
+                                    }
+
+                                    foreach ($pageResult['rows'] as $row) {
+                                        $ts = (int) ($row[0] ?? 0);
+                                        if ($ts > 0 && !isset($seen[$ts])) {
+                                            $seen[$ts] = true;
+                                            $candidateRows[] = $row;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Replay (up to 20000 candles) or a bounded start/end range:
+                    // keep the original adaptive sequential loop. Each page's real
+                    // oldest timestamp anchors the next request, which matters more
+                    // here — replay pages deep into potentially gappy history where
+                    // a predicted (rather than exchange-confirmed) window boundary
+                    // is more likely to drift.
+                    while (count($candidateRows) < $maxCandles && $requests < $maxRequests) {
+                        $rowsResult = $this->fetchKlineRows(
+                            $candidateExchange,
+                            $exchangeSymbol,
+                            $symbol,
+                            $category,
+                            $interval,
+                            $chunkLimit,
+                            $currentEnd,
+                            $start ? (int) $start : null
+                        );
+
+                        if (!$rowsResult['success']) {
+                            $fallbackErrors[$candidateExchange] = $rowsResult['payload']['message'] ?? 'Failed to fetch market data';
+                            if (($rowsResult['status'] ?? 0) === 429) {
+                                $retryAfter = max($retryAfter, (int) ($rowsResult['payload']['retry_after'] ?? 1));
+                            }
+                            break;
                         }
 
-                        $seen[$ts] = true;
-                        $candidateRows[] = $row;
+                        $rows = $rowsResult['rows'];
+
+                        if (!is_array($rows) || empty($rows)) {
+                            break;
+                        }
+
+                        foreach ($rows as $row) {
+                            $ts = (int) ($row[0] ?? 0);
+                            if ($ts <= 0) {
+                                continue;
+                            }
+
+                            if (isset($seen[$ts])) {
+                                continue;
+                            }
+
+                            $seen[$ts] = true;
+                            $candidateRows[] = $row;
+                        }
+
+                        // move further back in time using oldest candle from this batch
+                        $batchTimestamps = array_values(array_filter(
+                            array_map(fn ($row) => (int) ($row[0] ?? 0), $rows),
+                            fn ($timestamp) => $timestamp > 0
+                        ));
+
+                        if (!$batchTimestamps) {
+                            break;
+                        }
+
+                        $oldestTs = min($batchTimestamps);
+                        $nextEnd = $oldestTs - 1;
+
+                        if ($start && $nextEnd < (int) $start) {
+                            break;
+                        }
+
+                        if ($currentEnd !== null && $nextEnd >= $currentEnd) {
+                            break;
+                        }
+
+                        $currentEnd = $nextEnd;
+                        $requests++;
                     }
-
-                    // move further back in time using oldest candle from this batch
-                    $batchTimestamps = array_values(array_filter(
-                        array_map(fn ($row) => (int) ($row[0] ?? 0), $rows),
-                        fn ($timestamp) => $timestamp > 0
-                    ));
-
-                    if (!$batchTimestamps) {
-                        break;
-                    }
-
-                    $oldestTs = min($batchTimestamps);
-                    $nextEnd = $oldestTs - 1;
-
-                    if ($start && $nextEnd < (int) $start) {
-                        break;
-                    }
-
-                    if ($currentEnd !== null && $nextEnd >= $currentEnd) {
-                        break;
-                    }
-
-                    $currentEnd = $nextEnd;
-                    $requests++;
                 }
 
                 if (!empty($candidateRows)) {
@@ -614,6 +685,155 @@ class MarketDataController extends Controller
         ];
     }
 
+    /**
+     * Builds the exchange-specific URL/query/cache-TTL for one kline page,
+     * without firing it — shared by fetchKlineRows() (single, synchronous
+     * page) and klines()'s pooled multi-page fetch, so both stay in sync.
+     */
+    private function buildKlineRequest(
+        string $exchange,
+        string $exchangeSymbol,
+        string $symbol,
+        string $category,
+        string $interval,
+        int $limit,
+        ?int $end,
+        ?int $start
+    ): array {
+        $cacheSeconds = $end !== null
+            ? (int) config('market-data.historical_request_cache_seconds', 86400)
+            : ($limit <= 2
+                ? (int) config('market-data.latest_cache_seconds', 5)
+                : (int) config('market-data.request_cache_seconds', 30));
+
+        [$url, $query] = match ($exchange) {
+            'binance' => [
+                $category === 'spot'
+                    ? 'https://api.binance.com/api/v3/klines'
+                    : 'https://fapi.binance.com/fapi/v1/klines',
+                [
+                    'symbol' => $symbol,
+                    'interval' => $this->mapInterval($exchange, $interval, $category),
+                    'limit' => min($limit, 1000),
+                    ...($end ? ['endTime' => $end] : []),
+                    ...($start ? ['startTime' => $start] : []),
+                ],
+            ],
+            'okx' => [
+                'https://www.okx.com/api/v5/market/history-candles',
+                [
+                    'instId' => $exchangeSymbol,
+                    'bar' => $this->mapInterval($exchange, $interval, $category),
+                    'limit' => min($limit, 300),
+                    ...($end ? ['after' => $end] : []),
+                ],
+            ],
+            'bingx' => [
+                $category === 'spot'
+                    ? 'https://open-api.bingx.com/openApi/spot/v1/market/kline'
+                    : 'https://open-api.bingx.com/openApi/swap/v3/quote/klines',
+                [
+                    'symbol' => $exchangeSymbol,
+                    'interval' => $this->mapInterval($exchange, $interval, $category),
+                    'limit' => min($limit, 1000),
+                    ...($end ? ['endTime' => $end] : []),
+                    ...($start ? ['startTime' => $start] : []),
+                ],
+            ],
+            'mexc' => $category === 'spot'
+                ? [
+                    'https://api.mexc.com/api/v3/klines',
+                    [
+                        'symbol' => $symbol,
+                        'interval' => $this->mapInterval($exchange, $interval, $category),
+                        'limit' => min($limit, 1000),
+                        ...($end ? ['endTime' => $end] : []),
+                        ...($start ? ['startTime' => $start] : []),
+                    ],
+                ]
+                : [
+                    'https://contract.mexc.com/api/v1/contract/kline/' . $exchangeSymbol,
+                    [
+                        'interval' => $this->mapInterval($exchange, $interval, $category),
+                        ...($end ? ['end' => (int) floor($end / 1000)] : []),
+                        ...($start ? ['start' => (int) floor($start / 1000)] : []),
+                    ],
+                ],
+            default => [
+                'https://api.bybit.com/v5/market/kline',
+                [
+                    'category' => $category,
+                    'symbol' => $symbol,
+                    'interval' => $interval,
+                    'limit' => $limit,
+                    ...($end ? ['end' => $end] : []),
+                    ...($start ? ['start' => $start] : []),
+                ],
+            ],
+        };
+
+        return ['url' => $url, 'query' => $query, 'cacheSeconds' => $cacheSeconds];
+    }
+
+    /**
+     * Turns a raw (or null/failed) Response from the gateway into the same
+     * {success, status, payload, rows} shape fetchKlineRows() has always
+     * returned. $response is null when pool() couldn't get any data for
+     * this request (rate-limited/cooldown with no stale fallback).
+     */
+    private function normalizeKlineResponse(string $exchange, ?Response $response): array
+    {
+        if (!$response) {
+            return [
+                'success' => false,
+                'status' => 503,
+                'payload' => [
+                    'success' => false,
+                    'message' => 'Market data is temporarily unavailable.',
+                    'exchange' => $exchange,
+                ],
+                'rows' => [],
+            ];
+        }
+
+        if (!$response->successful()) {
+            return [
+                'success' => false,
+                'status' => $response->status(),
+                'payload' => [
+                    'success' => false,
+                    'message' => 'Failed to fetch market data',
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ],
+                'rows' => [],
+            ];
+        }
+
+        $json = $response->json();
+
+        if (!is_array($json)) {
+            return [
+                'success' => false,
+                'status' => 502,
+                'payload' => [
+                    'success' => false,
+                    'message' => 'Exchange returned an invalid market data response',
+                    'exchange' => $exchange,
+                    'body' => substr($response->body(), 0, 500),
+                ],
+                'rows' => [],
+            ];
+        }
+
+        return [
+            'success' => true,
+            'status' => 200,
+            'payload' => [],
+            'rows' => $this->normalizeKlineRows($exchange, $json),
+        ];
+    }
+
     private function fetchKlineRows(
         string $exchange,
         string $exchangeSymbol,
@@ -625,104 +845,10 @@ class MarketDataController extends Controller
         ?int $start
     ): array {
         try {
-            $cacheSeconds = $end !== null
-                ? (int) config('market-data.historical_request_cache_seconds', 86400)
-                : ($limit <= 2
-                    ? (int) config('market-data.latest_cache_seconds', 5)
-                    : (int) config('market-data.request_cache_seconds', 30));
+            $built = $this->buildKlineRequest($exchange, $exchangeSymbol, $symbol, $category, $interval, $limit, $end, $start);
+            $response = $this->marketGateway->get($exchange, 'klines', $built['url'], $built['query'], $built['cacheSeconds']);
 
-            $response = match ($exchange) {
-                'binance' => $this->marketGateway->get($exchange, 'klines',
-                    $category === 'spot'
-                        ? 'https://api.binance.com/api/v3/klines'
-                        : 'https://fapi.binance.com/fapi/v1/klines',
-                    [
-                        'symbol' => $symbol,
-                        'interval' => $this->mapInterval($exchange, $interval, $category),
-                        'limit' => min($limit, 1000),
-                        ...($end ? ['endTime' => $end] : []),
-                        ...($start ? ['startTime' => $start] : []),
-                    ], $cacheSeconds
-                ),
-                'okx' => $this->marketGateway->get($exchange, 'klines', 'https://www.okx.com/api/v5/market/history-candles', [
-                    'instId' => $exchangeSymbol,
-                    'bar' => $this->mapInterval($exchange, $interval, $category),
-                    'limit' => min($limit, 300),
-                    ...($end ? ['after' => $end] : []),
-                ], $cacheSeconds),
-                'bingx' => $this->marketGateway->get($exchange, 'klines',
-                    $category === 'spot'
-                        ? 'https://open-api.bingx.com/openApi/spot/v1/market/kline'
-                        : 'https://open-api.bingx.com/openApi/swap/v3/quote/klines',
-                    [
-                    'symbol' => $exchangeSymbol,
-                    'interval' => $this->mapInterval($exchange, $interval, $category),
-                    'limit' => min($limit, 1000),
-                    ...($end ? ['endTime' => $end] : []),
-                    ...($start ? ['startTime' => $start] : []),
-                    ], $cacheSeconds
-                ),
-                'mexc' => $category === 'spot'
-                    ? $this->marketGateway->get($exchange, 'klines', 'https://api.mexc.com/api/v3/klines', [
-                        'symbol' => $symbol,
-                        'interval' => $this->mapInterval($exchange, $interval, $category),
-                        'limit' => min($limit, 1000),
-                        ...($end ? ['endTime' => $end] : []),
-                        ...($start ? ['startTime' => $start] : []),
-                    ], $cacheSeconds)
-                    : $this->marketGateway->get($exchange, 'klines', 'https://contract.mexc.com/api/v1/contract/kline/' . $exchangeSymbol, [
-                        'interval' => $this->mapInterval($exchange, $interval, $category),
-                        ...($end ? ['end' => (int) floor($end / 1000)] : []),
-                        ...($start ? ['start' => (int) floor($start / 1000)] : []),
-                    ], $cacheSeconds),
-                default => $this->marketGateway->get($exchange, 'klines', 'https://api.bybit.com/v5/market/kline', [
-                    'category' => $category,
-                    'symbol' => $symbol,
-                    'interval' => $interval,
-                    'limit' => $limit,
-                    ...($end ? ['end' => $end] : []),
-                    ...($start ? ['start' => $start] : []),
-                ], $cacheSeconds),
-            };
-
-            if (!$response->successful()) {
-                return [
-                    'success' => false,
-                    'status' => $response->status(),
-                    'payload' => [
-                        'success' => false,
-                        'message' => 'Failed to fetch market data',
-                        'status' => $response->status(),
-                        'body' => $response->body(),
-                    ],
-                    'rows' => [],
-                ];
-            }
-
-            $json = $response->json();
-
-            if (!is_array($json)) {
-                return [
-                    'success' => false,
-                    'status' => 502,
-                    'payload' => [
-                        'success' => false,
-                        'message' => 'Exchange returned an invalid market data response',
-                        'exchange' => $exchange,
-                        'body' => substr($response->body(), 0, 500),
-                    ],
-                    'rows' => [],
-                ];
-            }
-
-            $rows = $this->normalizeKlineRows($exchange, $json);
-
-            return [
-                'success' => true,
-                'status' => 200,
-                'payload' => [],
-                'rows' => $rows,
-            ];
+            return $this->normalizeKlineResponse($exchange, $response);
         } catch (ExchangeRateLimitedException $e) {
             return [
                 'success' => false,
@@ -747,6 +873,66 @@ class MarketDataController extends Controller
                 'rows' => [],
             ];
         }
+    }
+
+    /**
+     * Fetches pages 2..N of one exchange's candle history concurrently
+     * (Http::pool() under the hood via ExchangeMarketDataGateway::pool()),
+     * instead of one at a time. Page 1 must already be fetched by the
+     * caller (via fetchKlineRows()) so we have a real anchor timestamp;
+     * pages 2..N's `end` boundaries are then predicted from that anchor
+     * using the interval's fixed duration, since — unlike page 1, whose
+     * start point is unknown until the exchange responds — every
+     * subsequent page's window is just "one interval-grid further back."
+     * Only used for the normal (non-replay) chart load: replay's up-to-
+     * 20000-candle, anchor-time-sensitive path keeps the original
+     * sequential loop below untouched.
+     */
+    private function fetchAdditionalKlinePages(
+        string $exchange,
+        string $exchangeSymbol,
+        string $symbol,
+        string $category,
+        string $interval,
+        int $limit,
+        int $anchorEndExclusive,
+        int $pageCount
+    ): array {
+        $intervalMs = $this->intervalMilliseconds($interval);
+        if ($pageCount < 1 || $intervalMs < 1) {
+            return [];
+        }
+
+        $requests = [];
+        for ($page = 0; $page < $pageCount; $page++) {
+            $pageEnd = $anchorEndExclusive - ($page * $limit * $intervalMs);
+            $built = $this->buildKlineRequest($exchange, $exchangeSymbol, $symbol, $category, $interval, $limit, $pageEnd, null);
+            $requests[] = ['exchange' => $exchange, 'endpoint' => 'klines', ...$built];
+        }
+
+        $responses = $this->marketGateway->pool($requests);
+
+        return array_map(fn (?Response $response) => $this->normalizeKlineResponse($exchange, $response), $responses);
+    }
+
+    private function intervalMilliseconds(string $interval): int
+    {
+        return match ($interval) {
+            '1' => 60_000,
+            '3' => 180_000,
+            '5' => 300_000,
+            '15' => 900_000,
+            '30' => 1_800_000,
+            '60' => 3_600_000,
+            '120' => 7_200_000,
+            '240' => 14_400_000,
+            '360' => 21_600_000,
+            '720' => 43_200_000,
+            'D' => 86_400_000,
+            'W' => 604_800_000,
+            'M' => 2_592_000_000, // ~30 days — only used as a page-window hint, not exact math
+            default => 0,
+        };
     }
 
     private function normalizeKlineRows(string $exchange, array $json): array
@@ -899,11 +1085,15 @@ class MarketDataController extends Controller
             return 3600;
         }
 
+        // This is a replay/practice tool, not a live-trading terminal, so a few
+        // extra seconds/minutes of staleness is an acceptable trade for far
+        // fewer cache misses (each miss re-pages the exchange from scratch,
+        // see klines()'s pagination loop above).
         return match ($interval) {
-            '1', '3' => 10,
-            '5', '15', '30' => 20,
-            '60', '120', '240', '360', '720' => 60,
-            default => 300,
+            '1', '3' => 30,
+            '5', '15', '30' => 60,
+            '60', '120', '240', '360', '720' => 180,
+            default => 900,
         };
     }
 }

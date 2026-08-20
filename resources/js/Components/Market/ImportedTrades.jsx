@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useTheme } from '../../Context/ThemeContext';
+import { useConfirm } from '../../Hooks/useConfirm';
 
 const TARGET_FIELDS = [
   { key: 'symbol', label: 'Symbol', required: true },
@@ -54,6 +55,7 @@ function formatNumber(value, digits = 8) {
 export default function ImportedTrades() {
   const { theme } = useTheme();
   const isDark = theme === 'bg-skin-black';
+  const { confirm, confirmElement } = useConfirm();
 
   const [uploadForm, setUploadForm] = useState({ broker: '', file: null });
   const [uploading, setUploading] = useState(false);
@@ -199,7 +201,7 @@ export default function ImportedTrades() {
   };
 
   const deleteBatch = async (batch) => {
-    if (!window.confirm(`Delete import batch "${batch.originalFilename ?? batch.id}"? Its imported trades will be removed too.`)) return;
+    if (!(await confirm(`Delete import batch "${batch.originalFilename ?? batch.id}"? Its imported trades will be removed too.`, { title: 'Delete import batch?', confirmLabel: 'Delete' }))) return;
     try {
       await axios.delete(`/imported-trades/batches/${batch.id}`);
       if (preview?.batchId === batch.id) resetUploadFlow();
@@ -223,6 +225,7 @@ export default function ImportedTrades() {
 
   return (
     <div data-tour="journal-import" className={`rounded-lg border p-4 ${surface}`}>
+      {confirmElement}
       <div className="mb-4">
         <h2 className="text-sm font-semibold">Imported Trades</h2>
         <p className={`mt-1 text-xs ${muted}`}>Bring in real historical fills from a broker or exchange CSV export.</p>

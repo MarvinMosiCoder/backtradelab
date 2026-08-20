@@ -1,59 +1,38 @@
-import React, { useEffect } from "react";
-import { useAuth } from "./Context/AuthContext";
+import { useEffect } from "react";
 import NProgress from "nprogress";
-import getAppLogo from "./Components/SystemSettings/ApplicationLogo";
-import { router  } from "@inertiajs/react";
+import { router } from "@inertiajs/react";
 
 const AppInitializer = () => {
-    const { auth } = useAuth();
-
     useEffect(() => {
-        const initializeNProgress = async () => {
-            const logoUrl = await getAppLogo();
-            const themeColor = auth?.sessions?.dark_theme ?? auth?.sessions?.theme_color;
+        NProgress.configure({
+            showSpinner: false,
+            minimum: 0.15,
+            speed: 300,
+            trickleSpeed: 100,
+        });
 
-            NProgress.configure({
-                showSpinner: false, 
-                minimum: 0.2,
-                speed: 300, 
-                trickleSpeed: 50,
-                parent: "#content-area", 
-                template: `
-                    <div class="nprogress-modal-overlay ${themeColor === 'skin-black' ? 'bg-black' : 'bg-white'}">
-                        <div class="nprogress-custom-container">
-                            <div class="nprogress-circle-loader-wrapper" id="nprogress">
-                                <div class="nprogress-circle-loader"></div>
-                                <div class="bar" role="bar" style="display: none;"></div>
-                            </div>
-                        </div>
-                    </div>
-                `,
-            });
+        // NProgress defaults to attaching its bar to <body> and positions it
+        // fixed to the viewport top, so this works the same on every page
+        // (dashboard, public, auth) with no per-layout wiring needed.
+        const unlistenStart = router.on("start", () => {
+            NProgress.start();
+        });
 
-            // Attach router events for NProgress
-            router.on("start", () => {
-                if (!NProgress.isStarted()) {
-                    NProgress.start();
-                }
-            });
+        const unlistenFinish = router.on("finish", (event) => {
+            if (
+                event.detail.visit.completed ||
+                event.detail.visit.interrupted ||
+                event.detail.visit.cancelled
+            ) {
+                NProgress.done();
+            }
+        });
 
-            router.on("finish", (event) => {
-                if (
-                    event.detail.visit.completed ||
-                    event.detail.visit.interrupted ||
-                    event.detail.visit.cancelled
-                ) {
-                    NProgress.done();
-
-                    setTimeout(() => {
-                        document.querySelector(".nprogress-modal-overlay")?.remove();
-                    }, 100);
-                }
-            });
+        return () => {
+            unlistenStart();
+            unlistenFinish();
         };
-
-        initializeNProgress();
-    }, [auth]);
+    }, []);
 
     return null; // Initialization logic only; no UI rendering
 };

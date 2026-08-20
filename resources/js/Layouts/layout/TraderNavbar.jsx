@@ -6,6 +6,7 @@ import getAppLogo from '../../Components/SystemSettings/ApplicationLogo';
 import getAppName from '../../Components/SystemSettings/ApplicationName';
 import { useSidebar } from '../../Context/SidebarContext';
 import { useProfile, useTheme } from '../../Context/ThemeContext';
+import { useConfirm } from '../../Hooks/useConfirm';
 import getInitials from '../../utils/getInitials';
 import colorMap from '../../Components/Notification/ColorMap';
 import AvatarBadge from '../../Components/Profile/AvatarBadge';
@@ -17,6 +18,7 @@ export default function TraderNavbar() {
     const { toggleSidebar } = useSidebar();
     const { theme, setTheme } = useTheme();
     const { profile } = useProfile();
+    const { confirm, confirmElement } = useConfirm();
     const isDark = theme === 'bg-skin-black';
     const displayIdentity = auth?.user?.username || auth?.user?.name || '';
     const navFileName = profile ?? auth?.profile?.file_name;
@@ -166,7 +168,7 @@ export default function TraderNavbar() {
     const resetDemoAccount = async () => {
         const amount = Number(startingBalance);
         if (!Number.isFinite(amount) || amount < 1 || amount > 1000000000) { setAssetsError('Starting balance must be between 1 and 1,000,000,000.'); return; }
-        if (!window.confirm(`Reset Demo Account to ${amount.toLocaleString()} USDT? This deletes cash history, PnL, positions, and demo trades.`)) return;
+        if (!(await confirm(`Reset Demo Account to ${amount.toLocaleString()} USDT? This deletes cash history, PnL, positions, and demo trades.`, { title: 'Reset demo account?', confirmLabel: 'Reset' }))) return;
 
         setAssetsLoading(true);
         setAssetsError('');
@@ -194,6 +196,7 @@ export default function TraderNavbar() {
 
     return (
         <header className={`flex h-14 items-center border-b px-3 sm:px-4 ${isDark ? 'border-[#2a2e39] bg-[#131722] text-[#d1d4dc]' : 'border-slate-200 bg-white text-slate-800'}`}>
+            {confirmElement}
             <button type="button" onClick={() => toggleSidebar()} className="mr-2 rounded-md p-2 hover:bg-white/10 lg:hidden" aria-label="Toggle navigation">
                 <Menu size={18} />
             </button>

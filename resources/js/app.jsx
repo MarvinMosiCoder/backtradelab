@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { createInertiaApp, router  } from "@inertiajs/react";
+import { resolvePageComponent } from "laravel-vite-plugin/inertia-helpers";
 import Swal from "sweetalert2";
 import Layout from "@/Layouts/layout/layout.jsx";
 import CookieNotice from "./Components/Privacy/CookieNotice";
@@ -23,25 +24,29 @@ globalThis.Swal = Swal;
 getAppName().then(appName => {
     createInertiaApp({
         title: title => `${appName} | ${title ? `${title}` : 'System'}`,
-        resolve: name => {
-            const pages = import.meta.glob("./Pages/**/*.jsx", { eager: true });
-            let page = pages[`./Pages/${name}.jsx`];
-            page.default.layout =
-                name.startsWith("Auth/") || name.startsWith("Public/")
-                    ? undefined
-                    : pageComponent => {
-                        const {auth} = useAuth();
-                        const theme_color =  auth?.sessions?.dark_theme ?? auth?.sessions?.theme_color;
-                        const profile = auth?.sessions?.profile;
-                        return (
-                            <ThemeProvider themeColor={theme_color} profileData={profile}>
-                                <Layout>{pageComponent}</Layout>
-                            </ThemeProvider>
-                        );
-                    };
+        // Inertia's built-in progress indicator is disabled: AppInitializer.jsx
+        // already wires router start/finish events to a brand-colored NProgress
+        // bar (nprogress-custom.css). Leaving both enabled means two competing
+        // #nprogress stylesheets fight over the same bar.
+        progress: false,
+        resolve: name =>
+            resolvePageComponent(`./Pages/${name}.jsx`, import.meta.glob("./Pages/**/*.jsx")).then(page => {
+                page.default.layout =
+                    name.startsWith("Auth/") || name.startsWith("Public/")
+                        ? undefined
+                        : pageComponent => {
+                            const {auth} = useAuth();
+                            const theme_color =  auth?.sessions?.dark_theme ?? auth?.sessions?.theme_color;
+                            const profile = auth?.sessions?.profile;
+                            return (
+                                <ThemeProvider themeColor={theme_color} profileData={profile}>
+                                    <Layout>{pageComponent}</Layout>
+                                </ThemeProvider>
+                            );
+                        };
 
-            return page;
-        },
+                return page;
+            }),
         setup({ el, App, props }) {
             const { auth } = props.initialPage.props;
             createRoot(el).render(

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\ExchangeRateLimitedException;
 use GuzzleHttp\Psr7\Response as GuzzleResponse;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -69,6 +70,107 @@ class ExchangeMarketDataGateway
             if ($cached = Cache::get($staleKey)) return $this->restore($cached);
             throw new ExchangeRateLimitedException($exchange, 3, 'A matching market-data refresh is already running.');
         }
+    }
+
+    /**
+     * Same fresh/stale caching, per-exchange rate budget, and cooldown
+     * protections as get(), but fires the underlying HTTP calls concurrently
+     * via Http::pool() instead of one at a time. Built for klines()'s
+     * multi-page candle-history loop, where N sequential get() calls were
+     * paying N round-trip latencies for a single chart load.
+     *
+     * @param list<array{exchange: string, endpoint: string, url: string, query?: array, cacheSeconds?: ?int}> $requests
+     * @return list<?Response> same order as $requests; null means no data was
+     *         available for that request (rate-limited/cooldown/failed with
+     *         no stale fallback) — callers should treat it like a failed page.
+     */
+    public function pool(array $requests): array
+    {
+        $results = array_fill(0, count($requests), null);
+        $pending = [];
+
+        foreach ($requests as $index => $request) {
+            $exchange = strtolower($request['exchange']);
+            $endpoint = $request['endpoint'];
+            $url = $request['url'];
+            $query = $request['query'] ?? [];
+            $cacheSeconds = $request['cacheSeconds'] ?? (int) config('market-data.request_cache_seconds', 30);
+            $signature = hash('sha256', $url.'?'.http_build_query($query));
+            $freshKey = "exchange-market:fresh:{$exchange}:{$endpoint}:{$signature}";
+            $staleKey = "exchange-market:stale:{$exchange}:{$endpoint}:{$signature}";
+
+            if ($cacheSeconds > 0 && ($cached = Cache::get($freshKey))) {
+                $results[$index] = $this->restore($cached);
+                continue;
+            }
+
+            if ($this->cooldownRemaining($exchange) > 0) {
+                $results[$index] = ($cached = Cache::get($staleKey)) ? $this->restore($cached) : null;
+                continue;
+            }
+
+            try {
+                $this->reserveBudget($exchange);
+            } catch (ExchangeRateLimitedException) {
+                $results[$index] = ($cached = Cache::get($staleKey)) ? $this->restore($cached) : null;
+                continue;
+            }
+
+            $pending[$index] = compact('exchange', 'endpoint', 'url', 'query', 'cacheSeconds', 'freshKey', 'staleKey');
+        }
+
+        if ($pending) {
+            $verify = filter_var(config('services.market_data.verify_tls', true), FILTER_VALIDATE_BOOL);
+            $started = microtime(true);
+
+            $responses = Http::pool(function (Pool $pool) use ($pending, $verify) {
+                $calls = [];
+                foreach ($pending as $index => $request) {
+                    $calls[$index] = $pool->as($index)
+                        ->withOptions(['verify' => $verify])
+                        ->withHeaders(['User-Agent' => 'BacktradeLab/1.0', 'Accept' => 'application/json'])
+                        ->timeout(20)
+                        ->get($request['url'], $request['query']);
+                }
+                return $calls;
+            });
+            $duration = (int) round((microtime(true) - $started) * 1000);
+
+            foreach ($pending as $index => $request) {
+                $response = $responses[$index] ?? null;
+
+                if (!$response instanceof Response) {
+                    $results[$index] = ($cached = Cache::get($request['staleKey'])) ? $this->restore($cached) : null;
+                    continue;
+                }
+
+                if ($this->isLimited($response)) {
+                    $retryAfter = $this->activateCooldown($request['exchange'], $response);
+                    Log::warning('Exchange market data cooldown activated.', [
+                        'exchange' => $request['exchange'], 'endpoint' => $request['endpoint'],
+                        'duration' => $duration, 'retryAfter' => $retryAfter,
+                    ]);
+                    $results[$index] = ($cached = Cache::get($request['staleKey'])) ? $this->restore($cached) : null;
+                    continue;
+                }
+
+                if ($response->successful()) {
+                    Cache::forget("exchange-market:strikes:{$request['exchange']}");
+                    $stored = $this->store($response);
+                    if ($request['cacheSeconds'] > 0) Cache::put($request['freshKey'], $stored, now()->addSeconds($request['cacheSeconds']));
+                    Cache::put($request['staleKey'], $stored, now()->addSeconds((int) config('market-data.stale_cache_seconds', 300)));
+                }
+
+                Log::info('Exchange market data request.', [
+                    'exchange' => $request['exchange'], 'endpoint' => $request['endpoint'],
+                    'status' => $response->status(), 'duration_ms' => $duration, 'cache' => 'miss-pooled',
+                ]);
+
+                $results[$index] = $response;
+            }
+        }
+
+        return $results;
     }
 
     private function reserveBudget(string $exchange): void

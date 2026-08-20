@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useTheme } from '../../Context/ThemeContext';
+import { useConfirm } from '../../Hooks/useConfirm';
 import StatCard from './StatCard';
 
 const VIOLATION_LABELS = {
@@ -44,6 +45,7 @@ function formatMoney(value) {
 export default function TrainingChallengeCatalog() {
   const { theme } = useTheme();
   const isDark = theme === 'bg-skin-black';
+  const { confirm, confirmElement } = useConfirm();
   const [challenges, setChallenges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -78,7 +80,7 @@ export default function TrainingChallengeCatalog() {
   };
 
   const abandonAttempt = async (attempt) => {
-    if (!window.confirm('Abandon this attempt? Progress so far will not count toward completion.')) return;
+    if (!(await confirm('Abandon this attempt? Progress so far will not count toward completion.', { title: 'Abandon attempt?', confirmLabel: 'Abandon' }))) return;
     setBusyId(`abandon-${attempt.id}`);
     setError('');
     try {
@@ -98,6 +100,7 @@ export default function TrainingChallengeCatalog() {
 
   return (
     <div className={`rounded-lg border p-4 ${surface}`}>
+      {confirmElement}
       <div className="mb-4" data-tour="training-intro">
         <h2 className="text-sm font-semibold">Training Challenges</h2>
         <p className={`mt-1 text-xs ${muted}`}>Measurable practice exercises scored on both profitability and rule adherence. Progress is computed from your closed trades since the attempt started.</p>

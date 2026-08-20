@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Check, Copy, Link2, ShieldAlert, Trash2 } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
+import { useConfirm } from '../../Hooks/useConfirm';
 import ToggleSwitch from './ToggleSwitch';
 
 const EMPTY_FORM = {
@@ -53,6 +54,7 @@ function statusOf(shareLink) {
 export default function ShareLinkManager() {
   const { theme } = useTheme();
   const isDark = theme === 'bg-skin-black';
+  const { confirm, confirmElement } = useConfirm();
   const [shareLinks, setShareLinks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,7 +123,7 @@ export default function ShareLinkManager() {
   };
 
   const revoke = async (shareLink) => {
-    if (!window.confirm(`Revoke the share link "${shareLink.label || 'Untitled'}"? The mentor will immediately lose access.`)) return;
+    if (!(await confirm(`Revoke the share link "${shareLink.label || 'Untitled'}"? The mentor will immediately lose access.`, { title: 'Revoke share link?', confirmLabel: 'Revoke' }))) return;
     try {
       await axios.delete(`/market-backtest/share-links/${shareLink.id}`);
       await load();
@@ -147,6 +149,7 @@ export default function ShareLinkManager() {
 
   return (
     <div className={`rounded-lg border p-4 ${surface}`}>
+      {confirmElement}
       <div className="mb-4 flex items-center gap-2" data-tour="mentor-intro">
         <Link2 size={18} />
         <div>

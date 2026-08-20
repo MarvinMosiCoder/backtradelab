@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import axios from 'axios';
+import NProgress from 'nprogress';
 import { usePage } from '@inertiajs/react';
 import { Bell, HelpCircle, LoaderCircle, MoreHorizontal, RotateCcw, Settings, Trash2, Wallet, X } from 'lucide-react';
 import {
@@ -14,6 +15,7 @@ import {
 } from 'lightweight-charts';
 import { useTheme } from '../../Context/ThemeContext';
 import { useAuth } from '../../Context/AuthContext';
+import { useConfirm } from '../../Hooks/useConfirm';
 import ChartHeader from './MarketChart/ChartHeader';
 import { DEFAULT_TIMEFRAME_FAVORITES } from './MarketChart/TimeframeSelector';
 import ChartSettingsModal from './MarketChart/ChartSettingsModal';
@@ -838,6 +840,7 @@ export default function MarketReplayChart({
   onTourComplete = null,
 }) {
   const { theme: adminTheme } = useTheme();
+  const { confirm, confirmElement } = useConfirm();
   const { auth: pageAuth } = usePage().props;
   const authContext = useAuth();
   const auth = authContext?.auth ?? pageAuth;
@@ -4916,6 +4919,13 @@ export default function MarketReplayChart({
         setLoading(!isTimeframeTransition);
       }
 
+      // Symbol/timeframe switches that hit the candle cache resolve loading
+      // true->false within the same effect tick (no await between them), so
+      // React never paints the skeleton overlay even though a background
+      // revalidation fetch still runs. The top bar covers that gap so a
+      // switch always shows *some* feedback, cached or not.
+      NProgress.start();
+
       const requestId = fetchRequestIdRef.current + 1;
       fetchRequestIdRef.current = requestId;
       candleFetchAbortRef.current?.abort();
@@ -5222,6 +5232,7 @@ export default function MarketReplayChart({
             candleFetchAbortRef.current = null;
           }
           setLoading(false);
+          NProgress.done();
           if (timeframeTransitionKeyRef.current === historyKey) {
             timeframeTransitionKeyRef.current = null;
           }
@@ -5869,6 +5880,14 @@ export default function MarketReplayChart({
 
     setIsSavingSymbol(true);
     setSymbolError('');
+    // The add-symbol dropdown closes synchronously right after this call
+    // starts, so isSavingSymbol's own disabled/spinner styling on the "Open"
+    // button never gets a chance to paint. The top bar covers the save
+    // request itself; on success it hands off to the candle-fetch effect's
+    // own start()/done() pair (below) once symbol/exchange/category update,
+    // so the bar runs continuously through to the loaded chart. On failure
+    // that effect never fires, so the catch block below ends it explicitly.
+    NProgress.start();
 
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -5931,6 +5950,7 @@ export default function MarketReplayChart({
           ?? err.message
           ?? 'Failed to save symbol';
       setSymbolError(message);
+      NProgress.done();
     } finally {
       setIsSavingSymbol(false);
     }
@@ -5938,7 +5958,7 @@ export default function MarketReplayChart({
 
   const handleRemoveSymbol = async (marketSymbol) => {
     if (!marketSymbol?.id || isRemovingSymbol) return;
-    if (!window.confirm(`Remove ${marketSymbol.symbol} from your saved symbols? Your chart drawings are not deleted.`)) return;
+    if (!(await confirm(`Remove ${marketSymbol.symbol} from your saved symbols? Your chart drawings are not deleted.`, { title: 'Remove saved symbol?', confirmLabel: 'Remove' }))) return;
 
     setIsRemovingSymbol(true);
     setSymbolError('');
@@ -6562,6 +6582,7 @@ export default function MarketReplayChart({
 
   return (
     <>
+    {confirmElement}
     <button type="button" onClick={()=>setTourStep(0)} className="fixed bottom-4 right-4 z-[10000] flex h-9 w-9 items-center justify-center rounded-full border border-[#2962ff]/40 bg-[#131722] text-[#5b8cff] shadow-xl" title="Restart workspace tour" aria-label="Restart workspace tour"><HelpCircle size={17}/></button>
     {showSubscriptionModal && <SubscriptionModal onClose={() => setShowSubscriptionModal(false)} onTrialActivated={() => {
       setReplayAccessAllowed(true);

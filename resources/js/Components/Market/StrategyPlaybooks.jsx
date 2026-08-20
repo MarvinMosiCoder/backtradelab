@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
+import { useConfirm } from '../../Hooks/useConfirm';
 import ToggleSwitch from './ToggleSwitch';
 import StatCard from './StatCard';
 
@@ -88,6 +89,7 @@ function PlaybookCard({ playbook, isDark, cardSurface, muted, buttonClass, onEdi
 export default function StrategyPlaybooks() {
   const { theme } = useTheme();
   const isDark = theme === 'bg-skin-black';
+  const { confirm, confirmElement } = useConfirm();
   const [playbooks, setPlaybooks] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
@@ -156,7 +158,7 @@ export default function StrategyPlaybooks() {
   };
 
   const archive = async (playbook) => {
-    if (!window.confirm(`Archive “${playbook.name}”? Historical trades will keep their saved copy.`)) return;
+    if (!(await confirm(`Archive "${playbook.name}"? Historical trades will keep their saved copy.`, { title: 'Archive playbook?', confirmLabel: 'Archive' }))) return;
     await axios.delete(`/market-backtest/playbooks/${playbook.id}`);
     if (editingId === playbook.id) closeModal();
     await load();
@@ -174,6 +176,7 @@ export default function StrategyPlaybooks() {
 
   return (
     <div className={`rounded-lg border p-4 ${surface}`}>
+      {confirmElement}
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
