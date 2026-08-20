@@ -265,7 +265,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           <ChevronDown size={13} className={`transition-transform ${isMobileMenuOpen ? 'rotate-180' : ''}`} />
         </button>
         <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} absolute left-0 right-0 top-full z-[110] mt-2 max-h-[calc(100dvh-5rem)] flex-wrap items-center gap-2 overflow-y-auto rounded-lg border p-2 shadow-2xl lg:contents ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
-          <div className="relative min-w-0 flex-1" data-tour="market">
+          <div className="relative min-w-0 flex-1 lg:w-56 lg:flex-none" data-tour="market">
             <button ref={symbolPickerTooltip.anchorRef} type="button" onClick={toggleAddOpen} className={`${compactFieldClass} flex w-full items-center justify-between gap-2`}>
               <span className="truncate font-semibold text-emerald-500">
                 {symbol} <span className={`text-[9px] font-medium ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>{String(exchange).toUpperCase()}</span>
