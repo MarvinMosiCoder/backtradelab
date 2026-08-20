@@ -367,7 +367,7 @@ export default function Home() {
                         ))}
                     </div>
 
-                    <div className="relative flex flex-1 justify-end" ref={loginMenuRef}>
+                    <div className="relative flex shrink-0 justify-end" ref={loginMenuRef}>
                         <button
                             type="button"
                             onClick={() => setIsLoginMenuOpen((current) => !current)}

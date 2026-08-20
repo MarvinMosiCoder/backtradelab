@@ -16,12 +16,28 @@ const searchResultKey = (exchange, category, symbol) => `${String(exchange).toLo
 function useAnchoredTooltip() {
   const anchorRef = useRef(null);
   const [pos, setPos] = useState(null);
+  const [panelPos, setPanelPos] = useState(null);
   const show = () => {
     const rect = anchorRef.current?.getBoundingClientRect();
     if (rect) setPos({ top: rect.top + rect.height / 2, left: rect.right + 8 });
   };
   const hide = () => setPos(null);
-  return { anchorRef, pos, show, hide };
+  // For a click-opened panel (not just a hover label) anchored below the trigger,
+  // clamped so it never runs off the right edge — same escape-the-clipping-ancestor
+  // reason as `show()` above, but this one also has to fit a whole panel on-screen,
+  // not just a point. Compact mode's mobile toolbar wraps this trigger in an
+  // `overflow-y-auto` panel, so a plain `absolute` popover gets clipped by that
+  // ancestor's scrollport instead of floating over the chart (see TimeframeSelector.jsx's
+  // "Select period" grid for the same fix).
+  const openPanel = (width, align = 'right') => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const rawLeft = align === 'left' ? rect.left : rect.right - width;
+    const left = Math.min(Math.max(8, rawLeft), window.innerWidth - width - 8);
+    setPanelPos({ top: rect.bottom + 8, left });
+  };
+  const closePanel = () => setPanelPos(null);
+  return { anchorRef, pos, show, hide, panelPos, openPanel, closePanel };
 }
 
 function HeaderTooltipPortal({ pos, label, isDark }) {
@@ -208,34 +224,56 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
     return () => controller.abort();
   }, [exchange, isMarketInfoOpen, marketCategory, symbol]);
 
-  const marketInfo = <MarketMetadataPopover metadata={marketMetadata} loading={marketMetadataLoading} error={marketMetadataError} isDark={isDark} panelStyle={panelStyle}/>;
-
   const replayTooltip = useAnchoredTooltip();
   const alertTooltip = useAnchoredTooltip();
   const infoTooltip = useAnchoredTooltip();
   const indicatorsTooltip = useAnchoredTooltip();
+  const symbolPickerTooltip = useAnchoredTooltip();
   const replayTooltipLabel = replayMode ? 'Back to live' : 'Start replay';
+
+  const marketInfo = <MarketMetadataPopover metadata={marketMetadata} loading={marketMetadataLoading} error={marketMetadataError} isDark={isDark} panelStyle={panelStyle} pos={infoTooltip.panelPos}/>;
+
+  const toggleMarketInfo = () => {
+    setIsMarketInfoOpen((value) => {
+      const next = !value;
+      if (next) infoTooltip.openPanel(320); else infoTooltip.closePanel();
+      return next;
+    });
+  };
+  const toggleIndicators = () => {
+    setIsIndicatorsOpen((value) => {
+      const next = !value;
+      if (next) indicatorsTooltip.openPanel(288); else indicatorsTooltip.closePanel();
+      return next;
+    });
+  };
+  const toggleAddOpen = () => {
+    setIsAddOpen((value) => {
+      const next = !value;
+      if (next) symbolPickerTooltip.openPanel(compact ? 384 : 448, 'left'); else symbolPickerTooltip.closePanel();
+      return next;
+    });
+  };
 
   if (compact) {
     const compactFieldClass = `h-8 rounded-md border px-2 text-xs outline-none ${isDark ? 'border-gray-700 bg-black-table-color/95 text-white' : 'border-gray-200 bg-white/95 text-gray-800'}`;
 
     return (
       <div className={`flex max-w-full flex-wrap items-center gap-2 rounded-md border p-2 shadow-xl backdrop-blur ${className}`} style={panelStyle}>
-        <button type="button" onClick={() => setIsMobileMenuOpen((open) => !open)} className={`${compactFieldClass} flex items-center gap-2 font-semibold lg:hidden`} aria-expanded={isMobileMenuOpen}>
+        <button type="button" onClick={() => setIsMobileMenuOpen((open) => !open)} className={`${compactFieldClass} flex items-center gap-2 font-semibold lg:hidden`} aria-expanded={isMobileMenuOpen} aria-label="Menu">
           <Menu size={15} />
-          <span className="max-w-28 truncate text-emerald-500">{symbol}</span>
           <ChevronDown size={13} className={`transition-transform ${isMobileMenuOpen ? 'rotate-180' : ''}`} />
         </button>
         <div className={`${isMobileMenuOpen ? 'flex' : 'hidden'} absolute left-0 right-0 top-full z-[110] mt-2 max-h-[calc(100dvh-5rem)] flex-wrap items-center gap-2 overflow-y-auto rounded-lg border p-2 shadow-2xl lg:contents ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
-          <div className="relative" data-tour="market">
-            <button type="button" onClick={() => setIsAddOpen((value) => !value)} className={`${compactFieldClass} flex w-44 max-w-[42vw] items-center justify-between gap-2`}>
+          <div className="relative min-w-0 flex-1" data-tour="market">
+            <button ref={symbolPickerTooltip.anchorRef} type="button" onClick={toggleAddOpen} className={`${compactFieldClass} flex w-full items-center justify-between gap-2`}>
               <span className="truncate font-semibold text-emerald-500">
                 {symbol} <span className={`text-[9px] font-medium ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>{String(exchange).toUpperCase()}</span>
               </span>
               <ChevronDown size={13} />
             </button>
-            {isAddOpen && (
-              <div className={`absolute left-0 top-full z-[120] mt-2 w-96 max-w-[85vw] overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
+            {isAddOpen && symbolPickerTooltip.panelPos && typeof document !== 'undefined' && createPortal(
+              <div className={`fixed z-[10021] w-96 max-w-[calc(100vw-1rem)] overflow-hidden rounded-md border shadow-2xl ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`} style={{ top: symbolPickerTooltip.panelPos.top, left: symbolPickerTooltip.panelPos.left }}>
                 <div className={`flex items-center gap-2 rounded-full border mx-3 mt-3 px-3.5 py-2 transition-colors focus-within:border-[#2962ff] ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <Search size={14} className="text-gray-400" />
                   <input autoFocus value={symbolSearch} onChange={(e) => setSymbolSearch(e.target.value)} placeholder="Search all symbols" style={{ outline: 'none' }} className="min-w-0 flex-1 bg-transparent text-xs uppercase placeholder:text-gray-500" />
@@ -313,7 +351,8 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                     <div className={`px-3 py-5 text-center text-xs ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>{showFavoritesOnly ? 'No favorites in this market yet' : 'No symbols found'}</div>
                   )}
                 </div>
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -343,18 +382,18 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
           </button>
           <HeaderTooltipPortal pos={alertTooltip.pos} label="Create alert" isDark={isDark} />
           <div className="relative">
-            <button ref={infoTooltip.anchorRef} type="button" onClick={() => setIsMarketInfoOpen(value => !value)} onMouseEnter={infoTooltip.show} onMouseLeave={infoTooltip.hide} onFocus={infoTooltip.show} onBlur={infoTooltip.hide} className={`${compactFieldClass} flex w-8 items-center justify-center`} aria-label="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
+            <button ref={infoTooltip.anchorRef} type="button" onClick={toggleMarketInfo} onMouseEnter={infoTooltip.show} onMouseLeave={infoTooltip.hide} onFocus={infoTooltip.show} onBlur={infoTooltip.hide} className={`${compactFieldClass} flex w-8 items-center justify-center`} aria-label="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
             {isMarketInfoOpen && marketInfo}
             <HeaderTooltipPortal pos={infoTooltip.pos} label="Market information" isDark={isDark} />
           </div>
 
           <div className="relative">
-            <button ref={indicatorsTooltip.anchorRef} type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} onMouseEnter={indicatorsTooltip.show} onMouseLeave={indicatorsTooltip.hide} onFocus={indicatorsTooltip.show} onBlur={indicatorsTooltip.hide} aria-label="Indicators" className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
+            <button ref={indicatorsTooltip.anchorRef} type="button" onClick={toggleIndicators} onMouseEnter={indicatorsTooltip.show} onMouseLeave={indicatorsTooltip.hide} onFocus={indicatorsTooltip.show} onBlur={indicatorsTooltip.hide} aria-label="Indicators" className={`${compactFieldClass} flex items-center gap-1.5 font-semibold`}>
               <SlidersHorizontal size={13} />
             </button>
             <HeaderTooltipPortal pos={indicatorsTooltip.pos} label="Indicators" isDark={isDark} />
-            {isIndicatorsOpen && (
-              <div className={`absolute left-0 top-full z-[100] mt-2 w-72 max-w-[85vw] space-y-3 rounded-md border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={panelStyle}>
+            {isIndicatorsOpen && indicatorsTooltip.panelPos && typeof document !== 'undefined' && createPortal(
+              <div className={`fixed z-[10021] w-72 max-w-[85vw] space-y-3 rounded-md border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={{ ...panelStyle, top: indicatorsTooltip.panelPos.top, left: indicatorsTooltip.panelPos.left }}>
                 <div className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>Add indicators</div>
                 {[
                   ['volume', 'Volume'],
@@ -372,7 +411,8 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                     <span className={indicators[key] ? 'text-emerald-400' : 'text-[#5b8cff]'}>{indicators[key] ? 'Settings' : '+ Add'}</span>
                   </button>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
           <div className="min-w-0 px-1">
@@ -386,18 +426,15 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
 
   return (
     <div className={`relative z-40 rounded-lg border p-1.5 shadow-sm ${className}`} style={panelStyle}>
-      <button type="button" onClick={() => setIsMobileMenuOpen((open) => !open)} className={`${fieldClass} flex w-full items-center justify-between gap-2 font-semibold lg:hidden`} aria-expanded={isMobileMenuOpen}>
-        <span className="flex min-w-0 items-center gap-2">
-          <Menu size={15} />
-          <span className="truncate text-emerald-500">{symbol}</span>
-        </span>
+      <button type="button" onClick={() => setIsMobileMenuOpen((open) => !open)} className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold lg:hidden`} aria-expanded={isMobileMenuOpen} aria-label="Menu">
+        <Menu size={15} />
         <ChevronDown size={14} className={`shrink-0 transition-transform ${isMobileMenuOpen ? 'rotate-180' : ''}`} />
       </button>
       <div className={`${isMobileMenuOpen ? 'grid' : 'hidden'} absolute left-0 right-0 top-full z-[110] mt-2 max-h-[calc(100dvh-5rem)] grid-cols-2 items-center gap-1.5 overflow-y-auto rounded-lg border p-2 shadow-2xl sm:grid-cols-12 lg:static lg:mt-0 lg:grid lg:max-h-none lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none ${isDark ? 'border-gray-700 bg-black-table-color text-white' : 'border-gray-200 bg-white text-slate-900'}`}>
         <div className="relative col-span-2 min-w-0 sm:col-span-12 lg:col-span-3">
           <label className="sr-only">Symbol</label>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <button type="button" onClick={() => setIsAddOpen((current) => !current)} className={`${fieldClass} flex min-w-0 flex-1 items-center justify-between gap-2 text-left font-semibold hover:border-[#2962ff]/60`} aria-expanded={isAddOpen}>
+            <button ref={symbolPickerTooltip.anchorRef} type="button" onClick={toggleAddOpen} className={`${fieldClass} flex min-w-0 flex-1 items-center justify-between gap-2 text-left font-semibold hover:border-[#2962ff]/60`} aria-expanded={isAddOpen}>
               <span className="truncate text-emerald-500">
                 {symbol}{' '}
                 <span className={`text-[9px] font-medium ${isDark ? 'text-gray-400' : 'text-slate-500'}`}>
@@ -412,8 +449,8 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
               </button>
             )}
           </div>
-          {isAddOpen && (
-            <div className={`absolute left-0 right-0 z-[80] mt-2 overflow-hidden rounded-md border shadow-xl sm:right-auto sm:w-[28rem] ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`}>
+          {isAddOpen && symbolPickerTooltip.panelPos && typeof document !== 'undefined' && createPortal(
+            <div className={`fixed z-[10021] w-[28rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-md border shadow-xl ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`} style={{ top: symbolPickerTooltip.panelPos.top, left: symbolPickerTooltip.panelPos.left }}>
               <div className={`flex items-center gap-2 rounded-full border mx-3 mt-3 px-3.5 py-2 transition-colors focus-within:border-[#2962ff] ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                 <Search size={14} className="text-gray-400" />
                 <input autoFocus value={symbolSearch} onChange={(event) => setSymbolSearch(event.target.value)} placeholder="Search all symbols" style={{ outline: 'none' }} className={`min-w-0 flex-1 bg-transparent text-xs uppercase placeholder:text-gray-500 ${isDark ? 'text-white' : 'text-gray-800'}`} />
@@ -499,7 +536,8 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
                   <div className="px-2 py-3 text-center text-xs text-gray-400">{showFavoritesOnly ? 'No favorites in this market yet' : 'No symbols found'}</div>
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
           {symbolError && <div className="mt-1 text-[11px] text-red-400">{symbolError}</div>}
         </div>
@@ -525,7 +563,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
         </div>
 
         <div className="relative col-span-1 sm:col-span-3 lg:col-span-2">
-          <button ref={indicatorsTooltip.anchorRef} type="button" onClick={() => setIsIndicatorsOpen((value) => !value)} onMouseEnter={indicatorsTooltip.show} onMouseLeave={indicatorsTooltip.hide} onFocus={indicatorsTooltip.show} onBlur={indicatorsTooltip.hide} aria-label="Indicators" className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
+          <button ref={indicatorsTooltip.anchorRef} type="button" onClick={toggleIndicators} onMouseEnter={indicatorsTooltip.show} onMouseLeave={indicatorsTooltip.hide} onFocus={indicatorsTooltip.show} onBlur={indicatorsTooltip.hide} aria-label="Indicators" className={`${fieldClass} flex w-full items-center justify-center gap-2 font-semibold hover:border-[#2962ff]/60`}>
             <SlidersHorizontal size={14} />
             {activeIndicatorCount > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2962ff] px-1 text-[9px] text-white">{activeIndicatorCount}</span>}
           </button>
@@ -559,7 +597,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
         <HeaderTooltipPortal pos={alertTooltip.pos} label="Create alert" isDark={isDark} />
 
         <div className="relative col-span-1 sm:col-span-3 lg:col-span-1">
-          <button ref={infoTooltip.anchorRef} type="button" onClick={() => setIsMarketInfoOpen(value => !value)} onMouseEnter={infoTooltip.show} onMouseLeave={infoTooltip.hide} onFocus={infoTooltip.show} onBlur={infoTooltip.hide} className={`${fieldClass} flex w-full items-center justify-center gap-1.5 font-semibold hover:border-[#2962ff]/60`} aria-label="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
+          <button ref={infoTooltip.anchorRef} type="button" onClick={toggleMarketInfo} onMouseEnter={infoTooltip.show} onMouseLeave={infoTooltip.hide} onFocus={infoTooltip.show} onBlur={infoTooltip.hide} className={`${fieldClass} flex w-full items-center justify-center gap-1.5 font-semibold hover:border-[#2962ff]/60`} aria-label="Market information" aria-expanded={isMarketInfoOpen}><Info size={14}/></button>
           {isMarketInfoOpen && marketInfo}
           <HeaderTooltipPortal pos={infoTooltip.pos} label="Market information" isDark={isDark} />
         </div>
@@ -589,7 +627,7 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
 const compactNumber = value => Number.isFinite(Number(value)) ? new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 2 }).format(Number(value)) : '—';
 const metadataPrice = value => Number.isFinite(Number(value)) ? Number(value).toLocaleString(undefined, { maximumFractionDigits: 8 }) : '—';
 
-function MarketMetadataPopover({ metadata, loading, error, isDark, panelStyle }) {
+function MarketMetadataPopover({ metadata, loading, error, isDark, panelStyle, pos }) {
   const stats = metadata?.stats ?? {}, fundamentals = metadata?.fundamentals;
   const rows = [
     ['24h change', Number.isFinite(Number(stats.change_24h_percent)) ? `${Number(stats.change_24h_percent) >= 0 ? '+' : ''}${Number(stats.change_24h_percent).toFixed(2)}%` : '—'],
@@ -600,11 +638,19 @@ function MarketMetadataPopover({ metadata, loading, error, isDark, panelStyle })
     ['Funding', Number.isFinite(Number(stats.funding_rate)) ? `${(Number(stats.funding_rate) * 100).toFixed(4)}%` : '—'],
     ['Open interest', compactNumber(stats.open_interest)],
   ];
-  return <div className={`absolute right-0 top-full z-[150] mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-xl border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={panelStyle}>
+  // Portaled + viewport-clamp-positioned (see useAnchoredTooltip's openPanel in this
+  // file): this popover is triggered from inside FullscreenChartHeader's compact
+  // mobile toolbar, an `overflow-y-auto` panel that would otherwise clip it instead
+  // of letting it float over the chart.
+  if (!pos || typeof document === 'undefined') return null;
+  return createPortal(
+    <div className={`fixed z-[10021] w-80 max-w-[calc(100vw-1rem)] rounded-xl border p-3 shadow-2xl ${isDark ? 'text-white' : 'text-slate-900'}`} style={{ ...panelStyle, top: pos.top, left: pos.left }}>
     {loading && <div className="flex items-center gap-2 py-4 text-xs text-[#787b86]"><LoaderCircle size={14} className="animate-spin"/>Loading market information…</div>}
     {!loading && error && <div className="flex items-start gap-2 rounded-lg bg-red-500/10 p-2 text-xs text-red-500"><CircleHelp size={14}/>{error}</div>}
     {!loading && !error && metadata && <><div className="flex items-center gap-2"><img src={fundamentals?.logo_url || ''} alt="" className={`h-8 w-8 rounded-full object-contain ${fundamentals?.logo_url ? '' : 'hidden'}`}/><div><div className="text-sm font-bold">{fundamentals?.name || metadata.market?.base_coin || metadata.market?.symbol}</div><div className="text-[10px] uppercase text-[#787b86]">{metadata.market?.exchange} · {marketCategoryLabel(metadata.market?.category)}{fundamentals?.market_cap_rank ? ` · Rank #${fundamentals.market_cap_rank}` : ''}</div></div></div><div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">{rows.map(([label, value]) => value !== '—' && value !== '— / —' ? <div key={label} className="min-w-0"><div className="text-[9px] uppercase text-[#787b86]">{label}</div><div className="truncate text-xs font-semibold tabular-nums">{value}</div></div> : null)}</div>{fundamentals && <div className={`mt-3 grid grid-cols-2 gap-2 border-t pt-2 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}><Meta label="Market cap" value={compactNumber(fundamentals.market_cap)}/><Meta label="FDV" value={compactNumber(fundamentals.fully_diluted_valuation)}/><Meta label="Circulating" value={compactNumber(fundamentals.circulating_supply)}/><Meta label="Max supply" value={compactNumber(fundamentals.max_supply)}/><Meta label="ATH" value={metadataPrice(fundamentals.ath)}/><Meta label="ATL" value={metadataPrice(fundamentals.atl)}/></div>}{metadata.warnings?.length > 0 && <div className="mt-2 text-[9px] text-[#787b86]">{metadata.warnings.join(' ')}</div>}</>}
-  </div>;
+  </div>,
+    document.body
+  );
 }
 
 function Meta({ label, value }) { return value === '—' ? null : <div><div className="text-[9px] uppercase text-[#787b86]">{label}</div><div className="text-xs font-semibold tabular-nums">{value}</div></div>; }

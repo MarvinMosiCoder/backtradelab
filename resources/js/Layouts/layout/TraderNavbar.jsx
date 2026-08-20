@@ -213,8 +213,8 @@ export default function TraderNavbar() {
 
             <div className="ml-auto" />
 
-            <div className={`ml-2 flex items-center gap-1 border-l pl-2 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
-                <div className="relative">
+            <div className={`relative ml-2 flex items-center gap-1 border-l pl-2 ${isDark ? 'border-[#2a2e39]' : 'border-slate-200'}`}>
+                <div>
                     <button
                         type="button"
                         onClick={() => setShowNotifications((current) => !current)}
@@ -274,7 +274,7 @@ export default function TraderNavbar() {
                         </div>
                     )}
                 </div>
-                <div className="relative">
+                <div>
                     <button
                         type="button"
                         onClick={toggleAssets}

@@ -1,5 +1,27 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronDown, Star } from 'lucide-react';
+
+const GRID_WIDTH = 280;
+
+// The grid pops up from a chevron that can sit inside a narrow, `overflow-y-auto`
+// mobile toolbar (FullscreenChartHeader's compact menu) — a plain `absolute` panel
+// gets clipped by that ancestor's scroll box instead of floating over the chart.
+// Portaling to document.body and positioning from the trigger's own
+// getBoundingClientRect (same escape-the-clipping-ancestor pattern as
+// ChartHeader.jsx's HeaderTooltipPortal / ReplayPanel.jsx's RailTooltipPortal)
+// keeps it fully visible and viewport-clamped regardless of that ancestor.
+function useAnchoredGridPosition() {
+  const anchorRef = useRef(null);
+  const [pos, setPos] = useState(null);
+  const open = () => {
+    const rect = anchorRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const left = Math.min(Math.max(8, rect.right - GRID_WIDTH), window.innerWidth - GRID_WIDTH - 8);
+    setPos({ top: rect.bottom + 8, left });
+  };
+  return { anchorRef, pos, open, close: () => setPos(null) };
+}
 
 export const MAX_TIMEFRAME_FAVORITES = 10;
 export const DEFAULT_TIMEFRAME_FAVORITES = ['1m', '5m', '15m', '30m', '1h', '4h'];
@@ -14,7 +36,16 @@ export const DEFAULT_TIMEFRAME_FAVORITES = ['1m', '5m', '15m', '30m', '1h', '4h'
  */
 export default function TimeframeSelector({ timeframe, timeframeOptions, favorites, onTimeframeChange, onFavoritesChange, chartTheme }) {
   const [isOpen, setIsOpen] = useState(false);
+  const grid = useAnchoredGridPosition();
   const isDark = chartTheme?.mode === 'dark';
+
+  const toggleOpen = () => {
+    setIsOpen((value) => {
+      const next = !value;
+      if (next) grid.open(); else grid.close();
+      return next;
+    });
+  };
 
   const favoriteSet = new Set(favorites);
   const pillTimeframes = timeframeOptions.filter((tf) => favoriteSet.has(tf.value));
@@ -61,8 +92,9 @@ export default function TimeframeSelector({ timeframe, timeframeOptions, favorit
         })}
       </div>
       <button
+        ref={grid.anchorRef}
         type="button"
-        onClick={() => setIsOpen((value) => !value)}
+        onClick={toggleOpen}
         className={`flex h-7 w-6 shrink-0 items-center justify-center rounded ${isDark ? 'text-gray-400 hover:bg-white/10 hover:text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
         aria-label="Select period"
         aria-expanded={isOpen}
@@ -71,10 +103,15 @@ export default function TimeframeSelector({ timeframe, timeframeOptions, favorit
         <ChevronDown size={14} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {isOpen && (
+      {isOpen && grid.pos && typeof document !== 'undefined' && createPortal(
         <>
-          <button type="button" className="fixed inset-0 z-[99] cursor-default" aria-label="Close period selector" onClick={() => setIsOpen(false)} />
-          <div className={`absolute left-0 top-full z-[100] mt-2 w-[280px] rounded-lg border p-3 shadow-2xl ${shellClass}`} role="dialog" aria-label="Select period">
+          <button type="button" className="fixed inset-0 z-[10020] cursor-default" aria-label="Close period selector" onClick={() => setIsOpen(false)} />
+          <div
+            className={`fixed z-[10021] w-[280px] rounded-lg border p-3 shadow-2xl ${shellClass}`}
+            style={{ top: grid.pos.top, left: grid.pos.left }}
+            role="dialog"
+            aria-label="Select period"
+          >
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-semibold">Select period</span>
               <span className={`text-xs font-semibold ${mutedClass}`}>{favorites.length}/{MAX_TIMEFRAME_FAVORITES}</span>
@@ -118,7 +155,8 @@ export default function TimeframeSelector({ timeframe, timeframeOptions, favorit
               })}
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

@@ -6734,7 +6734,7 @@ export default function MarketReplayChart({
           ? 'fixed inset-0 z-[9999] flex h-[100dvh] flex-col overflow-hidden bg-black-screen-color'
           : 'overflow-hidden rounded-lg border'
       }
-      style={!isFullscreen ? { borderColor: chartTheme.border, backgroundColor: chartTheme.panel } : undefined}
+      style={isFullscreen ? { backgroundColor: chartTheme.panel } : { borderColor: chartTheme.border, backgroundColor: chartTheme.panel }}
     >
       <FullscreenChartHeader
         chartHeaderProps={chartHeaderProps}

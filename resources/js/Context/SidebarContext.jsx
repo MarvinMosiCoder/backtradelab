@@ -3,8 +3,10 @@ import React, { createContext, useContext, useState } from 'react';
 
 const SidebarContext = createContext();
 
+const isDesktopViewport = () => typeof window !== 'undefined' && window.innerWidth >= 1024;
+
 export const SidebarProvider = ({ children }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(isDesktopViewport);
 
   const toggleSidebar = (nextValue) => {
     setIsSidebarOpen((prev) => typeof nextValue === 'boolean' ? nextValue : !prev);
