@@ -2128,8 +2128,14 @@ export default function ReplayPanel({
     setChecklistAnswers((selectedPlaybook?.checklist ?? []).map(() => false));
   }, [selectedPlaybookId]);
 
+  // The Enter Position header button (fullscreenEntryPanelOpen, set from the
+  // chart header) drives the 'backtest' group in both fullscreenDrawingOnly
+  // (fullscreen) and groupedWorkspaceRail (normal) modes now — the header
+  // button is the only trigger for this panel in either mode, matching the
+  // rail, which no longer has its own separate Enter Position icon.
+  const entryPanelControlledMode = fullscreenDrawingOnly || groupedWorkspaceRail;
   useEffect(() => {
-    if (!fullscreenDrawingOnly) {
+    if (!entryPanelControlledMode) {
       if (wasFullscreenDrawingOnlyRef.current) {
         setActiveGroup((current) => current === 'backtest' ? null : current);
         setShowOrderDraft(false);
@@ -2153,7 +2159,7 @@ export default function ReplayPanel({
       setTpSlEnabled(false);
       onBacktestOrderDraftChange?.(null);
     }
-  }, [fullscreenDrawingOnly, fullscreenEntryPanelOpen, onBacktestOrderDraftChange]);
+  }, [entryPanelControlledMode, fullscreenEntryPanelOpen, onBacktestOrderDraftChange]);
 
   const handleToolChange = (nextTool) => {
     onToolChange((currentTool) => (currentTool === nextTool ? null : nextTool));
@@ -2525,17 +2531,6 @@ export default function ReplayPanel({
               chartTheme={chartTheme}
             />
           </>
-        )}
-        {groupedWorkspaceRail && (
-          <div className="flex w-12 items-center justify-center">
-            <RailButton
-              icon={Wallet}
-              active={activeGroup === 'backtest'}
-              title="Enter Position"
-              onClick={() => toggleGroup('backtest')}
-              chartTheme={chartTheme}
-            />
-          </div>
         )}
         <div className={`flex items-center ${(fullscreenDrawingOnly || groupedWorkspaceRail) ? 'w-12 justify-center' : ''}`}>
           <RailButton

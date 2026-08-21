@@ -135,11 +135,13 @@ export const WatchlistProvider = ({ children, userId }) => {
 
     // Deletes the saved market symbol itself (DELETE /market-symbols/{id}) —
     // not just membership in one watchlist. Prunes it from every watchlist's
-    // items too, so nothing points at a symbol that no longer exists.
-    // MarketChart.jsx's own trash-can button does the same delete against its
-    // own separate `symbols` state (see the known dual-source-of-truth note
-    // in docs/developer/trading-chart.md); this dispatches the same
-    // `backtradelab-symbols-changed` event so at least TraderNavbar.jsx stays in sync.
+    // items too, so nothing points at a symbol that no longer exists. This is
+    // now the only place a saved symbol gets deleted from (ChartHeader.jsx's
+    // own duplicate trash-can button was removed as redundant); it dispatches
+    // `backtradelab-symbols-changed` so at least TraderNavbar.jsx stays in
+    // sync (see the known dual-source-of-truth note in
+    // docs/developer/trading-chart.md — MarketChart.jsx's own local `symbols`
+    // state still doesn't hear this event).
     const deleteSavedSymbol = async (item) => {
         const key = watchlistMarketKey(item.exchange ?? 'bybit', item.category ?? 'spot', item.symbol);
         await axios.delete(`/market-symbols/${item.id}`, { headers: { Accept: 'application/json' } });

@@ -20,6 +20,8 @@ Backtesting maintains a simulated account, named sessions, pending/open/closed p
 
 1. `GET /market-backtest/account` returns the authenticated user's active simulated account.
 2. A session groups positions/trades for a replay exercise.
+
+`MarketChart.jsx`'s auto-load effect (`useEffect(() => { loadBacktestAccount(); }, [loadBacktestAccount])`, keyed off `[exchange, marketCategory, symbol, timeframe]`) can fire twice within milliseconds on initial mount — those four values can each settle via separate, near-simultaneous state updates while saved-symbol restoration resolves, giving the `useCallback` two distinct identities that land on the same final param tuple. A `lastAutoBacktestAccountKeyRef` dedupes back-to-back identical auto-reloads (skips the fetch if the joined `symbol|exchange|category|timeframe` key matches the last auto-fired one); it never applies to the explicit `loadBacktestAccount(executionPrice)` call after an order fills (that path always passes a non-null `price`, which bypasses the dedupe key entirely), and any genuine param change still always refetches.
 3. Position submission sends market identity, side, order type, quantity/risk, entry, leverage, stop loss, and take profit as applicable.
 4. The controller validates access and uses database transactions/locking for balance and position mutations.
 5. Pending orders trigger when replay price reaches their condition.

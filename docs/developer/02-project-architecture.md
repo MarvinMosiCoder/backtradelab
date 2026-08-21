@@ -11,13 +11,15 @@ Browser -> Laravel route -> middleware -> controller/closure
         -> React page uses shared layout and calls JSON endpoints as needed
 ```
 
-`resources/js/app.jsx` applies the authenticated layout to all pages except `Auth/*` and `Public/*`:
+`resources/js/app.jsx` applies the authenticated layout to all pages except `Auth/*` and `Public/*`. `page.default.layout` must always be a function — never `undefined` for the bare pages — because Inertia's persistent app wrapper calls `Component.layout(page)` inline as part of its own render on every navigation; if `layout` were `undefined` for some pages and a hook-calling function for others, that shared wrapper would call a different number of hooks depending on which page is current and trip React's rules-of-hooks (this was a real bug — a hooks-order console warning firing on every Auth→app navigation — fixed by always providing the function and branching after the hook call instead of before it):
 
 ```jsx
-page.default.layout =
-    name.startsWith("Auth/") || name.startsWith("Public/")
-        ? undefined
-        : pageComponent => <ThemeProvider><Layout>{pageComponent}</Layout></ThemeProvider>;
+const isBareLayout = name.startsWith("Auth/") || name.startsWith("Public/");
+page.default.layout = pageComponent => {
+    const { auth } = useAuth();
+    if (isBareLayout) return pageComponent;
+    return <ThemeProvider><Layout>{pageComponent}</Layout></ThemeProvider>;
+};
 ```
 
 The real implementation also reads auth/session theme data and nests `AuthProvider`, `SidebarProvider`, `AppInitializer`, and `CookieNotice`.

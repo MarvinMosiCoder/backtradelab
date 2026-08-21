@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { createPortal } from 'react-dom';
 import { marketCategoryLabel } from '../../../utils/marketLabels';
-import { Bell, CandlestickChart, Check, ChevronDown, CircleHelp, Info, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Star, Trash2, X } from 'lucide-react';
+import { Bell, CandlestickChart, Check, ChevronDown, CircleHelp, Info, LoaderCircle, Menu, Play, Search, SlidersHorizontal, Star, X } from 'lucide-react';
 import { TIMEFRAMES } from './constants';
 import { formatPrice } from './utils';
 import { useWatchlist } from '../../../Context/WatchlistContext';
@@ -100,7 +100,7 @@ function MarketCategoryTabs({ marketCategory, onCategoryChange, showFavoritesOnl
   );
 }
 
-export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isRemovingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, timeframeFavorites = DEFAULT_TIMEFRAME_FAVORITES, onTimeframeFavoritesChange = () => {}, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onRemoveSymbol, onTimeframeChange, onToggleReplayMode, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
+export default function ChartHeader({ symbol, exchange, marketCategory, symbols, availableSymbols, isSavingSymbol, isLoadingAvailableSymbols, symbolError, timeframe, timeframeOptions = TIMEFRAMES, timeframeFavorites = DEFAULT_TIMEFRAME_FAVORITES, onTimeframeFavoritesChange = () => {}, replayMode, replayAccessStatus = 'idle', liveConnectionStatus = 'polling', currentPrice, selectedReplayPrice, indicators, onSymbolChange, onCategoryChange, onAddSymbol, onTimeframeChange, onToggleReplayMode, onIndicatorsChange, onOpenIndicatorSettings, onCreatePriceAlert, chartTheme, compact = false, className = '' }) {
   const { watchlists = {}, activeWatchlist: activeWatchlistName = null, addSymbolToWatchlist: onAddToWatchlist = null } = useWatchlist() ?? {};
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
@@ -140,7 +140,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
     exchange: exchange ?? 'bybit',
     category: marketCategory ?? 'spot',
   };
-  const currentSavedSymbol = symbols.find((item) => buildSymbolKey(item) === buildSymbolKey(currentSymbolOption));
   const symbolOptions = categorySymbols.some((item) => buildSymbolKey(item) === buildSymbolKey(currentSymbolOption)) ? categorySymbols : [currentSymbolOption, ...categorySymbols];
   const savedSymbolSet = new Set(symbols.map((item) => buildSymbolKey(item)));
   const activeIndicatorCount = ['volume', 'sma', 'ema', 'rsi', 'macd'].filter((key) => indicators[key]).length;
@@ -356,12 +355,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
             )}
           </div>
 
-          {currentSavedSymbol && (
-            <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-8 w-8 items-center justify-center rounded-md text-red-400 hover:bg-red-500/10 disabled:opacity-40" aria-label="Remove saved symbol">
-              <Trash2 size={14} />
-            </button>
-          )}
-
           <div data-tour="timeframe">
             <TimeframeSelector
               timeframe={timeframe}
@@ -443,11 +436,6 @@ export default function ChartHeader({ symbol, exchange, marketCategory, symbols,
               </span>
               <ChevronDown size={14} className="shrink-0" />
             </button>
-            {currentSavedSymbol && (
-              <button type="button" onClick={() => onRemoveSymbol(currentSavedSymbol)} disabled={isRemovingSymbol} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-500/25 text-red-400 transition-colors hover:border-red-500/50 hover:bg-red-500/10 disabled:opacity-40" aria-label={`Remove ${currentSavedSymbol.symbol}`}>
-                <Trash2 size={14} />
-              </button>
-            )}
           </div>
           {isAddOpen && symbolPickerTooltip.panelPos && typeof document !== 'undefined' && createPortal(
             <div className={`fixed z-[10021] w-[28rem] max-w-[calc(100vw-1rem)] overflow-hidden rounded-md border shadow-xl ${isDark ? 'border-gray-700 bg-black-table-color' : 'border-gray-200 bg-white'}`} style={{ top: symbolPickerTooltip.panelPos.top, left: symbolPickerTooltip.panelPos.left }}>

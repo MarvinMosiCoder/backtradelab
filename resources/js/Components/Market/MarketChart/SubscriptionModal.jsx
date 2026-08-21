@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Check, ChevronRight, Crown, ExternalLink, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { Check, ChevronRight, Crown, ExternalLink, Lock, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { useTheme } from '../../../Context/ThemeContext';
 import { useToast } from '../../../Context/ToastContext';
 
@@ -89,7 +89,7 @@ export default function SubscriptionModal({ onClose, onTrialActivated }) {
         {status && <div className="mt-2.5 rounded-lg bg-red-500/10 p-2 text-xs text-red-500">{status}</div>}
         {!readOnly && <div className="mt-2.5 flex flex-col gap-2 rounded-xl border p-3 text-xs text-[#787b86] sm:flex-row sm:items-center">
           <div className="min-w-0 flex-1">{weeklyTrialEligible ? <><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Free, one-time trial</div><p className="mt-0.5 truncate">No payment required for your first 7 days.</p></> : <><div className="flex items-center gap-2 font-bold text-current"><ShieldCheck size={15}/>Secure checkout</div><p className="mt-0.5 truncate">Methods: <span className="capitalize">{checkout.payment_methods?.join(' · ') || 'None'}</span></p></>}</div>
-          <button disabled={weeklyTrialEligible ? saving : (!selected?.price || !checkout.enabled || saving)} onClick={weeklyTrialEligible ? activateTrial : startCheckout} className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-4 font-bold text-white disabled:opacity-50">{weeklyTrialEligible ? (saving ? 'Activating…' : 'Activate free trial') : (saving ? 'Opening checkout…' : `Continue with ${selected?.name ?? 'plan'}`)}{!weeklyTrialEligible && <ExternalLink size={14}/>}</button>
+          <button disabled={weeklyTrialEligible ? saving : (!selected?.price || !checkout.enabled || saving)} onClick={weeklyTrialEligible ? activateTrial : startCheckout} className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#2962ff] px-4 font-bold text-white disabled:opacity-50">{!weeklyTrialEligible && <Lock size={13}/>}{weeklyTrialEligible ? (saving ? 'Activating…' : 'Activate free trial') : (saving ? 'Opening secure checkout…' : `Continue securely with ${selected?.name ?? 'plan'}`)}{!weeklyTrialEligible && <ExternalLink size={14}/>}</button>
         </div>}
       </div>
     </section>

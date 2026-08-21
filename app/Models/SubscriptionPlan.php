@@ -5,7 +5,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class SubscriptionPlan extends Model
 {
-    protected $guarded = [];
+    // Explicit allowlist, not `$guarded = []` — see the same note on SubscriptionRequest.
+    // Only reached today via the superadmin-gated, validated updatePlans() endpoint.
+    protected $fillable = [
+        'code', 'name', 'duration_days', 'price', 'currency', 'description',
+        'features', 'is_featured', 'is_active', 'sort_order',
+    ];
     protected $casts = [
         'price' => 'decimal:2',
         'features' => 'array',

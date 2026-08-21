@@ -35,7 +35,14 @@ class RouteServiceProvider extends ServiceProvider
 
         RateLimiter::for('market-klines', function (Request $request) {
             $fresh = $request->boolean('fresh');
-            $limit = $fresh ? 30 : 10;
+            // 'history' (symbol/timeframe/category switches, entering Replay) was
+            // 10/min — tight enough that scanning a normal-sized watchlist within
+            // a minute routinely tripped it. Raised to match the 'fresh' live-tick
+            // ceiling: actual abuse protection against hammering exchange APIs
+            // lives one layer down in ExchangeMarketDataGateway (per-exchange
+            // budgets, cooldowns, 429/418 backoff), so this per-user limiter no
+            // longer needs to be the tightest layer.
+            $limit = 30;
             $identity = optional($request->user())->id ?: $request->ip();
             return Limit::perMinute($limit)->by($identity.($fresh ? ':fresh' : ':history'));
         });

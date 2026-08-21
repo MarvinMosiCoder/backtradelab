@@ -596,6 +596,43 @@ function formatPriceScaleValue(value, compact = false) {
   });
 }
 
+// lightweight-charts' built-in `priceFormat: { type: 'volume' }` does not
+// abbreviate large values (a 7-8 digit volume renders as literal digits),
+// and the right price scale's width is shared across every pane — an
+// unabbreviated volume axis can end up wider than the price axis and become
+// the actual bottleneck driving how wide the whole gutter is.
+function formatCompactVolume(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+
+  const sign = number < 0 ? '-' : '';
+  const absolute = Math.abs(number);
+  const tiers = [
+    [1_000_000_000, 'B'],
+    [1_000_000, 'M'],
+    [1_000, 'K'],
+  ];
+  const tierIndex = tiers.findIndex(([threshold]) => absolute >= threshold);
+  if (tierIndex === -1) return `${sign}${absolute.toFixed(0)}`;
+
+  let [threshold, suffix] = tiers[tierIndex];
+  let scaled = absolute / threshold;
+  let digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+  let rounded = Number(scaled.toFixed(digits));
+
+  // Rounding can cross into the next tier up (e.g. 999.6K would otherwise
+  // print as "1000K" instead of "1M").
+  if (rounded >= 1000 && tierIndex > 0) {
+    [threshold, suffix] = tiers[tierIndex - 1];
+    scaled = rounded / 1000;
+    digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+    rounded = Number(scaled.toFixed(digits));
+  }
+
+  const text = rounded.toFixed(digits).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+  return `${sign}${text}${suffix}`;
+}
+
 function formatOverlayPnl(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return null;
@@ -966,7 +1003,6 @@ export default function MarketReplayChart({
   const [availableSymbols, setAvailableSymbols] = useState([]);
   const [symbolError, setSymbolError] = useState('');
   const [isSavingSymbol, setIsSavingSymbol] = useState(false);
-  const [isRemovingSymbol, setIsRemovingSymbol] = useState(false);
   const [isLoadingAvailableSymbols, setIsLoadingAvailableSymbols] = useState(false);
   const [timeframe, setTimeframe] = useState(initialTimeframe);
   const timeframeOptions = useMemo(() => supportedTimeframes(exchange), [exchange]);
@@ -1631,7 +1667,20 @@ export default function MarketReplayChart({
     }
   }, [exchange, marketCategory, symbol]);
 
+  const lastAutoBacktestAccountKeyRef = useRef(null);
+
   const loadBacktestAccount = useCallback(async (price = null) => {
+    // symbol/exchange/marketCategory/timeframe can each settle via separate,
+    // near-simultaneous state updates while saved-symbol restoration resolves
+    // on mount, giving this useCallback two distinct identities within
+    // milliseconds even though both land on the same final param tuple — the
+    // effect below then fires this fetch twice back to back. Only dedupe the
+    // parameterless auto-reload path; an explicit price refresh (after an
+    // order fills) must always go through.
+    const autoKey = price === null ? `${symbol}|${exchange}|${marketCategory}|${timeframe}` : null;
+    if (autoKey && lastAutoBacktestAccountKeyRef.current === autoKey) return;
+    if (autoKey) lastAutoBacktestAccountKeyRef.current = autoKey;
+
     setIsBacktestLoading(true);
     setBacktestError('');
     const accountPrice = Number(price);
@@ -3059,13 +3108,13 @@ export default function MarketReplayChart({
       priceFormat: {
         type: 'custom',
         minMove: 0.00000001,
-        formatter: formatPriceScaleValue,
+        formatter: (value) => formatPriceScaleValue(value, isNarrowChartRef.current),
       },
       autoscaleInfoProvider: selectedPriceAutoscaleInfoProvider,
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: 'volume' },
+      priceFormat: { type: 'custom', minMove: 1, formatter: formatCompactVolume },
       lastValueVisible: false,
       priceLineVisible: false,
     }, 1);
@@ -3811,7 +3860,7 @@ export default function MarketReplayChart({
         type: 'custom',
         minMove: 0.00000001,
         formatter: chartDisplay.scales.precision === 'default'
-          ? formatPriceScaleValue
+          ? (value) => formatPriceScaleValue(value, isNarrowChartRef.current)
           : (value) => Number(value).toFixed(Number(chartDisplay.scales.precision)),
       },
     });
@@ -4938,9 +4987,18 @@ export default function MarketReplayChart({
         && restoredReplayProgressKeyRef.current !== replayProgressKey
         && Number.isFinite(Number(savedReplayProgress?.replay_time));
       const wasInReplay = replayMode || shouldRestoreSavedReplay;
+      // selectedReplayPriceRef holds a raw price level, not a proportional
+      // position — reusing it across a symbol change (rather than just a
+      // timeframe change on the same symbol) plots a stale price from the
+      // old symbol as the new chart's "Replay" line (e.g. a BTC-range price
+      // rendered on an ETH chart), which forces the price scale to stretch
+      // to fit both and squashes the real candles into a sliver. Only trust
+      // it when isTimeframeTransition confirms the symbol/exchange/category
+      // didn't change; otherwise fall through to the nearest-candle-close
+      // fallback below, which is meaningful for whatever symbol is now active.
       const previousSelectedReplayPrice = shouldRestoreSavedReplay
         ? savedReplayProgress?.selected_price
-        : selectedReplayPriceRef.current;
+        : (isTimeframeTransition ? selectedReplayPriceRef.current : null);
       const previousReplayTime = shouldRestoreSavedReplay
         ? Number(savedReplayProgress.replay_time)
         : (replayMode ? allCandles[replayIndex]?.time : null);
@@ -5005,7 +5063,15 @@ export default function MarketReplayChart({
           const response = await fetch(`/api/klines?${requestParams.toString()}`, fetchOptions);
 
           if (response.status === 429 && attempt === 0) {
-            const retryAfterSeconds = Number(response.headers.get('Retry-After')) || 3;
+            // Retry-After reports the full remaining window of a per-minute
+            // limiter (up to ~60s) — waiting that long blocks the chart with a
+            // silent spinner and usually loses the race to the 30s failsafe
+            // below anyway, which then shows a generic "taking too long"
+            // message instead of the accurate rate-limit one from the catch
+            // block. Cap the wait short: a real reset within a few seconds
+            // still gets one retry, otherwise fail fast so the honest message
+            // reaches the user in seconds, not up to a minute.
+            const retryAfterSeconds = Math.min(Number(response.headers.get('Retry-After')) || 3, 3);
             await new Promise((resolve) => setTimeout(resolve, retryAfterSeconds * 1000));
             return fetchCandles(requestParams, signal, attempt + 1);
           }
@@ -5956,39 +6022,6 @@ export default function MarketReplayChart({
     }
   };
 
-  const handleRemoveSymbol = async (marketSymbol) => {
-    if (!marketSymbol?.id || isRemovingSymbol) return;
-    if (!(await confirm(`Remove ${marketSymbol.symbol} from your saved symbols? Your chart drawings are not deleted.`, { title: 'Remove saved symbol?', confirmLabel: 'Remove' }))) return;
-
-    setIsRemovingSymbol(true);
-    setSymbolError('');
-    try {
-      await axios.delete(`/market-symbols/${marketSymbol.id}`, {
-        headers: { Accept: 'application/json' },
-      });
-
-      const nextSymbols = symbols.filter((item) => item.id !== marketSymbol.id);
-      setSymbols(nextSymbols);
-      window.dispatchEvent(new CustomEvent('backtradelab-symbols-changed', { detail: nextSymbols }));
-
-      const removedActive = marketSymbol.symbol === symbol
-        && (marketSymbol.exchange ?? 'bybit') === exchange
-        && (marketSymbol.category ?? 'spot') === marketCategory;
-      if (removedActive) {
-        const fallback = nextSymbols.find((item) => (item.category ?? 'spot') === marketCategory)
-          ?? nextSymbols[0]
-          ?? { symbol: 'BTCUSDT', exchange: marketCategory === 'linear' ? 'bingx' : 'bybit', category: marketCategory };
-        setSymbol(fallback.symbol);
-        setExchange(fallback.exchange ?? 'bybit');
-        setMarketCategory(fallback.category ?? 'spot');
-      }
-    } catch (err) {
-      setSymbolError(err.response?.data?.message ?? err.message ?? 'Failed to remove symbol');
-    } finally {
-      setIsRemovingSymbol(false);
-    }
-  };
-
   const captureBacktestSnapshot = async () => {
     try {
       return await captureChartSnapshot(wrapperRef.current, chartTheme.background);
@@ -6551,7 +6584,6 @@ export default function MarketReplayChart({
     symbols,
     availableSymbols,
     isSavingSymbol,
-    isRemovingSymbol,
     isLoadingAvailableSymbols,
     symbolError,
     timeframe,
@@ -6566,7 +6598,6 @@ export default function MarketReplayChart({
     onSymbolChange: handleSymbolChange,
     onCategoryChange: setMarketCategory,
     onAddSymbol: handleAddSymbol,
-    onRemoveSymbol: handleRemoveSymbol,
     onTimeframeChange: handleTimeframeChange,
     onTimeframeFavoritesChange: handleTimeframeFavoritesChange,
     onToggleReplayMode: toggleReplayMode,
@@ -6744,7 +6775,6 @@ export default function MarketReplayChart({
         isEntryPanelOpen={isFullscreenEntryPanelOpen}
         onEntryPanelOpenChange={setIsFullscreenEntryPanelOpen}
         showAppName={isFullscreen}
-        showEntryWallet={isFullscreen}
         onToggleFullscreen={() => {
           if (isFullscreen) {
             setIsFullscreenEntryPanelOpen(false);

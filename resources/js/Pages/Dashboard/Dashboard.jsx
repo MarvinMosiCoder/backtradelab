@@ -2,9 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Head, Link, usePage } from "@inertiajs/react";
 import MarketChart from "../../Components/Market/MarketChart";
 import TradeInsightsWidget from "../../Components/Market/TradeInsightsWidget";
-import WatchlistPanel from "../../Components/Market/WatchlistPanel";
 import { useTheme } from "../../Context/ThemeContext";
-import { WatchlistProvider, watchlistMarketKey } from "../../Context/WatchlistContext";
+import { WatchlistProvider } from "../../Context/WatchlistContext";
 import { Activity, AlertCircle, ArrowRight, CircleDollarSign, Clock3, CreditCard, Inbox, MessageSquareText, UserCheck, UserMinus, Users } from 'lucide-react';
 
 const Dashboard = ({ userMetrics = {}, subscriptionMetrics = {}, feedbackMetrics = {}, recentSubscriptions = [], recentFeedback = [], workspaceMode = false }) => {
@@ -32,7 +31,6 @@ const Dashboard = ({ userMetrics = {}, subscriptionMetrics = {}, feedbackMetrics
         return `${activeSymbol.exchange ?? "bingx"}:${activeSymbol.category ?? "linear"}:${activeSymbol.symbol}`;
     }, [activeSymbol]);
     const [chartTourCompleted, setChartTourCompleted] = useState(Boolean(auth?.user?.chart_tour_completed_at));
-    const activeSymbolKey = activeSymbol?.symbol ? watchlistMarketKey(activeSymbol.exchange ?? 'bybit', activeSymbol.category ?? 'spot', activeSymbol.symbol) : null;
 
     useEffect(() => {
         if (activeSymbol?.symbol) localStorage.setItem(`backtradelab-active-symbol:${auth?.user?.id ?? 'guest'}`, JSON.stringify(activeSymbol));
@@ -74,7 +72,6 @@ const Dashboard = ({ userMetrics = {}, subscriptionMetrics = {}, feedbackMetrics
                             </div>
                         </div>
                         <TradeInsightsWidget />
-                        <WatchlistPanel activeSymbolKey={activeSymbolKey} onSelectSymbol={(market) => setActiveSymbol(market)} />
                         <div className={`overflow-hidden rounded-lg border p-2 shadow-2xl shadow-black/20 sm:p-3 ${isDark ? 'border-[#2a2e39] bg-[#131722]' : 'border-slate-200 bg-white'}`}>
                             <MarketChart
                                 key={chartKey}

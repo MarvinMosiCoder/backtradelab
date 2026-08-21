@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\ProcessPayMongoWebhookEvent;
 use App\Models\PayMongoWebhookEvent;
 use App\Services\Payments\PayMongoSignatureVerifier;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -36,16 +37,23 @@ class PayMongoWebhookController extends Controller
             return response()->json(['message' => 'PayMongo event payload is incomplete.'], 422);
         }
 
-        $event = PayMongoWebhookEvent::firstOrCreate(
-            ['provider_event_id' => $eventId],
-            [
-                'event_type' => $eventType,
-                'livemode' => $livemode,
-                'resource_id' => $resource['id'] ?? null,
-                'resource' => $resource,
-                'status' => 'received',
-            ]
-        );
+        try {
+            $event = PayMongoWebhookEvent::firstOrCreate(
+                ['provider_event_id' => $eventId],
+                [
+                    'event_type' => $eventType,
+                    'livemode' => $livemode,
+                    'resource_id' => $resource['id'] ?? null,
+                    'resource' => $resource,
+                    'status' => 'received',
+                ]
+            );
+        } catch (UniqueConstraintViolationException) {
+            // Two near-simultaneous deliveries of the same event id raced past the
+            // firstOrCreate() read; the DB-level unique index on provider_event_id
+            // let only one insert through. The other row already exists — use it.
+            $event = PayMongoWebhookEvent::where('provider_event_id', $eventId)->firstOrFail();
+        }
 
         if (!$event->wasRecentlyCreated && in_array($event->status, ['processed', 'ignored', 'unhandled'], true)) {
             return response()->json(['received' => true, 'duplicate' => true]);

@@ -31,19 +31,24 @@ getAppName().then(appName => {
         progress: false,
         resolve: name =>
             resolvePageComponent(`./Pages/${name}.jsx`, import.meta.glob("./Pages/**/*.jsx")).then(page => {
-                page.default.layout =
-                    name.startsWith("Auth/") || name.startsWith("Public/")
-                        ? undefined
-                        : pageComponent => {
-                            const {auth} = useAuth();
-                            const theme_color =  auth?.sessions?.dark_theme ?? auth?.sessions?.theme_color;
-                            const profile = auth?.sessions?.profile;
-                            return (
-                                <ThemeProvider themeColor={theme_color} profileData={profile}>
-                                    <Layout>{pageComponent}</Layout>
-                                </ThemeProvider>
-                            );
-                        };
+                // `layout` must always be a function, never `undefined` — Inertia's
+                // persistent App wrapper calls Component.layout(page) inline as part
+                // of its own render, so a hook called only on some pages' layout
+                // (useAuth below) changes that shared component's hook count across
+                // navigations and trips React's rules-of-hooks. Branch after the hook,
+                // not by omitting the function.
+                const isBareLayout = name.startsWith("Auth/") || name.startsWith("Public/");
+                page.default.layout = pageComponent => {
+                    const {auth} = useAuth();
+                    if (isBareLayout) return pageComponent;
+                    const theme_color = auth?.sessions?.dark_theme ?? auth?.sessions?.theme_color;
+                    const profile = auth?.sessions?.profile;
+                    return (
+                        <ThemeProvider themeColor={theme_color} profileData={profile}>
+                            <Layout>{pageComponent}</Layout>
+                        </ThemeProvider>
+                    );
+                };
 
                 return page;
             }),

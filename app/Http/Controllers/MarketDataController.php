@@ -95,8 +95,17 @@ class MarketDataController extends Controller
             $errors = [];
             $exchanges = $requestedExchange ? [$requestedExchange] : self::EXCHANGES;
 
+            // A single requested exchange still goes through get() directly (no
+            // benefit to pooling one request); the "all exchanges" case (the
+            // picker's default) used to await each exchange's HTTP call one at a
+            // time — OKX alone measured ~12s, so a cold cache paid that on top
+            // of four more sequential round-trips. Fetched via pool() instead.
+            $perExchange = count($exchanges) > 1
+                ? $this->fetchAvailableSymbolsForExchanges($exchanges, $category)
+                : [$exchanges[0] => $this->fetchAvailableSymbolsForExchange($exchanges[0], $category)];
+
             foreach ($exchanges as $exchange) {
-                $result = $this->fetchAvailableSymbolsForExchange($exchange, $category);
+                $result = $perExchange[$exchange];
 
                 foreach ($result['symbols'] as $item) {
                     $symbols[$item['exchange'] . ':' . $item['symbol']] = $item;
@@ -511,53 +520,108 @@ class MarketDataController extends Controller
         }
     }
 
+    /** @return array{url: string, query: array} */
+    private function symbolsRequestSpec(string $exchange, string $category): array
+    {
+        return match ($exchange) {
+            'binance' => [
+                'url' => $category === 'spot'
+                    ? 'https://api.binance.com/api/v3/exchangeInfo'
+                    : 'https://fapi.binance.com/fapi/v1/exchangeInfo',
+                'query' => [],
+            ],
+            'okx' => [
+                'url' => 'https://www.okx.com/api/v5/public/instruments',
+                'query' => ['instType' => $category === 'spot' ? 'SPOT' : 'SWAP'],
+            ],
+            'bingx' => [
+                'url' => $category === 'spot'
+                    ? 'https://open-api.bingx.com/openApi/spot/v1/common/symbols'
+                    : 'https://open-api.bingx.com/openApi/swap/v2/quote/contracts',
+                'query' => [],
+            ],
+            'mexc' => [
+                'url' => $category === 'spot'
+                    ? 'https://api.mexc.com/api/v3/exchangeInfo'
+                    : 'https://contract.mexc.com/api/v1/contract/detail',
+                'query' => [],
+            ],
+            default => [
+                'url' => 'https://api.bybit.com/v5/market/instruments-info',
+                'query' => ['category' => $category, ...($category !== 'spot' ? ['limit' => 1000] : [])],
+            ],
+        };
+    }
+
+    private function processSymbolsResponse(string $exchange, string $category, ?Response $response): array
+    {
+        if (!$response) {
+            return ['symbols' => [], 'error' => 'No data available (rate-limited or upstream failure).'];
+        }
+
+        if (!$response->successful()) {
+            return ['symbols' => [], 'error' => 'HTTP ' . $response->status()];
+        }
+
+        $json = $response->json();
+
+        return [
+            'symbols' => $this->normalizeAvailableSymbols($exchange, $category, is_array($json) ? $json : []),
+            'error' => null,
+        ];
+    }
+
     private function fetchAvailableSymbolsForExchange(string $exchange, string $category): array
     {
         try {
-            $response = match ($exchange) {
-                'binance' => $this->marketGateway->get($exchange, 'symbols',
-                    $category === 'spot'
-                        ? 'https://api.binance.com/api/v3/exchangeInfo'
-                        : 'https://fapi.binance.com/fapi/v1/exchangeInfo', [], 30
-                ),
-                'okx' => $this->marketGateway->get($exchange, 'symbols', 'https://www.okx.com/api/v5/public/instruments', [
-                    'instType' => $category === 'spot' ? 'SPOT' : 'SWAP',
-                ], 30),
-                'bingx' => $this->marketGateway->get($exchange, 'symbols',
-                    $category === 'spot'
-                        ? 'https://open-api.bingx.com/openApi/spot/v1/common/symbols'
-                        : 'https://open-api.bingx.com/openApi/swap/v2/quote/contracts', [], 30
-                ),
-                'mexc' => $this->marketGateway->get($exchange, 'symbols',
-                    $category === 'spot'
-                        ? 'https://api.mexc.com/api/v3/exchangeInfo'
-                        : 'https://contract.mexc.com/api/v1/contract/detail', [], 30
-                ),
-                default => $this->marketGateway->get($exchange, 'symbols', 'https://api.bybit.com/v5/market/instruments-info', [
-                    'category' => $category,
-                    ...($category !== 'spot' ? ['limit' => 1000] : []),
-                ], 30),
-            };
+            $spec = $this->symbolsRequestSpec($exchange, $category);
+            $response = $this->marketGateway->get($exchange, 'symbols', $spec['url'], $spec['query'], 30);
 
-            if (!$response->successful()) {
-                return [
-                    'symbols' => [],
-                    'error' => 'HTTP ' . $response->status(),
-                ];
-            }
-
-            $json = $response->json();
-
-            return [
-                'symbols' => $this->normalizeAvailableSymbols($exchange, $category, is_array($json) ? $json : []),
-                'error' => null,
-            ];
+            return $this->processSymbolsResponse($exchange, $category, $response);
         } catch (\Throwable $e) {
             return [
                 'symbols' => [],
                 'error' => $e->getMessage(),
             ];
         }
+    }
+
+    /**
+     * Same as calling fetchAvailableSymbolsForExchange() once per exchange, but
+     * fires every exchange's HTTP call concurrently via the gateway's pool()
+     * instead of paying each exchange's round-trip one after another — OKX's
+     * public instruments endpoint alone measured ~12s, which used to dominate
+     * a cold-cache "all exchanges" load on top of four more sequential calls.
+     *
+     * @param list<string> $exchanges
+     * @return array<string, array{symbols: array, error: ?string}>
+     */
+    private function fetchAvailableSymbolsForExchanges(array $exchanges, string $category): array
+    {
+        $requests = [];
+        foreach ($exchanges as $exchange) {
+            $spec = $this->symbolsRequestSpec($exchange, $category);
+            $requests[] = [
+                'exchange' => $exchange,
+                'endpoint' => 'symbols',
+                'url' => $spec['url'],
+                'query' => $spec['query'],
+                'cacheSeconds' => 30,
+            ];
+        }
+
+        try {
+            $responses = $this->marketGateway->pool($requests);
+        } catch (\Throwable $e) {
+            return array_fill_keys($exchanges, ['symbols' => [], 'error' => $e->getMessage()]);
+        }
+
+        $results = [];
+        foreach ($exchanges as $index => $exchange) {
+            $results[$exchange] = $this->processSymbolsResponse($exchange, $category, $responses[$index] ?? null);
+        }
+
+        return $results;
     }
 
     private function normalizeAvailableSymbols(string $exchange, string $category, array $json): array

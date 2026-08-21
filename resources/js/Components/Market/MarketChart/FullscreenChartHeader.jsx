@@ -58,37 +58,35 @@ export default function FullscreenChartHeader({
         />
       </div>
 
-      {isFullscreen && (
-        <div className="relative mx-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => setIsWatchlistPanelOpen((current) => !current)}
-            className={`flex h-9 items-center gap-2 rounded-md border px-2 transition ${
-              isWatchlistPanelOpen
-                ? 'border-[#2962ff] bg-[#2962ff] text-white'
-                : isDark
-                  ? 'border-gray-700 bg-black-table-color text-white hover:bg-skin-black-light'
-                  : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
-            }`}
-            title="Watchlists"
-            aria-label="Watchlists"
-            aria-expanded={isWatchlistPanelOpen}
-          >
-            <ListChecks size={15} />
-            <span className="hidden text-[11px] font-semibold lg:inline">Watchlists</span>
-          </button>
-          {isWatchlistPanelOpen && (
-            <div className="absolute right-0 top-11 z-[130]">
-              <WatchlistPanel
-                isFullscreen
-                compact
-                activeSymbolKey={chartHeaderProps?.symbol ? watchlistMarketKey(chartHeaderProps.exchange, chartHeaderProps.marketCategory, chartHeaderProps.symbol) : null}
-                onSelectSymbol={(market) => chartHeaderProps?.onSymbolChange?.(`${market.exchange ?? 'bybit'}:${market.category ?? 'spot'}:${market.symbol}`)}
-              />
-            </div>
-          )}
-        </div>
-      )}
+      <div className="relative mx-1 shrink-0">
+        <button
+          type="button"
+          onClick={() => setIsWatchlistPanelOpen((current) => !current)}
+          className={`flex h-9 items-center gap-2 rounded-md border px-2 transition ${
+            isWatchlistPanelOpen
+              ? 'border-[#2962ff] bg-[#2962ff] text-white'
+              : isDark
+                ? 'border-gray-700 bg-black-table-color text-white hover:bg-skin-black-light'
+                : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100'
+          }`}
+          title="Watchlists"
+          aria-label="Watchlists"
+          aria-expanded={isWatchlistPanelOpen}
+        >
+          <ListChecks size={15} />
+          <span className="hidden text-[11px] font-semibold lg:inline">Watchlists</span>
+        </button>
+        {isWatchlistPanelOpen && (
+          <div className="absolute right-0 top-11 z-[130]">
+            <WatchlistPanel
+              isFullscreen
+              compact
+              activeSymbolKey={chartHeaderProps?.symbol ? watchlistMarketKey(chartHeaderProps.exchange, chartHeaderProps.marketCategory, chartHeaderProps.symbol) : null}
+              onSelectSymbol={(market) => chartHeaderProps?.onSymbolChange?.(`${market.exchange ?? 'bybit'}:${market.category ?? 'spot'}:${market.symbol}`)}
+            />
+          </div>
+        )}
+      </div>
 
       {showEntryWallet && <button
         type="button"
