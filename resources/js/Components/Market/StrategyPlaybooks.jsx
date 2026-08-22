@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from '../../Context/ThemeContext';
 import { useConfirm } from '../../Hooks/useConfirm';
+import { broadcastChange } from '../../utils/crossTabSync';
 import ToggleSwitch from './ToggleSwitch';
 import StatCard from './StatCard';
 
@@ -149,6 +150,7 @@ export default function StrategyPlaybooks() {
       else await axios.post('/market-backtest/playbooks', payload);
       closeModal();
       await load();
+      broadcastChange('backtradelab-playbooks-changed');
     } catch (err) {
       const validation = err.response?.data?.errors;
       setFormError(validation ? Object.values(validation).flat()[0] : (err.response?.data?.message ?? 'Unable to save playbook.'));
@@ -162,6 +164,7 @@ export default function StrategyPlaybooks() {
     await axios.delete(`/market-backtest/playbooks/${playbook.id}`);
     if (editingId === playbook.id) closeModal();
     await load();
+    broadcastChange('backtradelab-playbooks-changed');
   };
 
   const surface = isDark ? 'border-gray-800 bg-skin-black text-white' : 'border-slate-200 bg-white text-slate-900';

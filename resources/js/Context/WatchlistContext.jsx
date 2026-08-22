@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { Trash2, X } from 'lucide-react';
 import { useTheme } from './ThemeContext';
+import { broadcastChange, subscribeToChange } from '../utils/crossTabSync';
 
 const WatchlistContext = createContext();
 
@@ -27,9 +28,15 @@ export const WatchlistProvider = ({ children, userId }) => {
     const [watchlistsHydrated, setWatchlistsHydrated] = useState(false);
     const [watchlistMetadata, setWatchlistMetadata] = useState({});
 
-    useEffect(() => {
+    const refreshSavedSymbols = () => {
         fetch('/market-symbols', { headers: { Accept: 'application/json' } }).then((response) => response.json()).then((data) => setSavedSymbols(data.symbols ?? [])).catch(() => setSavedSymbols([]));
+    };
+
+    useEffect(() => {
+        refreshSavedSymbols();
     }, []);
+
+    useEffect(() => subscribeToChange('backtradelab-symbols-changed', refreshSavedSymbols), []);
 
     useEffect(() => {
         if (!savedSymbols.length) { setSavedSymbolsMetadata({}); return undefined; }
@@ -137,11 +144,11 @@ export const WatchlistProvider = ({ children, userId }) => {
     // not just membership in one watchlist. Prunes it from every watchlist's
     // items too, so nothing points at a symbol that no longer exists. This is
     // now the only place a saved symbol gets deleted from (ChartHeader.jsx's
-    // own duplicate trash-can button was removed as redundant); it dispatches
-    // `backtradelab-symbols-changed` so at least TraderNavbar.jsx stays in
-    // sync (see the known dual-source-of-truth note in
-    // docs/developer/trading-chart.md — MarketChart.jsx's own local `symbols`
-    // state still doesn't hear this event).
+    // own duplicate trash-can button was removed as redundant); it broadcasts
+    // `backtradelab-symbols-changed` (see utils/crossTabSync.js) so
+    // MarketChart.jsx's own local `symbols` state — a separate `/market-symbols`
+    // fetch, see the dual-source-of-truth note in docs/developer/trading-chart.md
+    // — refreshes too, instead of keeping the just-deleted symbol around until reload.
     const deleteSavedSymbol = async (item) => {
         const key = watchlistMarketKey(item.exchange ?? 'bybit', item.category ?? 'spot', item.symbol);
         await axios.delete(`/market-symbols/${item.id}`, { headers: { Accept: 'application/json' } });
@@ -149,7 +156,7 @@ export const WatchlistProvider = ({ children, userId }) => {
         setWatchlists((current) => Object.fromEntries(
             Object.entries(current).map(([name, items]) => [name, items.filter((value) => value !== key)])
         ));
-        window.dispatchEvent(new CustomEvent('backtradelab-symbols-changed', { detail: null }));
+        broadcastChange('backtradelab-symbols-changed');
     };
 
     const openCreateWatchlistModal = () => {

@@ -82,6 +82,10 @@ module.exports = {
                 shimmer: {
                   '100%': { transform: 'translateX(100%)' },
                 },
+                candlePulse: {
+                  '0%, 100%': { transform: 'scaleY(0.55)', opacity: '0.55' },
+                  '50%': { transform: 'scaleY(1)', opacity: '1' },
+                },
               },
               animation: {
                 slideLeft: 'slideLeft 0.5s ease-in-out',
@@ -89,6 +93,7 @@ module.exports = {
                 floatY: 'floatY 6s ease-in-out infinite',
                 fadeInUp: 'fadeInUp 0.7s ease-out both',
                 shimmer: 'shimmer 1.6s infinite',
+                candlePulse: 'candlePulse 1.4s ease-in-out infinite',
             },
             zIndex: {
                 '100': '100',

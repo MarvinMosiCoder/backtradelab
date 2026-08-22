@@ -157,7 +157,7 @@ class MarketBacktestController extends Controller
         $limit = $validated['limit'] ?? 50;
 
         $trades = $account->trades()
-            ->with('position:id,order_type,leverage,stop_loss,take_profit')
+            ->with('position:id,order_type,leverage,stop_loss,take_profit,category')
             ->when($session, fn ($query) => $query->where('market_backtest_session_id', $session->id))
             ->orderByDesc('created_at')
             ->limit($limit)
@@ -177,6 +177,7 @@ class MarketBacktestController extends Controller
             return [
                 'id' => 'trade:' . $trade->id,
                 'symbol' => $trade->symbol,
+                'category' => $position?->category,
                 'side' => $trade->side,
                 'action' => $trade->action,
                 'orderType' => $orderType,
@@ -201,6 +202,7 @@ class MarketBacktestController extends Controller
             return [
                 'id' => 'cancelled:' . $position->id,
                 'symbol' => $position->symbol,
+                'category' => $position->category,
                 'side' => $position->side,
                 'action' => 'open',
                 'orderType' => $position->order_type ?? 'limit',
@@ -492,8 +494,25 @@ class MarketBacktestController extends Controller
                 ], 422));
             }
             $session = $this->resolveSessionForTrade($request, $account, $validated);
+            $category = $validated['category'] ?? 'linear';
+            $isSpot = $category === 'spot';
+
+            if ($isSpot && $validated['side'] === 'short') {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => "Spot positions can't be shorted.",
+                ], 422));
+            }
+
+            if ($isSpot && isset($validated['leverage']) && (float) $validated['leverage'] > 1) {
+                abort(response()->json([
+                    'success' => false,
+                    'message' => 'Spot positions do not support leverage.',
+                ], 422));
+            }
+
             $requestedMargin = round((float) $validated['notional'], 8);
-            $leverage = round((float) ($validated['leverage'] ?? 1), 2);
+            $leverage = $isSpot ? 1.0 : round((float) ($validated['leverage'] ?? 1), 2);
             $price = (float) $validated['price'];
             $stopLoss = isset($validated['stop_loss']) ? (float) $validated['stop_loss'] : null;
             $takeProfit = isset($validated['take_profit']) ? (float) $validated['take_profit'] : null;
@@ -582,6 +601,7 @@ class MarketBacktestController extends Controller
                 'market_backtest_session_id' => $session?->id,
                 'market_backtest_playbook_id' => $playbook?->id,
                 'symbol' => strtoupper($validated['symbol']),
+                'category' => $category,
                 'side' => $validated['side'],
                 'order_type' => $orderType,
                 'quantity' => $sizing['quantity'],
@@ -595,7 +615,7 @@ class MarketBacktestController extends Controller
                 'opened_at_time' => $validated['executed_at_time'] ?? null,
                 'stop_loss' => $stopLoss,
                 'take_profit' => $takeProfit,
-                'liquidation_price' => $this->liquidationPrice($validated['side'], $price, $leverage),
+                'liquidation_price' => $isSpot ? null : $this->liquidationPrice($validated['side'], $price, $leverage),
                 'trailing_stop_percent' => $validated['trailing_stop_percent'] ?? null,
                 'break_even_trigger_percent' => $validated['break_even_trigger_percent'] ?? null,
                 'partial_take_profit_percent' => $validated['partial_take_profit_percent'] ?? null,
@@ -1286,6 +1306,7 @@ class MarketBacktestController extends Controller
                 'id' => $position->id,
                 'sessionId' => $position->market_backtest_session_id,
                 'symbol' => $position->symbol,
+                'category' => $position->category,
                 'side' => $position->side,
                 'status' => $position->status,
                 'quantity' => (float) $position->quantity,
@@ -1317,6 +1338,7 @@ class MarketBacktestController extends Controller
                 'id' => $position->id,
                 'sessionId' => $position->market_backtest_session_id,
                 'symbol' => $position->symbol,
+                'category' => $position->category,
                 'side' => $position->side,
                 'status' => $position->status,
                 'quantity' => (float) $position->quantity,

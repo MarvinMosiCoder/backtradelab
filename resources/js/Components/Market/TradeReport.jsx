@@ -728,7 +728,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                           <td className={`whitespace-nowrap px-3 py-2 font-semibold ${valueTextClass}`}>{trade.symbol}</td>
                           <td className="whitespace-nowrap px-3 py-2">
                             <span className={trade.side === 'long' ? longTextClass : shortTextClass}>
-                              {String(trade.side ?? '').toUpperCase()}
+                              {trade.category === 'spot' ? 'BUY' : String(trade.side ?? '').toUpperCase()}
                             </span>
                           </td>
                           <td className={`whitespace-nowrap px-3 py-2 text-right ${bodyTextClass}`}>{formatMoney(trade.entryPrice)}</td>
@@ -889,7 +889,7 @@ export default function TradeReport({ refreshKey = 0 }) {
                   <h2 id="journal-modal-title" className="text-sm font-bold">Journal · {editingTrade.symbol}</h2>
                   <p className={`mt-0.5 text-xs ${mutedTextClass}`}>
                     <span className={editingTrade.side === 'long' ? longTextClass : shortTextClass}>
-                      {String(editingTrade.side ?? '').toUpperCase()}
+                      {editingTrade.category === 'spot' ? 'BUY' : String(editingTrade.side ?? '').toUpperCase()}
                     </span>
                     {' · '}{formatTradeDate(editingTrade)}
                     {' · '}

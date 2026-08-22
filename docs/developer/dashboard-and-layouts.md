@@ -14,6 +14,7 @@ Authenticated pages share a role-aware shell. Traders receive compact market nav
 | `AppNavbar.jsx`, `AdminNavbar.jsx`, `TraderNavbar.jsx` | Header variants |
 | `AppSidebar.jsx`, `TraderSidebar.jsx`, `AdminSidebar.jsx` | Navigation variants |
 | `AppContent.jsx` | Main content sizing/scrolling |
+| `ContentLoader.jsx` | Per-navigation loading overlay, content area only |
 | `app.jsx` | Public/auth page layout selection |
 
 ## Flow
@@ -72,6 +73,14 @@ The admin header keeps two distinct controls below the large-screen breakpoint: 
 
 `AdminNavbar.jsx`'s notification bell used to be a plain `Link` straight to `/notifications/view-all-notifications`. It now opens an inline dropdown — polling `GET /notifications/feed` every 15s, marking a notification read via `POST /notifications/read` on click, with a "View all notifications" link at the bottom — copied from `TraderNavbar.jsx`'s existing implementation (which polls every 5s and also drives price-alert toasts/sound; the admin version deliberately skips that trading-specific behavior and only keeps the feed/read-marking core). Keep both in sync if the notification dropdown's shape changes.
 
+### Content loader
+
+`ContentLoader.jsx` shows the same candlestick-bar animation as the boot splash (see [Architecture](02-project-architecture.md#boot-splash)) but scoped to every Inertia page navigation, not just the first load. It subscribes to `router.on('start'/'finish')` the same way `AppInitializer.jsx` does for NProgress, and runs alongside it, not instead of it — the thin top bar stays for every navigation, this overlay adds a heavier in-content indicator.
+
+It's mounted once in `layout.jsx`, as a sibling of the sidebar-adjacent content column (`<div className="relative flex min-w-0 w-full flex-col overflow-hidden">`), not nested inside the scrollable inner content div. That placement matters: the scrollable inner div grows to the height of whatever page content is currently mounted, which can exceed the viewport, so an overlay centered inside *that* box could render below the visible scroll position. The outer column is bounded by `h-screen` and never scrolls, so `absolute inset-0` there always matches the visible viewport area beside the sidebar and below the fixed navbar — both of which stay visible and interactive-looking during a navigation.
+
+Shows only after a 150ms delay from `start` (cleared on `finish`) so a fast/cached navigation doesn't flash the backdrop-blur overlay for an instant — only the top bar shows for those. Only renders on pages using `Layout` (i.e. authenticated pages); `Auth/*`/`Public/*` pages never mount it.
+
 ## Legacy admin table components (`Components/Table/*`)
 
 `ContentPanel`, `TopPanel`, `TableContainer`, `Thead`, `Tbody`, `Row`, `RowData`, `TableHeader`, `TableSearch`, `PerPage`, and `Pagination` are the shared primitives behind every legacy CRUD table — Users, Privileges, Announcements, Notifications (admin), Log User Access, Menu Management, Modules, and `TradeReportPage.jsx`. None of their props/behavior changed (sorting, search debounce, per-page selection, Laravel paginator link rendering, loading/empty states) — only internal class names, restyled to the same dark/light palette used everywhere else in this app (`border-[#2a2e39] bg-[#131722]` / `border-slate-200 bg-white`, `#2962ff` accent) instead of the older `border-secondary`/`bg-custom-gray`/`shadow-menus` tokens. `Thead.jsx` previously hardcoded `bg-white` with no theme check at all — a real dark-mode bug (a white sticky header over a dark table) — now fixed alongside the restyle. Since this is shared across ~15 pages, verify a page beyond Privileges/Users (e.g. Announcements or Log User Access) after any further change here. `Components/Table/Buttons/*` and `Filters.jsx`/`FilterFields.jsx` were intentionally left untouched — they take a page-supplied `extendClass` that already encodes page-specific color/padding, so restyling them safely needs auditing each call site first.
@@ -100,5 +109,6 @@ The admin header keeps two distinct controls below the large-screen breakpoint: 
 - Logout performs one request.
 - Market symbol/account widgets refresh after relevant chart actions.
 - Normal (non-fullscreen) workspace: no standalone Watchlist block above the chart; header "Watchlists" dropdown and "Enter Position" panel both open and function identically to fullscreen mode.
+- Content loader overlay covers only the content column (sidebar/navbar stay visible) on a slow navigation, doesn't flash on a fast one, and never appears on `Auth/*`/`Public/*` pages.
 
 Related: [Architecture](02-project-architecture.md), [Trading chart](trading-chart.md).

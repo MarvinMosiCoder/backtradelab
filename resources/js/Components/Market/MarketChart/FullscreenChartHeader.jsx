@@ -32,6 +32,20 @@ export default function FullscreenChartHeader({
     return () => { cancelled = true; };
   }, []);
 
+  // Same pattern as the chart legend's outside-click dismissal
+  // (MarketChart.jsx's isLegendActive effect) and ChartHeader.jsx's
+  // combined version of it: close the Watchlists dropdown on any click
+  // outside its own trigger/panel — chart background included.
+  useEffect(() => {
+    if (!isWatchlistPanelOpen) return undefined;
+    const handleOutsideClick = (event) => {
+      if (event.target?.closest?.('[data-chart-ui="watchlists-panel"]')) return;
+      setIsWatchlistPanelOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isWatchlistPanelOpen]);
+
   return (
     <header
       data-chart-ui="fullscreen-navbar"
@@ -58,7 +72,7 @@ export default function FullscreenChartHeader({
         />
       </div>
 
-      <div className="relative mx-1 shrink-0">
+      <div data-chart-ui="watchlists-panel" className="relative mx-1 shrink-0">
         <button
           type="button"
           onClick={() => setIsWatchlistPanelOpen((current) => !current)}

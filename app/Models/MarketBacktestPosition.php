@@ -11,6 +11,7 @@ class MarketBacktestPosition extends Model
         'market_backtest_session_id',
         'market_backtest_playbook_id',
         'symbol',
+        'category',
         'side',
         'order_type',
         'quantity',

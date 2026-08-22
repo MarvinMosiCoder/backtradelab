@@ -40,6 +40,7 @@ class MarketBacktestReportService
             'id' => $position->id,
             'sessionId' => $position->market_backtest_session_id,
             'symbol' => $position->symbol,
+            'category' => $position->category,
             'side' => $position->side,
             'quantity' => (float) ($position->original_quantity ?? $position->quantity),
             'margin' => $margin,

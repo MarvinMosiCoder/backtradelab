@@ -15,6 +15,7 @@ import {
 } from 'lightweight-charts';
 import { useTheme } from '../../Context/ThemeContext';
 import { useAuth } from '../../Context/AuthContext';
+import { broadcastChange, subscribeToChange } from '../../utils/crossTabSync';
 import { useConfirm } from '../../Hooks/useConfirm';
 import ChartHeader from './MarketChart/ChartHeader';
 import { DEFAULT_TIMEFRAME_FAVORITES } from './MarketChart/TimeframeSelector';
@@ -919,6 +920,9 @@ export default function MarketReplayChart({
   const fetchRequestIdRef = useRef(0);
   const candleCacheRef = useRef(new Map());
   const candleFetchAbortRef = useRef(null);
+  const symbolPersistIdRef = useRef(0);
+  const loadSymbolsRequestIdRef = useRef(0);
+  const justSwitchedSymbolKeyRef = useRef(null);
   const timeframePrefetchCancelRef = useRef(null);
   const isSpacePressedRef = useRef(false);
   const toolRef = useRef(null);
@@ -1562,14 +1566,22 @@ export default function MarketReplayChart({
       delete serverProgress.saved_at;
 
       if (keepalive) {
-        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        // Same self-healing token axios sends automatically elsewhere (see
+        // handleAddSymbol) — this is a raw fetch (axios doesn't support
+        // keepalive), so the XSRF-TOKEN cookie is read and decoded by hand
+        // instead of reading the static <meta> tag, which goes stale for
+        // the rest of the session after any session()->regenerate() (login).
+        const xsrfCookie = document.cookie
+          .split('; ')
+          .find((row) => row.startsWith('XSRF-TOKEN='))
+          ?.split('=')[1];
         fetch('/market-replay-progress', {
           method: 'PUT',
           keepalive: true,
           headers: {
             Accept: 'application/json',
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken ?? '',
+            'X-XSRF-TOKEN': xsrfCookie ? decodeURIComponent(xsrfCookie) : '',
             'X-Requested-With': 'XMLHttpRequest',
           },
           body: JSON.stringify(serverProgress),
@@ -1632,6 +1644,9 @@ export default function MarketReplayChart({
   }, [scheduleOverlayRender]);
 
   const loadMarketSymbols = useCallback(async () => {
+    const requestId = loadSymbolsRequestIdRef.current + 1;
+    loadSymbolsRequestIdRef.current = requestId;
+
     try {
       const response = await fetch('/market-symbols', {
         headers: { Accept: 'application/json' },
@@ -1645,14 +1660,28 @@ export default function MarketReplayChart({
       const nextSymbols = Array.isArray(result.symbols) ? result.symbols : [];
 
       setSymbols(nextSymbols);
+
+      // A newer call (a symbol switch that happened while this one was still
+      // in flight) already resolved the current symbol/exchange — applying
+      // this stale response's fallback correction below would silently snap
+      // the chart back to whatever this older request's closure captured.
+      if (loadSymbolsRequestIdRef.current !== requestId) return;
+
       if (nextSymbols.length) {
+        const currentKey = `${exchange}:${marketCategory}:${symbol}`;
         const currentExists = nextSymbols.some((item) => (
           item.symbol === symbol
           && (item.exchange ?? 'bybit') === exchange
           && (item.category ?? 'spot') === marketCategory
         ));
+        // The active symbol may be one the user just deliberately picked from
+        // the search/watchlist (handleSymbolChange) and hasn't finished saving
+        // yet — or failed to save at all. That's not the "restore landed on a
+        // deleted symbol" case this fallback exists for, so don't snap it back
+        // just because it isn't in the saved list (yet, or ever).
+        const wasDeliberateSwitch = justSwitchedSymbolKeyRef.current === currentKey;
         const fallbackForCategory = nextSymbols.find((item) => (item.category ?? 'spot') === marketCategory);
-        const fallbackSymbol = currentExists
+        const fallbackSymbol = currentExists || wasDeliberateSwitch
           ? null
           : fallbackForCategory;
 
@@ -1663,6 +1692,7 @@ export default function MarketReplayChart({
       }
       setSymbolError('');
     } catch (err) {
+      if (loadSymbolsRequestIdRef.current !== requestId) return;
       setSymbolError(err.message || 'Failed to load symbols');
     }
   }, [exchange, marketCategory, symbol]);
@@ -1712,6 +1742,8 @@ export default function MarketReplayChart({
   useEffect(() => {
     loadMarketSymbols();
   }, [loadMarketSymbols]);
+
+  useEffect(() => subscribeToChange('backtradelab-symbols-changed', () => loadMarketSymbols()), [loadMarketSymbols]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2571,7 +2603,7 @@ export default function MarketReplayChart({
       if (y == null) return null;
 
       const kindLabel = kind === 'entry' ? (position.status === 'pending' ? 'ENTRY' : 'OPEN') : kind.toUpperCase();
-      const sideLabel = position.side === 'short' ? 'SHORT' : 'LONG';
+      const sideLabel = position.category === 'spot' ? 'BUY' : (position.side === 'short' ? 'SHORT' : 'LONG');
 
       let pnlText = null;
       let pnlPositive = null;
@@ -2643,7 +2675,7 @@ export default function MarketReplayChart({
                 canCancel: true,
                 cancelDraft: true,
                 dashed: true,
-                label: `${backtestOrderDraft.side === 'short' ? 'SHORT' : 'LONG'} ${backtestOrderDraft.isPendingOrder ? 'ORDER' : 'ENTRY'} ${formatOverlayPrice(draftEntryPrice)}`,
+                label: `${marketCategory === 'spot' ? 'BUY' : (backtestOrderDraft.side === 'short' ? 'SHORT' : 'LONG')} ${backtestOrderDraft.isPendingOrder ? 'ORDER' : 'ENTRY'} ${formatOverlayPrice(draftEntryPrice)}`,
               }
             ),
             buildLine(
@@ -2702,7 +2734,7 @@ export default function MarketReplayChart({
           const livePnlLabel = formattedLivePnl
             ? `  LIVE ${livePnl >= 0 ? '+' : '-'}${formattedLivePnl} ${backtestAccount?.quoteCurrency ?? 'USDT'}`
             : '';
-          const sideLabel = position.side === 'short' ? 'SHORT' : 'LONG';
+          const sideLabel = position.category === 'spot' ? 'BUY' : (position.side === 'short' ? 'SHORT' : 'LONG');
           // Mark the managed-exit rules directly on the lines they affect, matching how
           // exchanges label a trailing/break-even stop or a multi-target take-profit on the
           // chart itself rather than leaving it discoverable only in a side list.
@@ -2732,7 +2764,7 @@ export default function MarketReplayChart({
           ];
         }),
     ].filter(Boolean);
-  }, [backtestAccount, backtestOrderDraft, executionPrice, overlayRenderVersion, overlaySize.width, symbol]);
+  }, [backtestAccount, backtestOrderDraft, executionPrice, marketCategory, overlayRenderVersion, overlaySize.width, symbol]);
 
   const renderedTradeMarkers = useMemo(() => {
     const chart = chartRef.current;
@@ -4232,8 +4264,10 @@ export default function MarketReplayChart({
       if (isTyping) return;
 
       if (event.altKey && !event.repeat && ['l', 's'].includes(event.key.toLowerCase())) {
+        const key = event.key.toLowerCase();
+        if (key === 's' && marketCategory === 'spot') return;
         event.preventDefault();
-        quickOpenBacktestPositionRef.current?.(event.key.toLowerCase() === 'l' ? 'long' : 'short');
+        quickOpenBacktestPositionRef.current?.(key === 'l' ? 'long' : 'short');
         return;
       }
 
@@ -4324,7 +4358,7 @@ export default function MarketReplayChart({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [allCandles, handleDuplicateSelectedDrawing, handleFinishPathDrawing, handleNudgeSelectedDrawing, handleUndoDrawings, pushDrawingUndoSnapshot, replayIndex, replayMode, saveDrawings]);
+  }, [allCandles, handleDuplicateSelectedDrawing, handleFinishPathDrawing, handleNudgeSelectedDrawing, handleUndoDrawings, marketCategory, pushDrawingUndoSnapshot, replayIndex, replayMode, saveDrawings]);
 
   useEffect(() => {
     const el = wrapperRef.current;
@@ -5922,9 +5956,19 @@ export default function MarketReplayChart({
   const handleSymbolChange = useCallback((value) => {
     const [nextExchange, nextCategory, ...symbolParts] = String(value).split(':');
     const nextSymbol = symbolParts.join(':') || nextCategory || nextExchange;
+    const resolvedExchange = symbolParts.length ? nextExchange : 'bybit';
+    const resolvedCategory = symbolParts.length ? nextCategory : 'spot';
 
-    setExchange(symbolParts.length ? nextExchange : 'bybit');
-    setMarketCategory(symbolParts.length ? nextCategory : 'spot');
+    // Every call here is a deliberate user pick (search result, watchlist chip),
+    // never a background restore — loadMarketSymbols's own fallback-correction
+    // must not snap the chart back just because a brand-new symbol hasn't
+    // finished (or failed to) save yet. Comparing against the *latest* pick
+    // rather than a one-shot flag keeps this correct through a rapid burst of
+    // switches, where several loadMarketSymbols calls can resolve out of order.
+    justSwitchedSymbolKeyRef.current = `${resolvedExchange}:${resolvedCategory}:${nextSymbol}`;
+
+    setExchange(resolvedExchange);
+    setMarketCategory(resolvedCategory);
     setSymbol(nextSymbol);
   }, []);
 
@@ -5944,19 +5988,28 @@ export default function MarketReplayChart({
     const normalizedSymbol = (selectedAvailableSymbol?.symbol ?? rawSymbol).trim().toUpperCase();
     if (!normalizedSymbol) return;
 
+    // The chart already switched to this symbol synchronously in
+    // ChartHeader.jsx's handleSelectSymbol before this call starts — this
+    // function only persists it to the user's saved-symbol list in the
+    // background. It must not mutate exchange/marketCategory/symbol itself
+    // (a slow save resolving after the user has since switched again would
+    // otherwise yank the chart back), and a request-id guard keeps a stale
+    // response from clobbering a newer save's error/spinner state.
+    const requestId = symbolPersistIdRef.current + 1;
+    symbolPersistIdRef.current = requestId;
+
     setIsSavingSymbol(true);
     setSymbolError('');
-    // The add-symbol dropdown closes synchronously right after this call
-    // starts, so isSavingSymbol's own disabled/spinner styling on the "Open"
-    // button never gets a chance to paint. The top bar covers the save
-    // request itself; on success it hands off to the candle-fetch effect's
-    // own start()/done() pair (below) once symbol/exchange/category update,
-    // so the bar runs continuously through to the loaded chart. On failure
-    // that effect never fires, so the catch block below ends it explicitly.
-    NProgress.start();
 
     try {
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      // No manual X-CSRF-TOKEN header here — axios already sends one
+      // automatically, read fresh from the XSRF-TOKEN cookie on every
+      // request (bootstrap.js), which self-heals if the session's token
+      // rotates (e.g. session()->regenerate() on login). A manually-set
+      // header from the <meta> tag, captured once at initial page load,
+      // takes precedence over that and never updates for the rest of an
+      // Inertia SPA session — reintroducing this previously caused every
+      // save here to fail with a stale-token 419 after any login.
       const response = await axios.post('/market-symbols', {
         symbol: normalizedSymbol,
         exchange: selectedAvailableSymbol?.exchange ?? 'bybit',
@@ -5966,10 +6019,7 @@ export default function MarketReplayChart({
         quote_coin: selectedAvailableSymbol?.quoteCoin ?? '',
         category: selectedAvailableSymbol?.category ?? marketCategory,
       }, {
-        headers: {
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken ?? '',
-        },
+        headers: { Accept: 'application/json' },
       });
 
       const result = response.data;
@@ -6001,9 +6051,8 @@ export default function MarketReplayChart({
           || (a.category ?? '').localeCompare(b.category ?? '')
         ));
       });
-      setExchange(savedSymbol.exchange ?? 'bybit');
-      setMarketCategory(savedSymbol.category ?? 'spot');
-      setSymbol(savedSymbol.symbol);
+      broadcastChange('backtradelab-symbols-changed');
+      if (symbolPersistIdRef.current === requestId) setSymbolError('');
     } catch (err) {
       const validationErrors = err.response?.data?.errors;
       const firstValidationError = validationErrors
@@ -6011,14 +6060,15 @@ export default function MarketReplayChart({
         : null;
       const message = err.response?.status === 419
         ? 'Your session security token expired. Refresh the page, sign in again if needed, then add the symbol.'
-        : firstValidationError
-          ?? err.response?.data?.message
-          ?? err.message
-          ?? 'Failed to save symbol';
-      setSymbolError(message);
-      NProgress.done();
+        : err.response?.status === 429
+          ? "You're switching symbols too fast — wait a few seconds and try again."
+          : firstValidationError
+            ?? err.response?.data?.message
+            ?? err.message
+            ?? 'Failed to save symbol';
+      if (symbolPersistIdRef.current === requestId) setSymbolError(message);
     } finally {
-      setIsSavingSymbol(false);
+      if (symbolPersistIdRef.current === requestId) setIsSavingSymbol(false);
     }
   };
 
@@ -7051,6 +7101,7 @@ export default function MarketReplayChart({
             className={isFullscreen ? 'fixed bottom-7 left-0 right-0 top-12 z-[70]' : 'absolute -left-[52px] bottom-7 right-0 top-0 z-50'}
             fullscreenDrawingOnly={isFullscreen}
             groupedWorkspaceRail={!isFullscreen}
+            marketCategory={marketCategory}
             fullscreenEntryPanelOpen={isFullscreenEntryPanelOpen}
             onFullscreenEntryPanelOpenChange={setIsFullscreenEntryPanelOpen}
             replayMode={replayMode}

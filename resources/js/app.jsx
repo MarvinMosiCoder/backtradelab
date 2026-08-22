@@ -65,6 +65,18 @@ getAppName().then(appName => {
                     </AuthProvider>
                 </React.StrictMode>
             );
+
+            // Fade out and remove the boot splash (static markup in app.blade.php,
+            // covers the gap before this first mount) now that the real page is up.
+            // setup() runs once per full page load, so this never re-fires on
+            // later Inertia navigations.
+            const bootSplash = document.getElementById("boot-splash");
+            if (bootSplash) {
+                bootSplash.classList.add("boot-splash-hide");
+                const removeBootSplash = () => bootSplash.remove();
+                bootSplash.addEventListener("transitionend", removeBootSplash, { once: true });
+                setTimeout(removeBootSplash, 400);
+            }
         },
     });
 });

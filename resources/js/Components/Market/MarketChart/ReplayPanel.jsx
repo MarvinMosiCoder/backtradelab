@@ -88,6 +88,7 @@ import {
   X,
 } from 'lucide-react';
 import { DRAWING_COLORS, DRAWING_WIDTHS, PLAYBACK_SPEEDS, TEXT_SIZES } from './constants';
+import { subscribeToChange } from '../../../utils/crossTabSync';
 
 const controlBaseClass =
   'inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40';
@@ -174,7 +175,7 @@ function RailTooltipPortal({ pos, label, isDark }) {
   );
 }
 
-function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }) {
+function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme, dataChartUi }) {
   const isDark = chartTheme?.mode !== 'light';
   const inactiveTextClass = isDark ? 'text-[#b2b5be]' : 'text-slate-500';
   const hoverClass = isDark ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-100 hover:text-slate-900';
@@ -191,6 +192,7 @@ function RailButton({ icon: Icon, active, disabled, title, onClick, chartTheme }
         onFocus={show}
         onBlur={hide}
         disabled={disabled}
+        data-chart-ui={dataChartUi}
         aria-label={title}
         className={`flex h-9 w-9 items-center justify-center rounded-md transition disabled:cursor-not-allowed disabled:opacity-35 ${
           active
@@ -219,6 +221,7 @@ function ToolGroupRailItem({ group, tool, toolSettings, handleToolChange, toggle
           <button
             ref={chevronTooltip.anchorRef}
             type="button"
+            data-chart-ui="tools-flyout"
             onClick={() => toggleGroup(`tools:${group.name}`)}
             onMouseEnter={chevronTooltip.show}
             onMouseLeave={chevronTooltip.hide}
@@ -618,7 +621,7 @@ function DrawingSettingsDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[10020] flex items-start justify-center bg-black/10 px-3 pt-[max(4.5rem,8vh)]" data-chart-ui>
+    <div className="fixed inset-0 z-[10020] flex items-start justify-center bg-black/10 px-3 pt-[max(4.5rem,8vh)]" data-chart-ui onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section
         ref={panelRef}
         className={`w-full max-w-[476px] overflow-hidden rounded-md border shadow-2xl ${surfaceClass}`}
@@ -1995,6 +1998,7 @@ function AdvancedTpSlModal({
 }
 
 export default function ReplayPanel({
+  marketCategory,
   replayMode,
   replayAccessStatus = 'idle',
   replayAccessError = '',
@@ -2063,6 +2067,7 @@ export default function ReplayPanel({
   const preferenceUserId = auth?.user?.id ?? 'guest';
   const displayCurrencyStorageKey = `market-backtest-display-currency:${preferenceUserId}`;
   const phpRateStorageKey = `market-backtest-php-rate:${preferenceUserId}`;
+  const isSpot = marketCategory === 'spot';
   const panelRootRef = useRef(null);
   const [activeGroup, setActiveGroup] = useState(null);
   const [activeEditorMenu, setActiveEditorMenu] = useState(null);
@@ -2107,15 +2112,32 @@ export default function ReplayPanel({
 
   useEffect(() => {
     let cancelled = false;
-    axios.get('/market-backtest/playbooks', { headers: { Accept: 'application/json' } })
-      .then((response) => {
-        if (!cancelled) setPlaybooks(response.data?.playbooks ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setPlaybooks([]);
-      });
-    return () => { cancelled = true; };
+    const loadPlaybooks = () => {
+      axios.get('/market-backtest/playbooks', { headers: { Accept: 'application/json' } })
+        .then((response) => {
+          if (!cancelled) setPlaybooks(response.data?.playbooks ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setPlaybooks([]);
+        });
+    };
+    loadPlaybooks();
+    const unsubscribe = subscribeToChange('backtradelab-playbooks-changed', loadPlaybooks);
+    return () => { cancelled = true; unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    if (selectedPlaybookId && !playbooks.some((item) => String(item.id) === String(selectedPlaybookId))) {
+      setSelectedPlaybookId('');
+    }
+  }, [playbooks, selectedPlaybookId]);
+
+  useEffect(() => {
+    if (isSpot) {
+      setOrderSide('long');
+      setOrderLeverage('1');
+    }
+  }, [isSpot]);
 
   const selectedPlaybook = playbooks.find((item) => String(item.id) === String(selectedPlaybookId)) ?? null;
   const playbookOptions = [
@@ -2277,6 +2299,25 @@ export default function ReplayPanel({
       onFullscreenEntryPanelOpenChange?.(false);
     }
   };
+
+  // Same outside-click pattern as ChartHeader.jsx's dropdowns (data-chart-ui
+  // marker + a guarded document mousedown listener). Scoped only to the Tools
+  // picker (the flat list and each group's own flyout, e.g. Fibonacci) — not
+  // 'backtest' (Enter Position has its own "click chart to pick a price"
+  // feature) or 'tool-editor' (TopToolEditorBar, a different kind of surface).
+  // Picking a tool from the flyout doesn't clear `tool` itself, so closing the
+  // picker here never interrupts placing a drawing — only the picker's own
+  // visibility is affected.
+  useEffect(() => {
+    const toolsFlyoutOpen = activeGroup === 'tools' || (typeof activeGroup === 'string' && activeGroup.startsWith('tools:'));
+    if (!toolsFlyoutOpen) return undefined;
+    const handleOutsideClick = (event) => {
+      if (event.target?.closest?.('[data-chart-ui="tools-flyout"]')) return;
+      setActiveGroup(null);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [activeGroup]);
 
   const handleSavePreset = () => {
     onSaveSelectedToolPreset(presetNameDraft);
@@ -2520,6 +2561,7 @@ export default function ReplayPanel({
               icon={ActiveToolIcon}
               active={activeGroup === 'tools' || Boolean(tool)}
               title="Drawing Tools"
+              dataChartUi="tools-flyout"
               onClick={() => toggleGroup('tools')}
               chartTheme={chartTheme}
             />
@@ -2579,7 +2621,7 @@ export default function ReplayPanel({
 
       {(fullscreenDrawingOnly || groupedWorkspaceRail) && TOOL_GROUPS.map((group) => (
         activeGroup === `tools:${group.name}` ? (
-          <div key={group.name} className="pointer-events-auto">
+          <div key={group.name} className="pointer-events-auto" data-chart-ui="tools-flyout">
             <Flyout title={group.name} icon={group.groupIcon ?? TOOL_BUTTONS.find((item) => item.type === group.tools[0])?.icon} onClose={() => setActiveGroup(null)} chartTheme={chartTheme}>
               {group.sections ? (
                 <div className="space-y-1">
@@ -2737,7 +2779,7 @@ export default function ReplayPanel({
       )}
 
       {!fullscreenDrawingOnly && !groupedWorkspaceRail && activeGroup === 'tools' && (
-        <div className="pointer-events-auto">
+        <div className="pointer-events-auto" data-chart-ui="tools-flyout">
           <Flyout
             title="Tools"
             icon={MousePointer2}
@@ -2980,26 +3022,32 @@ export default function ReplayPanel({
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setOrderSide('long')}
-                  className={`h-10 rounded-md text-sm font-bold transition-colors ${
-                    orderSide === 'long' ? 'bg-emerald-600 text-white' : neutralToggleClass(false)
-                  }`}
-                >
-                  Long
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOrderSide('short')}
-                  className={`h-10 rounded-md text-sm font-bold transition-colors ${
-                    orderSide === 'short' ? 'bg-red-600 text-white' : neutralToggleClass(false)
-                  }`}
-                >
-                  Short
-                </button>
-              </div>
+              {isSpot ? (
+                <div className="flex h-10 items-center justify-center rounded-md bg-emerald-600 text-sm font-bold text-white">
+                  Buy
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrderSide('long')}
+                    className={`h-10 rounded-md text-sm font-bold transition-colors ${
+                      orderSide === 'long' ? 'bg-emerald-600 text-white' : neutralToggleClass(false)
+                    }`}
+                  >
+                    Long
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrderSide('short')}
+                    className={`h-10 rounded-md text-sm font-bold transition-colors ${
+                      orderSide === 'short' ? 'bg-red-600 text-white' : neutralToggleClass(false)
+                    }`}
+                  >
+                    Short
+                  </button>
+                </div>
+              )}
               <div className={`rounded-md border p-2 ${cardSurfaceClass}`}>
                 <div className="block">
                   <span className={`mb-1 block text-[10px] uppercase tracking-wide ${mutedTextClass}`}>Strategy playbook</span>
@@ -3030,32 +3078,34 @@ export default function ReplayPanel({
                   </div>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled
-                  className={`h-8 cursor-default rounded border px-2 text-xs font-semibold opacity-90 outline-none ${fieldClass}`}
-                  title="This engine simulates isolated margin only — there is no cross-margin mode."
-                >
-                  Isolated
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowLeverageModal(true)}
-                  className={`h-8 min-w-0 rounded border px-2 text-left text-xs font-semibold outline-none ${
-                    isLeverageValid ? fieldClass : invalidFieldClass
-                  }`}
-                  title="Leverage, 1x to 125x"
-                >
-                  {isLeverageValid ? formatLeverage(leverageValue) : (orderLeverage || 'Lev')}
-                </button>
-              </div>
+              {!isSpot && (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    disabled
+                    className={`h-8 cursor-default rounded border px-2 text-xs font-semibold opacity-90 outline-none ${fieldClass}`}
+                    title="This engine simulates isolated margin only — there is no cross-margin mode."
+                  >
+                    Isolated
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowLeverageModal(true)}
+                    className={`h-8 min-w-0 rounded border px-2 text-left text-xs font-semibold outline-none ${
+                      isLeverageValid ? fieldClass : invalidFieldClass
+                    }`}
+                    title="Leverage, 1x to 125x"
+                  >
+                    {isLeverageValid ? formatLeverage(leverageValue) : (orderLeverage || 'Lev')}
+                  </button>
+                </div>
+              )}
               <input
                 value={orderNotional}
                 onChange={(event) => setOrderNotional(event.target.value)}
                 inputMode="decimal"
                 className={`h-8 w-full rounded border px-2 text-xs outline-none ${fieldClass}`}
-                placeholder={`${displayCurrency} margin`}
+                placeholder={isSpot ? `${displayCurrency} amount` : `${displayCurrency} margin`}
               />
               <div className="grid grid-cols-4 gap-1.5">
                 {[0.25, 0.5, 0.75, 1].map((pct) => (
@@ -3069,10 +3119,10 @@ export default function ReplayPanel({
                   </button>
                 ))}
               </div>
-              <div className={`grid grid-cols-3 gap-2 text-[11px] ${labelTextClass}`}>
-                <span>Margin {orderPlan?.margin ? formatAccountMoney(orderPlan.margin) : '---'}</span>
+              <div className={`grid ${isSpot ? 'grid-cols-2' : 'grid-cols-3'} gap-2 text-[11px] ${labelTextClass}`}>
+                <span>{isSpot ? 'Amount' : 'Margin'} {orderPlan?.margin ? formatAccountMoney(orderPlan.margin) : '---'}</span>
                 <span>Value {orderPlan?.positionNotional ? formatAccountMoney(orderPlan.positionNotional) : '---'}</span>
-                <span>Lev {isLeverageValid ? formatLeverage(leverageValue) : '---'}</span>
+                {!isSpot && <span>Lev {isLeverageValid ? formatLeverage(leverageValue) : '---'}</span>}
               </div>
               <div className={`rounded-md border ${cardSurfaceClass}`}>
                 <div className="flex h-9 items-center justify-between px-2">
@@ -3208,7 +3258,9 @@ export default function ReplayPanel({
                   orderSide === 'long' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-red-600 hover:bg-red-500'
                 }`}
               >
-                {isPendingOrder ? `Place ${orderSide === 'long' ? 'Long' : 'Short'} Order` : `Open ${orderSide === 'long' ? 'Long' : 'Short'}`}
+                {isSpot
+                  ? (isPendingOrder ? 'Place Buy Order' : 'Buy')
+                  : (isPendingOrder ? `Place ${orderSide === 'long' ? 'Long' : 'Short'} Order` : `Open ${orderSide === 'long' ? 'Long' : 'Short'}`)}
               </button>
               {showOrderDraft && (
                 <ControlButton icon={X} onClick={removeOrderDraft} variant="danger" className="w-full" chartTheme={chartTheme}>

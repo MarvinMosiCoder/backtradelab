@@ -40,11 +40,17 @@ function formatOrderTime(epochSeconds) {
 }
 
 function estimateLiquidationPrice(position) {
+  if (position?.category === 'spot') return null;
   const entry = Number(position?.entryPrice);
   const leverage = Number(position?.leverage);
   if (!Number.isFinite(entry) || !Number.isFinite(leverage) || leverage <= 0) return null;
   const buffer = 1 / leverage;
   return position?.side === 'short' ? entry * (1 + buffer) : entry * (1 - buffer);
+}
+
+function positionSideLabel(item) {
+  if (item?.category === 'spot') return 'Buy';
+  return item?.side === 'short' ? 'Short' : 'Long';
 }
 
 function computeRoi(position, pnl) {
@@ -207,7 +213,7 @@ export default function PositionsPanel({
                     <tr key={position.id} className={`border-t ${rowBorderClass}`}>
                       <td className={`px-3 py-2.5 font-semibold ${cellClass}`}>{position.symbol}</td>
                       <td className={`px-3 py-2.5 font-semibold ${position.side === 'short' ? 'text-red-400' : 'text-emerald-400'}`}>
-                        {position.side === 'short' ? 'Short' : 'Long'}
+                        {positionSideLabel(position)}
                       </td>
                       <td className={`px-3 py-2.5 ${cellClass}`}>{formatNum(position.quantity, 4)}</td>
                       <td className={`px-3 py-2.5 ${cellClass}`}>{formatNum(position.entryPrice)}</td>
@@ -259,7 +265,7 @@ export default function PositionsPanel({
                   <tr key={position.id} className={`border-t ${rowBorderClass}`}>
                     <td className={`px-3 py-2.5 font-semibold ${cellClass}`}>{position.symbol}</td>
                     <td className={`px-3 py-2.5 font-semibold ${position.side === 'short' ? 'text-red-400' : 'text-emerald-400'}`}>
-                      {position.side === 'short' ? 'Short' : 'Long'}
+                      {positionSideLabel(position)}
                     </td>
                     <td className={`px-3 py-2.5 ${cellClass}`}>{formatNum(position.entryPrice)}</td>
                     <td className={`px-3 py-2.5 ${cellClass}`}>{formatNum(position.quantity, 4)}</td>
@@ -303,7 +309,8 @@ export default function PositionsPanel({
               <tbody>
                 {orderHistory.map((order) => {
                   const [typeLabel, expiryLabel] = ORDER_TYPE_LABELS[order.orderType] ?? ORDER_TYPE_LABELS.market;
-                  const sideLabel = `${order.action === 'close' ? 'Close' : 'Open'} ${order.side === 'short' ? 'Short' : 'Long'}`;
+                  const isSpotOrder = order.category === 'spot';
+                  const orderSideLabel = `${order.action === 'close' ? 'Close' : 'Open'} ${positionSideLabel(order)}`;
                   const pnl = order.pnl;
                   const pnlPositive = Number(pnl) >= 0;
                   const isCancelled = order.status === 'cancelled';
@@ -313,8 +320,10 @@ export default function PositionsPanel({
                       <td className={`px-3 py-2.5 ${cellClass}`}>
                         <div className="font-semibold">{order.symbol}</div>
                         <div className="mt-1 flex items-center gap-1 text-[10px]">
-                          <span className={`rounded px-1.5 py-0.5 ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>Isolated</span>
-                          {order.leverage != null && (
+                          {!isSpotOrder && (
+                            <span className={`rounded px-1.5 py-0.5 ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>Isolated</span>
+                          )}
+                          {!isSpotOrder && order.leverage != null && (
                             <span className={`rounded px-1.5 py-0.5 ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>{formatNum(order.leverage, 0)}X</span>
                           )}
                           {order.hasStopLoss && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-400">SL</span>}
@@ -322,7 +331,7 @@ export default function PositionsPanel({
                         </div>
                       </td>
                       <td className={`whitespace-nowrap px-3 py-2.5 ${cellClass}`}>{formatOrderTime(order.time)}</td>
-                      <td className={`px-3 py-2.5 font-semibold ${order.action === 'close' ? 'text-red-400' : 'text-emerald-400'}`}>{sideLabel}</td>
+                      <td className={`px-3 py-2.5 font-semibold ${order.action === 'close' ? 'text-red-400' : 'text-emerald-400'}`}>{orderSideLabel}</td>
                       <td className={`px-3 py-2.5 ${cellClass}`}>
                         <div>{typeLabel}</div>
                         <div className="opacity-70">{expiryLabel}</div>
@@ -371,7 +380,8 @@ export default function PositionsPanel({
               </thead>
               <tbody>
                 {fills.map((order) => {
-                  const sideLabel = `${order.action === 'close' ? 'Close' : 'Open'} ${order.side === 'short' ? 'Short' : 'Long'}`;
+                  const isSpotOrder = order.category === 'spot';
+                  const orderSideLabel = `${order.action === 'close' ? 'Close' : 'Open'} ${positionSideLabel(order)}`;
                   const pnl = order.pnl;
                   const pnlPositive = Number(pnl) >= 0;
 
@@ -380,8 +390,10 @@ export default function PositionsPanel({
                       <td className={`px-3 py-2.5 ${cellClass}`}>
                         <div className="font-semibold">{order.symbol}</div>
                         <div className="mt-1 flex items-center gap-1 text-[10px]">
-                          <span className={`rounded px-1.5 py-0.5 ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>Isolated</span>
-                          {order.leverage != null && (
+                          {!isSpotOrder && (
+                            <span className={`rounded px-1.5 py-0.5 ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>Isolated</span>
+                          )}
+                          {!isSpotOrder && order.leverage != null && (
                             <span className={`rounded px-1.5 py-0.5 ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>{formatNum(order.leverage, 0)}X</span>
                           )}
                           {order.hasStopLoss && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-400">SL</span>}
@@ -389,7 +401,7 @@ export default function PositionsPanel({
                         </div>
                       </td>
                       <td className={`whitespace-nowrap px-3 py-2.5 ${cellClass}`}>{formatOrderTime(order.time)}</td>
-                      <td className={`px-3 py-2.5 font-semibold ${order.action === 'close' ? 'text-red-400' : 'text-emerald-400'}`}>{sideLabel}</td>
+                      <td className={`px-3 py-2.5 font-semibold ${order.action === 'close' ? 'text-red-400' : 'text-emerald-400'}`}>{orderSideLabel}</td>
                       <td className={`px-3 py-2.5 ${cellClass}`}>{formatNum(order.avgPrice)}</td>
                       <td className={`px-3 py-2.5 ${cellClass}`}>{formatNum(order.filledQuantity, 4)} {getBaseAsset(order.symbol, quoteCurrency)}</td>
                       <td className={`px-3 py-2.5 ${cellClass}`}>{order.notional != null ? `${formatNum(order.notional)} ${quoteCurrency}` : '---'}</td>
@@ -425,7 +437,7 @@ export default function PositionsPanel({
                       <div className="flex items-center gap-2 text-sm">
                         <span className={`font-semibold ${cellClass}`}>{position.symbol}</span>
                         <span className={`font-semibold ${position.side === 'short' ? 'text-red-400' : 'text-emerald-400'}`}>
-                          {position.side === 'short' ? 'Short' : 'Long'}
+                          {positionSideLabel(position)}
                         </span>
                         <span className={`rounded px-1.5 py-0.5 text-[10px] ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>Isolated</span>
                         <span className={`rounded px-1.5 py-0.5 text-[10px] ${isDark ? 'bg-white/10 text-gray-300' : 'bg-slate-100 text-slate-600'}`}>{formatNum(position.leverage, 0)}X</span>

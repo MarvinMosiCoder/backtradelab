@@ -4,6 +4,7 @@ import AppFooter from "@/Layouts/layout/AppFooter.jsx";
 import AppSidebar from "@/Layouts/layout/AppSidebar.jsx";
 import AppNavbar from "@/Layouts/layout/AppNavbar.jsx";
 import AppContent from "@/Layouts/layout/AppContent.jsx";
+import ContentLoader from "@/Layouts/layout/ContentLoader.jsx";
 import { NavbarProvider } from "../../Context/NavbarContext";
 import { useTheme } from "../../Context/ThemeContext";
 import TraderNavbar from "./TraderNavbar";
@@ -23,13 +24,14 @@ const Layout = ({ children }) => {
             </div>
             <div className="flex h-screen pt-14">
                 {isAdmin ? <AppSidebar /> : <TraderSidebar />}
-                <div className="flex min-w-0 w-full flex-col overflow-hidden">
+                <div className="relative flex min-w-0 w-full flex-col overflow-hidden">
                     <div className="flex-1 w-full flex flex-col overflow-auto">
                         <div className="flex-1">
                             <AppContent>{children}</AppContent>
                         </div>
                         {isAdmin && <AppFooter />}
                     </div>
+                    <ContentLoader />
                 </div>
             </div>
         </NavbarProvider>

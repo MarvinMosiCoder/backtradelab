@@ -24,6 +24,10 @@ page.default.layout = pageComponent => {
 
 The real implementation also reads auth/session theme data and nests `AuthProvider`, `SidebarProvider`, `AppInitializer`, and `CookieNotice`.
 
+### Boot splash
+
+`app.blade.php` renders a static `#boot-splash` div (dark background, animated brand-blue bars) as a sibling of the `@inertia` mount point, before any JS runs — it covers the gap between the initial HTML response and this first `createRoot(el).render()` call, which includes a real network round trip (`getAppName()`) and a dynamic page-component import. Its styling lives in `resources/css/boot-splash.css`, included as its **own entry** in both the Blade `@vite([...])` call and `vite.config.js`'s `laravel({ input: [...] })` array — Laravel's Vite plugin only emits a render-blocking `<link>` for paths present in both places, so an entry missing from `vite.config.js` silently never reaches the manifest even if `@vite()` references it. (This is unlike `nprogress-custom.css`, which is imported *through* `app.jsx` and only needs to be ready after JS has already executed.) `setup()` removes the splash (fade + `remove()`) immediately after the first render call; since `setup()` runs once per full page load, it never reappears on later Inertia navigations — see [Dashboard and layouts](dashboard-and-layouts.md) for the separate, per-navigation `ContentLoader` that covers those.
+
 ## Main directories
 
 | Path | Responsibility |
